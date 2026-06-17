@@ -9,6 +9,55 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use geist_core::config::AudioConfig;
+use rtrb::{Consumer, Producer, RingBuffer};
+
+// Depth of the input capture ring in samples; sized to outpace the app drain
+pub const CAPTURE_RING_CAPACITY: usize = 1 << 16;
+
+// Audio-thread end of the capture ring: the input callback pushes interleaved
+// frames here. Wait-free; samples are dropped if the app falls behind.
+pub struct CaptureProducer {
+    tx: Producer<f32>,
+}
+
+impl CaptureProducer {
+    // Push one interleaved input block, dropping the tail if the ring is full
+    pub fn push_block(&mut self, samples: &[f32]) {
+        for &s in samples {
+            if self.tx.push(s).is_err() {
+                break;
+            }
+        }
+    }
+}
+
+// App-thread end of the capture ring: drained by the recorder each frame
+pub struct CaptureConsumer {
+    pub channels: u16,
+    pub sample_rate_hz: u32,
+    rx: Consumer<f32>,
+}
+
+impl CaptureConsumer {
+    // Drain all available captured samples into `out`, returning the count moved
+    pub fn drain(&mut self, out: &mut Vec<f32>) -> usize {
+        let mut moved = 0;
+        while let Ok(sample) = self.rx.pop() {
+            out.push(sample);
+            moved += 1;
+        }
+        moved
+    }
+}
+
+// Build the paired ends of a capture ring for `channels` at `sample_rate_hz`
+pub fn capture_ring(channels: u16, sample_rate_hz: u32) -> (CaptureProducer, CaptureConsumer) {
+    let (tx, rx) = RingBuffer::new(CAPTURE_RING_CAPACITY);
+    (
+        CaptureProducer { tx },
+        CaptureConsumer { channels, sample_rate_hz, rx },
+    )
+}
 
 // Lock-free count of buffer xruns reported from the audio callback
 // The audio thread records; the UI thread reads; neither blocks
@@ -79,6 +128,31 @@ mod tests {
         assert_eq!(counter.count(), 3);
         counter.reset();
         assert_eq!(counter.count(), 0);
+    }
+
+    #[test]
+    fn capture_ring_round_trips_frames() {
+        let (mut tx, mut rx) = capture_ring(2, 48_000);
+        assert_eq!(rx.channels, 2);
+        assert_eq!(rx.sample_rate_hz, 48_000);
+        tx.push_block(&[0.1, 0.2, 0.3, 0.4]);
+        let mut out = Vec::new();
+        assert_eq!(rx.drain(&mut out), 4);
+        assert_eq!(out, vec![0.1, 0.2, 0.3, 0.4]);
+        // A second drain with nothing pending moves zero
+        assert_eq!(rx.drain(&mut out), 0);
+    }
+
+    #[test]
+    fn capture_ring_drops_tail_when_full() {
+        let (mut tx, mut rx) = capture_ring(1, 48_000);
+        // Push more than the ring holds; push_block must not panic
+        let flood = vec![0.5f32; CAPTURE_RING_CAPACITY + 1_000];
+        tx.push_block(&flood);
+        let mut out = Vec::new();
+        let moved = rx.drain(&mut out);
+        assert!(moved <= CAPTURE_RING_CAPACITY);
+        assert!(out.iter().all(|&s| s == 0.5));
     }
 
     #[test]

@@ -322,6 +322,16 @@ pub fn session_path() -> PathBuf {
     dir.join(SESSION_FILE)
 }
 
+// Directory for recorded audio takes, created on demand beside the session
+pub fn recordings_dir() -> PathBuf {
+    let dir = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("geist-recordings");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
 // Write a session to an explicit path
 pub fn save_to(session: &StudioSession, path: &Path) -> Result<(), ProjectError> {
     save_to_path(&session.to_project(), path)

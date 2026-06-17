@@ -9,15 +9,30 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
+use std::sync::Arc;
+
 use geist_audio_backend::prelude::{BlockProcessor, CpalBackend, Stream};
 use geist_core::context::ProcessContext;
 use geist_core::events::NoteEvent;
+use geist_core::transport::TransportSnapshot;
 use geist_graph::node::AudioNode;
 use geist_synth::prelude::SynthNode;
 use geist_timeline::prelude::Transport;
 
 use crate::control::{EngineCommand, EngineSink};
 use crate::fx::FxChain;
+
+// Most audio assets (recorded buffers) the engine holds at once. The store is
+// pre-sized so registering an asset never allocates on the audio thread.
+pub const MAX_AUDIO_ASSETS: usize = 64;
+
+// A recorded audio buffer resident in the engine, shared with the recorder that
+// produced it. Interleaved by `channels`.
+#[derive(Clone)]
+pub struct StoredAsset {
+    pub samples: Arc<[f32]>,
+    pub channels: u16,
+}
 
 // Sequencer steps per beat (sixteenth notes)
 const STEPS_PER_BEAT: f64 = 4.0;
@@ -182,8 +197,6 @@ const DEFAULT_TRACK_LEVEL: f32 = 0.8;
 pub const MAX_CLIP_NOTES: usize = 256;
 // Most placed clips one track's arrangement can hold; fixed for realtime safety
 pub const MAX_CLIPS_PER_TRACK: usize = 64;
-// Default clip length in beats, matching the UI piano roll
-pub const DEFAULT_CLIP_LEN_BEATS: f32 = 16.0;
 // Start-beat tolerance when matching a note for removal
 const START_EPS: f32 = 1e-3;
 
@@ -229,12 +242,23 @@ impl ArrClip {
     }
 }
 
-// A track's timeline: placed MIDI clips advanced by absolute transport beat.
-// Level-based like the old looping clip, but positioned: a note sounds when the
-// transport is inside its clip's span and inside the note's own span. Robust to
-// seeking, looping, and tempo changes.
+// One placed audio clip: a window into a stored asset, positioned on the
+// timeline. `slot` indexes the engine's asset store, which carries the channel
+// layout and sample length.
+struct AudioArrClip {
+    id: u64,
+    start_beats: f32,
+    len_beats: f32,
+    slot: usize,
+}
+
+// A track's timeline: placed MIDI clips advanced by absolute transport beat plus
+// placed audio clips mixed from the asset store. Level-based and positioned: a
+// note sounds when the transport is inside its clip's span and the note's span.
+// Robust to seeking, looping, and tempo changes.
 pub struct Arrangement {
     clips: Vec<ArrClip>,
+    audio: Vec<AudioArrClip>,
 }
 
 impl Arrangement {
@@ -242,6 +266,55 @@ impl Arrangement {
     pub fn new() -> Self {
         Self {
             clips: Vec::with_capacity(MAX_CLIPS_PER_TRACK),
+            audio: Vec::with_capacity(MAX_CLIPS_PER_TRACK),
+        }
+    }
+
+    // Place an audio clip referencing an asset slot, if room remains
+    fn add_audio_clip(&mut self, id: u64, start_beats: f32, len_beats: f32, slot: usize) {
+        if self.audio.len() < MAX_CLIPS_PER_TRACK && !self.audio.iter().any(|c| c.id == id) {
+            self.audio.push(AudioArrClip { id, start_beats, len_beats, slot });
+        }
+    }
+
+    // Mix every audio clip overlapping this block into the channel-major scratch.
+    // Block-accurate: the clip's read offset is derived from the block-start beat.
+    fn mix_audio(
+        &self,
+        snapshot: &TransportSnapshot,
+        beat: f64,
+        scratch: &mut [f32],
+        frames: usize,
+        channels: usize,
+        assets: &[Option<StoredAsset>],
+    ) {
+        for clip in &self.audio {
+            if clip.len_beats <= 0.0 {
+                continue;
+            }
+            let start = clip.start_beats as f64;
+            if beat < start || beat >= start + clip.len_beats as f64 {
+                continue;
+            }
+            let Some(Some(asset)) = assets.get(clip.slot) else {
+                continue;
+            };
+            let src_channels = (asset.channels as usize).max(1);
+            let asset_frames = asset.samples.len() / src_channels;
+            let offset = snapshot.beats_to_samples(beat - start) as i64;
+            for f in 0..frames {
+                let src_frame = offset + f as i64;
+                if src_frame < 0 || src_frame as usize >= asset_frames {
+                    continue;
+                }
+                let base = src_frame as usize * src_channels;
+                for ch in 0..channels {
+                    let src_ch = ch.min(src_channels - 1);
+                    if let Some(&sample) = asset.samples.get(base + src_ch) {
+                        scratch[ch * frames + f] += sample;
+                    }
+                }
+            }
         }
     }
 
@@ -266,11 +339,14 @@ impl Arrangement {
         }
     }
 
-    // Remove a clip, releasing any of its sounding notes
+    // Remove a clip by id (MIDI or audio), releasing any sounding notes
     fn remove_clip(&mut self, id: u64, out: &mut Vec<NoteEvent>) {
         if let Some(index) = self.clips.iter().position(|c| c.id == id) {
             self.clips[index].release(out);
             self.clips.swap_remove(index);
+        }
+        if let Some(index) = self.audio.iter().position(|c| c.id == id) {
+            self.audio.swap_remove(index);
         }
     }
 
@@ -452,6 +528,8 @@ pub struct SynthProcessor {
     track_events: Vec<Vec<NoteEvent>>,
     // One track's rendered block, summed into the master with its level
     scratch: Vec<f32>,
+    // Recorded audio buffers, indexed by slot; pre-sized to avoid audio-thread alloc
+    audio_assets: Vec<Option<StoredAsset>>,
 }
 
 impl SynthProcessor {
@@ -479,6 +557,7 @@ impl SynthProcessor {
             gain: DEFAULT_GAIN,
             track_events,
             scratch: vec![0.0; block_len],
+            audio_assets: (0..MAX_AUDIO_ASSETS).map(|_| None).collect(),
         }
     }
 }
@@ -494,10 +573,19 @@ impl BlockProcessor for SynthProcessor {
             gain,
             track_events,
             scratch,
+            audio_assets,
         } = self;
 
         for events in track_events.iter_mut() {
             events.clear();
+        }
+
+        // Move any newly recorded buffers into the asset store (no allocation:
+        // the Arc is built on the UI thread and only its pointer is stored here)
+        while let Ok(asset) = sink.assets.pop() {
+            if let Some(slot) = audio_assets.get_mut(asset.slot) {
+                *slot = Some(StoredAsset { samples: asset.samples, channels: asset.channels });
+            }
         }
 
         // Translate queued UI commands into per-track events, transport, and macros
@@ -654,6 +742,11 @@ impl BlockProcessor for SynthProcessor {
                         t.arrangement.clear_clip(clip, events);
                     }
                 }
+                EngineCommand::AddAudioClip { track, id, start_beats, len_beats, slot } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.arrangement.add_audio_clip(id, start_beats, len_beats, slot);
+                    }
+                }
                 EngineCommand::SetTrackLevel { track, level } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
                         t.level = level;
@@ -706,6 +799,10 @@ impl BlockProcessor for SynthProcessor {
                 );
                 track.node.process(&mut ctx);
             }
+            // Mix any audio clips on this track over the synth output, then fx
+            if rolling {
+                track.arrangement.mix_audio(&snapshot, beat, scratch, frames, channels, audio_assets);
+            }
             track.fx.process(scratch, frames);
             // Sum the audible contribution per channel, panned, capturing the peak
             let audible = !track.muted && (!any_solo || track.soloed);
@@ -751,21 +848,30 @@ impl BlockProcessor for SynthProcessor {
     }
 }
 
-// Live engine handle: keeps the backend and stream alive while audio runs
+// Live engine handle: keeps the backend and streams alive while audio runs
 pub struct Engine {
     // Held so the device stays open for the stream's lifetime
     _backend: CpalBackend,
     stream: Box<dyn Stream>,
+    // Held so the capture device stays open while recording is possible
+    _input: Option<Box<dyn Stream>>,
     sample_rate_hz: u32,
     channels: u16,
 }
 
 impl Engine {
-    // Wrap the running backend and stream
-    pub fn new(backend: CpalBackend, stream: Box<dyn Stream>, sample_rate_hz: u32, channels: u16) -> Self {
+    // Wrap the running backend, output stream, and optional input stream
+    pub fn new(
+        backend: CpalBackend,
+        stream: Box<dyn Stream>,
+        input: Option<Box<dyn Stream>>,
+        sample_rate_hz: u32,
+        channels: u16,
+    ) -> Self {
         Self {
             _backend: backend,
             stream,
+            _input: input,
             sample_rate_hz,
             channels,
         }
@@ -1010,6 +1116,32 @@ mod tests {
         }
         assert_eq!(arr.clips[0].notes.len(), MAX_CLIP_NOTES);
         assert_eq!(arr.clips[0].notes.capacity(), note_cap, "clip notes grew the buffer");
+    }
+
+    #[test]
+    fn audio_clip_mixes_its_samples_at_position() {
+        // A mono ramp asset placed at beat 0 should land verbatim in scratch
+        let mut arr = Arrangement::new();
+        let samples: Arc<[f32]> = (0..8).map(|i| i as f32).collect::<Vec<_>>().into();
+        let assets = vec![Some(StoredAsset { samples, channels: 1 })];
+        arr.add_audio_clip(1, 0.0, 4.0, 0);
+        let snap = TransportSnapshot::stopped(48_000);
+        let mut scratch = vec![0.0f32; 4];
+        arr.mix_audio(&snap, 0.0, &mut scratch, 4, 1, &assets);
+        assert_eq!(scratch, vec![0.0, 1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn audio_clip_is_silent_outside_its_span() {
+        let mut arr = Arrangement::new();
+        let samples: Arc<[f32]> = vec![1.0f32; 8].into();
+        let assets = vec![Some(StoredAsset { samples, channels: 1 })];
+        arr.add_audio_clip(1, 0.0, 1.0, 0);
+        let snap = TransportSnapshot::stopped(48_000);
+        let mut scratch = vec![0.0f32; 4];
+        // Beat well past the clip's one-beat span mixes nothing
+        arr.mix_audio(&snap, 10.0, &mut scratch, 4, 1, &assets);
+        assert!(scratch.iter().all(|&s| s == 0.0));
     }
 
     #[test]

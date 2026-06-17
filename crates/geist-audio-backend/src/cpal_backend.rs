@@ -16,7 +16,7 @@ use geist_core::errors::{GeistError, GeistResult};
 
 use crate::backend::{AudioBackend, RenderCallback, Stream};
 use crate::device::DeviceInfo;
-use crate::stream::{StreamConfig, XrunCounter};
+use crate::stream::{capture_ring, CaptureConsumer, StreamConfig, XrunCounter};
 
 // Default output device handle the host exposes
 pub struct CpalBackend {
@@ -43,6 +43,20 @@ impl CpalBackend {
             }
         }
         Err(GeistError::UnsupportedBackend("named output device not found"))
+    }
+
+    // Find an input device by exact name
+    fn find_input_device(&self, name: &str) -> GeistResult<cpal::Device> {
+        let devices = self
+            .host
+            .input_devices()
+            .map_err(|_| GeistError::UnsupportedBackend("cannot enumerate input devices"))?;
+        for device in devices {
+            if device.name().map(|n| n == name).unwrap_or(false) {
+                return Ok(device);
+            }
+        }
+        Err(GeistError::UnsupportedBackend("named input device not found"))
     }
 }
 
@@ -74,6 +88,34 @@ fn describe(device: &cpal::Device) -> GeistResult<DeviceInfo> {
         name,
         max_input_channels: 0,
         max_output_channels: max_channels,
+        default_sample_rate_hz: default.sample_rate().0,
+        min_sample_rate_hz: min_sr,
+        max_sample_rate_hz: max_sr,
+    })
+}
+
+// Describe a cpal input device as backend-agnostic DeviceInfo
+fn describe_input(device: &cpal::Device) -> GeistResult<DeviceInfo> {
+    let name = device.name().unwrap_or_else(|_| "Unknown".to_string());
+    let default = device
+        .default_input_config()
+        .map_err(|_| GeistError::UnsupportedBackend("device has no default input config"))?;
+
+    let mut min_sr = default.sample_rate().0;
+    let mut max_sr = default.sample_rate().0;
+    let mut max_channels = default.channels();
+    if let Ok(configs) = device.supported_input_configs() {
+        for config in configs {
+            min_sr = min_sr.min(config.min_sample_rate().0);
+            max_sr = max_sr.max(config.max_sample_rate().0);
+            max_channels = max_channels.max(config.channels());
+        }
+    }
+
+    Ok(DeviceInfo {
+        name,
+        max_input_channels: max_channels,
+        max_output_channels: 0,
         default_sample_rate_hz: default.sample_rate().0,
         min_sample_rate_hz: min_sr,
         max_sample_rate_hz: max_sr,
@@ -152,6 +194,64 @@ impl AudioBackend for CpalBackend {
             .map_err(|_| GeistError::UnsupportedBackend("failed to start output stream"))?;
 
         Ok(Box::new(CpalStream { _stream: stream, xruns }))
+    }
+
+    fn default_input_device(&self) -> GeistResult<DeviceInfo> {
+        let device = self
+            .host
+            .default_input_device()
+            .ok_or(GeistError::UnsupportedBackend("no default input device"))?;
+        describe_input(&device)
+    }
+
+    fn start_input(
+        &mut self,
+        config: &StreamConfig,
+    ) -> GeistResult<(Box<dyn Stream>, CaptureConsumer)> {
+        let device = match &config.device_name {
+            Some(name) => self.find_input_device(name)?,
+            None => self
+                .host
+                .default_input_device()
+                .ok_or(GeistError::UnsupportedBackend("no default input device"))?,
+        };
+
+        // Capture at the device's native input format; the consumer carries the
+        // actual channel count and rate so the recorder can interpret frames.
+        let default = device
+            .default_input_config()
+            .map_err(|_| GeistError::UnsupportedBackend("device has no default input config"))?;
+        let channels = default.channels();
+        let sample_rate = default.sample_rate().0;
+        let cpal_config = cpal::StreamConfig {
+            channels,
+            sample_rate: cpal::SampleRate(sample_rate),
+            buffer_size: cpal::BufferSize::Default,
+        };
+
+        let (mut producer, consumer) = capture_ring(channels, sample_rate);
+        let xruns = Arc::new(XrunCounter::new());
+        let error_xruns = Arc::clone(&xruns);
+
+        let stream = device
+            .build_input_stream(
+                &cpal_config,
+                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    // Wait-free: hand the interleaved block to the app drain
+                    producer.push_block(data);
+                },
+                move |_err| {
+                    error_xruns.record();
+                },
+                None,
+            )
+            .map_err(|_| GeistError::UnsupportedBackend("failed to build input stream"))?;
+
+        stream
+            .play()
+            .map_err(|_| GeistError::UnsupportedBackend("failed to start input stream"))?;
+
+        Ok((Box::new(CpalStream { _stream: stream, xruns }), consumer))
     }
 }
 

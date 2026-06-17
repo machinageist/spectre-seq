@@ -26,11 +26,14 @@ use geist_ui::state::UIState;
 use geist_ui::theme::{self, SignalKind};
 use geist_ui::widgets::{KeyEvent, Keyboard, Taper};
 
-use crate::control::{EngineCommand, EngineControl};
+use std::sync::Arc;
+
+use crate::control::{AudioAsset, EngineCommand, EngineControl};
 use crate::engine::{
     default_grid_for, Engine, DEFAULT_AMP_ENV, DEFAULT_FILTER_ENV, DEFAULT_OSC_B_SEMIS,
-    DEFAULT_OSC_MIX, NUM_TRACKS, SEQ_ROWS, SEQ_STEPS, TRACK_BASE_MIDI,
+    DEFAULT_OSC_MIX, MAX_AUDIO_ASSETS, NUM_TRACKS, SEQ_ROWS, SEQ_STEPS, TRACK_BASE_MIDI,
 };
+use crate::recorder::AudioRecorder;
 use crate::session::{self, ClipSession, NoteSession, StudioSession, TrackSession};
 
 // On-screen keyboard spans two octaves from C3
@@ -234,6 +237,12 @@ pub struct StudioApp {
     recorder: Option<MidiRecorder>,
     // The (track, clip id) recording is capturing into, set at record start
     record_target: Option<(usize, u64)>,
+    // Input capture recorder, present only when an input device opened
+    audio_recorder: Option<AudioRecorder>,
+    // Beat where the current recording began (audio clip placement)
+    record_start_beat: f32,
+    // Monotonic allocator for engine audio-asset slots
+    next_asset_slot: usize,
     // Last-synced step patterns, mirroring the engine grids for diffing
     step_mirror: Vec<StepPattern>,
     // Per-key held state for the on-screen keyboard and the computer keyboard
@@ -245,7 +254,12 @@ pub struct StudioApp {
 
 impl StudioApp {
     // Wrap a running engine and seed a workflow-derived studio shell
-    pub fn with_ui_state(engine: Engine, control: EngineControl, state: UIState) -> Self {
+    pub fn with_ui_state(
+        engine: Engine,
+        control: EngineControl,
+        audio_recorder: Option<AudioRecorder>,
+        state: UIState,
+    ) -> Self {
         let mut session = initial_session();
         append_workflow_templates(&mut session.browser, &state.workflow().templates);
         // Mirror starts equal to the seeded grids so frame one emits nothing
@@ -267,6 +281,9 @@ impl StudioApp {
             next_clip_id: 1,
             recorder: None,
             record_target: None,
+            audio_recorder,
+            record_start_beat: 0.0,
+            next_asset_slot: 0,
             step_mirror,
             kb_held: vec![false; KEYBOARD_KEYS],
             computer_held: [false; COMPUTER_KEYS.len()],
@@ -291,7 +308,8 @@ impl StudioApp {
                     .timeline
                     .clips
                     .iter()
-                    .filter(|c| c.lane == track && c.id != 0)
+                    // Audio clips persist via assets (a follow-up); skip them here
+                    .filter(|c| c.lane == track && c.id != 0 && c.kind != SignalKind::Audio)
                     .map(|c| ClipSession {
                         id: c.id,
                         start_beats: c.start_beats,
@@ -523,6 +541,10 @@ impl StudioApp {
         if recording && self.recorder.is_none() {
             let start = (self.control.position_beats() as f32).max(0.0).floor();
             self.recorder = Some(MidiRecorder::new(start));
+            self.record_start_beat = start;
+            if let Some(ar) = self.audio_recorder.as_mut() {
+                ar.start();
+            }
             let track = self.session.mixer.selected.min(NUM_TRACKS - 1);
             let armed = self.session.mixer.channels.get(track).map(|c| c.armed).unwrap_or(false);
             if armed {
@@ -554,14 +576,68 @@ impl StudioApp {
         } else if !recording && self.recorder.is_some() {
             let abs = self.control.position_beats() as f32;
             let finished = self.recorder.as_mut().map(|rec| rec.finalize(abs)).unwrap_or_default();
-            if let Some((track, _)) = self.record_target {
+            let target = self.record_target;
+            if let Some((track, _)) = target {
                 for note in finished {
                     self.commit_recorded(track, note);
+                }
+            }
+            // Finish audio capture and place it as an audio clip on the armed track
+            if let Some(ar) = self.audio_recorder.as_mut() {
+                let audio = ar.stop();
+                if let Some((track, _)) = target {
+                    self.commit_audio(track, audio);
                 }
             }
             self.recorder = None;
             self.record_target = None;
         }
+    }
+
+    // Place a captured audio buffer as an audio clip on `track`: register the
+    // asset out-of-band, then add the clip at the record-start beat.
+    fn commit_audio(&mut self, track: usize, audio: crate::recorder::RecordedAudio) {
+        let frames = audio.frames();
+        if frames == 0 || self.next_asset_slot >= MAX_AUDIO_ASSETS {
+            return;
+        }
+        let slot = self.next_asset_slot;
+        self.next_asset_slot += 1;
+        let channels = audio.channels.max(1);
+        let sample_rate = audio.sample_rate_hz.max(1) as f32;
+        // Length in beats from the captured frame count at the session tempo
+        let bpm = self.session.transport.bpm.max(1.0);
+        let len_beats = (frames as f32 / sample_rate) * (bpm / 60.0);
+        let start = self.record_start_beat;
+
+        // Persist the take to a WAV next to the session for portability
+        let wav_path = session::recordings_dir().join(format!("take-{slot}.wav"));
+        match crate::recorder::write_wav(&wav_path, &audio) {
+            Ok(()) => self.status = format!("Recorded {}", wav_path.display()),
+            Err(err) => self.status = format!("WAV write failed: {err}"),
+        }
+
+        let samples: Arc<[f32]> = Arc::from(audio.samples);
+        self.control.send_asset(AudioAsset { slot, samples, channels });
+        let id = self.next_clip_id;
+        self.next_clip_id += 1;
+        self.control.send(EngineCommand::AddAudioClip {
+            track: track as u8,
+            id,
+            start_beats: start,
+            len_beats,
+            slot,
+        });
+        let clip = Clip {
+            id,
+            lane: track,
+            name: "Audio".to_string(),
+            start_beats: start,
+            len_beats,
+            kind: geist_ui::theme::SignalKind::Audio,
+        };
+        self.session.timeline.clips.push(clip.clone());
+        self.timeline_mirror.push(clip);
     }
 
     // Append one finalized recorded note to the record clip in the engine and the
@@ -992,6 +1068,10 @@ impl eframe::App for StudioApp {
     // eframe 0.34 hands a root Ui; the shell composes panels via show_inside
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // Drain captured input every frame so the ring never overflows
+        if let Some(ar) = self.audio_recorder.as_mut() {
+            ar.poll();
+        }
         // Open/close the recorder before any notes are captured this frame
         self.sync_recording();
         self.handle_computer_keys(&ctx);

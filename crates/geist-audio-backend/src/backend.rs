@@ -9,7 +9,7 @@
 use geist_core::errors::GeistResult;
 
 use crate::device::DeviceInfo;
-use crate::stream::StreamConfig;
+use crate::stream::{CaptureConsumer, StreamConfig};
 
 // Realtime render callback driven by the backend's audio thread
 // Buffers are device-native interleaved frames; the host bridges to channel-major
@@ -43,6 +43,17 @@ pub trait AudioBackend {
         config: &StreamConfig,
         callback: Box<dyn RenderCallback>,
     ) -> GeistResult<Box<dyn Stream>>;
+
+    // The system default input (capture) device, if one exists
+    fn default_input_device(&self) -> GeistResult<DeviceInfo>;
+
+    // Open and start an input stream, returning the running stream plus the
+    // app-thread consumer that drains captured frames. Default impls without a
+    // capture path may return UnsupportedBackend.
+    fn start_input(
+        &mut self,
+        config: &StreamConfig,
+    ) -> GeistResult<(Box<dyn Stream>, CaptureConsumer)>;
 }
 
 #[cfg(test)]
@@ -87,6 +98,15 @@ mod tests {
             callback.render(&[], &mut output, 2);
             assert!(output.iter().all(|&s| s == 0.5));
             Ok(Box::new(MockStream))
+        }
+        fn default_input_device(&self) -> GeistResult<DeviceInfo> {
+            Err(geist_core::errors::GeistError::UnsupportedBackend("mock has no input"))
+        }
+        fn start_input(
+            &mut self,
+            _config: &StreamConfig,
+        ) -> GeistResult<(Box<dyn Stream>, crate::stream::CaptureConsumer)> {
+            Err(geist_core::errors::GeistError::UnsupportedBackend("mock has no input"))
         }
     }
 

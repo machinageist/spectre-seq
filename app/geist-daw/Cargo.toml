@@ -34,3 +34,5 @@ eframe = "0.34"
 geist-ui = { path = "../../crates/geist-ui" }
 # Workflow profile parsing and startup precedence
 geist-config = { path = "../../crates/geist-config" }
+# WAV encoding for recorded audio clips
+hound = "3.5"

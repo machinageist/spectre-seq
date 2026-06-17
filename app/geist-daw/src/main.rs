@@ -16,6 +16,7 @@ mod graph_view;
 mod gui;
 mod init;
 mod project;
+mod recorder;
 mod session;
 mod studio;
 mod startup;
@@ -37,9 +38,10 @@ fn main() {
         eprintln!("geist-daw: workflow config warning: {diagnostic}");
     }
 
-    // Headless seeds the demo arpeggio; the GUI starts quiet and is played live
-    let (engine, control) = match init::start(options.headless) {
-        Ok(pair) => pair,
+    // Headless seeds the demo arpeggio; the GUI starts quiet and is played live.
+    // An input device, when present, yields a recorder for capturing audio clips.
+    let (engine, control, recorder) = match init::start(options.headless) {
+        Ok(triple) => triple,
         Err(err) => {
             eprintln!("geist-daw: failed to start audio: {err}");
             std::process::exit(1);
@@ -48,7 +50,7 @@ fn main() {
 
     if options.headless {
         run_headless(engine, control);
-    } else if let Err(err) = run_gui(engine, control, options.classic, ui_state) {
+    } else if let Err(err) = run_gui(engine, control, recorder, options.classic, ui_state) {
         eprintln!("geist-daw: GUI error: {err}");
         std::process::exit(1);
     }
@@ -58,6 +60,7 @@ fn main() {
 fn run_gui(
     engine: Engine,
     control: EngineControl,
+    recorder: Option<recorder::AudioRecorder>,
     classic: bool,
     ui_state: geist_ui::state::UIState,
 ) -> eframe::Result<()> {
@@ -74,7 +77,7 @@ fn run_gui(
             let app: Box<dyn eframe::App> = if classic {
                 Box::new(gui::GeistApp::new(engine, control))
             } else {
-                Box::new(studio::StudioApp::with_ui_state(engine, control, ui_state))
+                Box::new(studio::StudioApp::with_ui_state(engine, control, recorder, ui_state))
             };
             Ok(app)
         }),

@@ -22,5 +22,5 @@ pub mod prelude {
     pub use crate::bridge::{BlockBridge, BlockProcessor};
     pub use crate::cpal_backend::CpalBackend;
     pub use crate::device::DeviceInfo;
-    pub use crate::stream::{StreamConfig, XrunCounter};
+    pub use crate::stream::{capture_ring, CaptureConsumer, CaptureProducer, StreamConfig, XrunCounter};
 }
