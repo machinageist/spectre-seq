@@ -36,36 +36,36 @@ pub enum EngineCommand {
     SetPlaying(bool),
     // Set the transport tempo in beats per minute
     SetBpm(f32),
-    // Set the base filter cutoff in hertz
-    SetCutoff(f32),
-    // Set the filter resonance
-    SetResonance(f32),
+    // Set a track's base filter cutoff in hertz
+    SetCutoff { track: u8, hz: f32 },
+    // Set a track's filter resonance
+    SetResonance { track: u8, resonance: f32 },
     // Set the master output gain
     SetGain(f32),
-    // Toggle the delay effect
-    SetDelay(bool),
-    // Set the delay time in seconds (both channels)
-    SetDelayTime(f32),
-    // Set the delay feedback amount
-    SetDelayFeedback(f32),
-    // Set the delay dry/wet mix
-    SetDelayMix(f32),
-    // Toggle the reverb effect
-    SetReverb(bool),
-    // Set the reverb dry/wet mix
-    SetReverbMix(f32),
-    // Set oscillator A unison voice count
-    SetUnisonVoices(usize),
-    // Set oscillator A unison detune spread in cents
-    SetDetune(f32),
-    // Set the oscillator A/B blend (0 = sine, 1 = saw)
-    SetOscMix(f32),
-    // Set oscillator B's pitch offset in semitones
-    SetOscBSemis(f32),
-    // Set the amplitude ADSR (attack/decay/release seconds, sustain 0..1)
-    SetAmpEnv { attack: f32, decay: f32, sustain: f32, release: f32 },
-    // Set the filter ADSR (attack/decay/release seconds, sustain 0..1)
-    SetFilterEnv { attack: f32, decay: f32, sustain: f32, release: f32 },
+    // Toggle a track's delay effect
+    SetDelay { track: u8, on: bool },
+    // Set a track's delay time in seconds (both channels)
+    SetDelayTime { track: u8, seconds: f32 },
+    // Set a track's delay feedback amount
+    SetDelayFeedback { track: u8, feedback: f32 },
+    // Set a track's delay dry/wet mix
+    SetDelayMix { track: u8, mix: f32 },
+    // Toggle a track's reverb effect
+    SetReverb { track: u8, on: bool },
+    // Set a track's reverb dry/wet mix
+    SetReverbMix { track: u8, mix: f32 },
+    // Set a track's oscillator A unison voice count
+    SetUnisonVoices { track: u8, voices: usize },
+    // Set a track's oscillator A unison detune spread in cents
+    SetDetune { track: u8, cents: f32 },
+    // Set a track's oscillator A/B blend (0 = sine, 1 = saw)
+    SetOscMix { track: u8, mix: f32 },
+    // Set a track's oscillator B pitch offset in semitones
+    SetOscBSemis { track: u8, semis: f32 },
+    // Set a track's amplitude ADSR (attack/decay/release seconds, sustain 0..1)
+    SetAmpEnv { track: u8, attack: f32, decay: f32, sustain: f32, release: f32 },
+    // Set a track's filter ADSR (attack/decay/release seconds, sustain 0..1)
+    SetFilterEnv { track: u8, attack: f32, decay: f32, sustain: f32, release: f32 },
     // Toggle one step-sequencer cell on a track
     SetCell { track: u8, step: u8, row: u8, on: bool },
     // Clear a track's whole step pattern

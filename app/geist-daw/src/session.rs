@@ -25,28 +25,25 @@ const SESSION_FILE: &str = "geist-studio.gproj";
 // Node tag carrying the global macros and per-track levels
 const MACROS_NODE_KIND: &str = "geist-macros";
 
-// Macro parameter ids on the macros node
-const PARAM_CUTOFF: u32 = 0;
-const PARAM_RESONANCE: u32 = 1;
+// Master gain param id on the macros node (the one remaining global macro)
 const PARAM_GAIN: u32 = 2;
-const PARAM_DELAY: u32 = 5;
-const PARAM_REVERB: u32 = 6;
-const PARAM_REVERB_MIX: u32 = 7;
-// Amp ADSR param ids (attack/decay/sustain/release)
-const PARAM_AMP_ENV_BASE: u32 = 8;
-// Filter ADSR param ids (attack/decay/sustain/release)
-const PARAM_FILTER_ENV_BASE: u32 = 12;
-// Delay param ids
-const PARAM_DELAY_TIME: u32 = 16;
-const PARAM_DELAY_FEEDBACK: u32 = 17;
-const PARAM_DELAY_MIX: u32 = 18;
-// Oscillator param ids
-const PARAM_OSC_MIX: u32 = 19;
-const PARAM_OSC_B_SEMIS: u32 = 20;
-// Per-track level param ids start here, one per track
+// Per-track param id bases on the macros node; each holds one value per track at
+// base + track, except envelopes which hold four values at base + track*4 + i.
 const PARAM_TRACK_LEVEL_BASE: u32 = 100;
-// Per-track pan param ids start here, one per track
 const PARAM_TRACK_PAN_BASE: u32 = 200;
+const PARAM_TRACK_CUTOFF_BASE: u32 = 300;
+const PARAM_TRACK_RESONANCE_BASE: u32 = 310;
+const PARAM_TRACK_DELAY_BASE: u32 = 320;
+const PARAM_TRACK_DELAY_TIME_BASE: u32 = 330;
+const PARAM_TRACK_DELAY_FEEDBACK_BASE: u32 = 340;
+const PARAM_TRACK_DELAY_MIX_BASE: u32 = 350;
+const PARAM_TRACK_REVERB_BASE: u32 = 360;
+const PARAM_TRACK_REVERB_MIX_BASE: u32 = 370;
+const PARAM_TRACK_OSC_MIX_BASE: u32 = 380;
+const PARAM_TRACK_OSC_B_SEMIS_BASE: u32 = 390;
+// Four ids per track: base + track*4 + i
+const PARAM_TRACK_AMP_ENV_BASE: u32 = 400;
+const PARAM_TRACK_FILTER_ENV_BASE: u32 = 420;
 
 // Clip ids distinguishing the piano-roll clip from the step-grid clip
 const PIANO_CLIP_ID: u64 = 0;
@@ -65,25 +62,16 @@ pub struct NoteSession {
     pub velocity: f32,
 }
 
-// One track's persisted state: mix flags, level, step gates, and clip notes
+// One track's persisted state: its full instrument patch, its effects chain,
+// mix flags, step gates, and clip notes. Every synth/fx macro is per-track.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TrackSession {
     pub level: f32,
     pub pan: f32,
     pub muted: bool,
     pub soloed: bool,
-    // Step gates that are on, as (row, step)
-    pub gates: Vec<(u8, u8)>,
-    pub notes: Vec<NoteSession>,
-}
-
-// The whole studio session, independent of the on-disk encoding
-#[derive(Clone, Debug, PartialEq)]
-pub struct StudioSession {
-    pub bpm: f32,
     pub cutoff_hz: f32,
     pub resonance: f32,
-    pub gain: f32,
     pub delay_on: bool,
     pub delay_time: f32,
     pub delay_feedback: f32,
@@ -96,6 +84,17 @@ pub struct StudioSession {
     // Amp/filter ADSR macros [attack, decay, sustain, release]
     pub amp_env: [f32; 4],
     pub filter_env: [f32; 4],
+    // Step gates that are on, as (row, step)
+    pub gates: Vec<(u8, u8)>,
+    pub notes: Vec<NoteSession>,
+}
+
+// The whole studio session, independent of the on-disk encoding. Only the
+// transport tempo and master gain are global; everything else is per-track.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StudioSession {
+    pub bpm: f32,
+    pub gain: f32,
     pub tracks: Vec<TrackSession>,
 }
 
@@ -105,35 +104,28 @@ impl StudioSession {
         let mut project = ProjectFile::new("Geist Studio Session");
         project.meta.tempo_bpm = self.bpm as f64;
 
-        // Macros node: global filter/fx plus a level param per track
-        let mut params = vec![
-            ParamValue { id: PARAM_CUTOFF, value: self.cutoff_hz },
-            ParamValue { id: PARAM_RESONANCE, value: self.resonance },
-            ParamValue { id: PARAM_GAIN, value: self.gain },
-            ParamValue { id: PARAM_DELAY, value: bool_to_f32(self.delay_on) },
-            ParamValue { id: PARAM_DELAY_TIME, value: self.delay_time },
-            ParamValue { id: PARAM_DELAY_FEEDBACK, value: self.delay_feedback },
-            ParamValue { id: PARAM_DELAY_MIX, value: self.delay_mix },
-            ParamValue { id: PARAM_REVERB, value: bool_to_f32(self.reverb_on) },
-            ParamValue { id: PARAM_REVERB_MIX, value: self.reverb_mix },
-            ParamValue { id: PARAM_OSC_MIX, value: self.osc_mix },
-            ParamValue { id: PARAM_OSC_B_SEMIS, value: self.osc_b_semis },
-        ];
-        for (i, &value) in self.amp_env.iter().enumerate() {
-            params.push(ParamValue { id: PARAM_AMP_ENV_BASE + i as u32, value });
-        }
-        for (i, &value) in self.filter_env.iter().enumerate() {
-            params.push(ParamValue { id: PARAM_FILTER_ENV_BASE + i as u32, value });
-        }
+        // Macros node: master gain plus a full per-track patch and fx block
+        let mut params = vec![ParamValue { id: PARAM_GAIN, value: self.gain }];
         for (track, state) in self.tracks.iter().enumerate() {
-            params.push(ParamValue {
-                id: PARAM_TRACK_LEVEL_BASE + track as u32,
-                value: state.level,
-            });
-            params.push(ParamValue {
-                id: PARAM_TRACK_PAN_BASE + track as u32,
-                value: state.pan,
-            });
+            let t = track as u32;
+            params.push(ParamValue { id: PARAM_TRACK_LEVEL_BASE + t, value: state.level });
+            params.push(ParamValue { id: PARAM_TRACK_PAN_BASE + t, value: state.pan });
+            params.push(ParamValue { id: PARAM_TRACK_CUTOFF_BASE + t, value: state.cutoff_hz });
+            params.push(ParamValue { id: PARAM_TRACK_RESONANCE_BASE + t, value: state.resonance });
+            params.push(ParamValue { id: PARAM_TRACK_DELAY_BASE + t, value: bool_to_f32(state.delay_on) });
+            params.push(ParamValue { id: PARAM_TRACK_DELAY_TIME_BASE + t, value: state.delay_time });
+            params.push(ParamValue { id: PARAM_TRACK_DELAY_FEEDBACK_BASE + t, value: state.delay_feedback });
+            params.push(ParamValue { id: PARAM_TRACK_DELAY_MIX_BASE + t, value: state.delay_mix });
+            params.push(ParamValue { id: PARAM_TRACK_REVERB_BASE + t, value: bool_to_f32(state.reverb_on) });
+            params.push(ParamValue { id: PARAM_TRACK_REVERB_MIX_BASE + t, value: state.reverb_mix });
+            params.push(ParamValue { id: PARAM_TRACK_OSC_MIX_BASE + t, value: state.osc_mix });
+            params.push(ParamValue { id: PARAM_TRACK_OSC_B_SEMIS_BASE + t, value: state.osc_b_semis });
+            for (i, &value) in state.amp_env.iter().enumerate() {
+                params.push(ParamValue { id: PARAM_TRACK_AMP_ENV_BASE + t * 4 + i as u32, value });
+            }
+            for (i, &value) in state.filter_env.iter().enumerate() {
+                params.push(ParamValue { id: PARAM_TRACK_FILTER_ENV_BASE + t * 4 + i as u32, value });
+            }
         }
         project.graph.nodes.push(NodeEntry {
             id: 0,
@@ -203,25 +195,8 @@ impl StudioSession {
             .find(|node| node.kind == MACROS_NODE_KIND);
         if let Some(node) = macros {
             for param in &node.params {
-                match param.id {
-                    PARAM_CUTOFF => session.cutoff_hz = param.value,
-                    PARAM_RESONANCE => session.resonance = param.value,
-                    PARAM_GAIN => session.gain = param.value,
-                    PARAM_DELAY => session.delay_on = param.value >= 0.5,
-                    PARAM_DELAY_TIME => session.delay_time = param.value,
-                    PARAM_DELAY_FEEDBACK => session.delay_feedback = param.value,
-                    PARAM_DELAY_MIX => session.delay_mix = param.value,
-                    PARAM_REVERB => session.reverb_on = param.value >= 0.5,
-                    PARAM_REVERB_MIX => session.reverb_mix = param.value,
-                    PARAM_OSC_MIX => session.osc_mix = param.value,
-                    PARAM_OSC_B_SEMIS => session.osc_b_semis = param.value,
-                    id if (PARAM_AMP_ENV_BASE..PARAM_AMP_ENV_BASE + 4).contains(&id) => {
-                        session.amp_env[(id - PARAM_AMP_ENV_BASE) as usize] = param.value;
-                    }
-                    id if (PARAM_FILTER_ENV_BASE..PARAM_FILTER_ENV_BASE + 4).contains(&id) => {
-                        session.filter_env[(id - PARAM_FILTER_ENV_BASE) as usize] = param.value;
-                    }
-                    _ => {}
+                if param.id == PARAM_GAIN {
+                    session.gain = param.value;
                 }
             }
         }
@@ -234,13 +209,29 @@ impl StudioSession {
             state.muted = entry.muted;
             state.soloed = entry.soloed;
             if let Some(node) = macros {
-                let level_id = PARAM_TRACK_LEVEL_BASE + index as u32;
-                if let Some(param) = node.params.iter().find(|p| p.id == level_id) {
-                    state.level = param.value;
-                }
-                let pan_id = PARAM_TRACK_PAN_BASE + index as u32;
-                if let Some(param) = node.params.iter().find(|p| p.id == pan_id) {
-                    state.pan = param.value;
+                let t = index as u32;
+                let read = |base: u32| node.params.iter().find(|p| p.id == base + t).map(|p| p.value);
+                if let Some(v) = read(PARAM_TRACK_LEVEL_BASE) { state.level = v; }
+                if let Some(v) = read(PARAM_TRACK_PAN_BASE) { state.pan = v; }
+                if let Some(v) = read(PARAM_TRACK_CUTOFF_BASE) { state.cutoff_hz = v; }
+                if let Some(v) = read(PARAM_TRACK_RESONANCE_BASE) { state.resonance = v; }
+                if let Some(v) = read(PARAM_TRACK_DELAY_BASE) { state.delay_on = v >= 0.5; }
+                if let Some(v) = read(PARAM_TRACK_DELAY_TIME_BASE) { state.delay_time = v; }
+                if let Some(v) = read(PARAM_TRACK_DELAY_FEEDBACK_BASE) { state.delay_feedback = v; }
+                if let Some(v) = read(PARAM_TRACK_DELAY_MIX_BASE) { state.delay_mix = v; }
+                if let Some(v) = read(PARAM_TRACK_REVERB_BASE) { state.reverb_on = v >= 0.5; }
+                if let Some(v) = read(PARAM_TRACK_REVERB_MIX_BASE) { state.reverb_mix = v; }
+                if let Some(v) = read(PARAM_TRACK_OSC_MIX_BASE) { state.osc_mix = v; }
+                if let Some(v) = read(PARAM_TRACK_OSC_B_SEMIS_BASE) { state.osc_b_semis = v; }
+                for i in 0..4u32 {
+                    let amp_id = PARAM_TRACK_AMP_ENV_BASE + t * 4 + i;
+                    if let Some(param) = node.params.iter().find(|p| p.id == amp_id) {
+                        state.amp_env[i as usize] = param.value;
+                    }
+                    let flt_id = PARAM_TRACK_FILTER_ENV_BASE + t * 4 + i;
+                    if let Some(param) = node.params.iter().find(|p| p.id == flt_id) {
+                        state.filter_env[i as usize] = param.value;
+                    }
                 }
             }
             state.notes.clear();
@@ -348,12 +339,14 @@ pub fn load(defaults: &StudioSession) -> Result<StudioSession, ProjectError> {
 mod tests {
     use super::*;
 
-    fn defaults() -> StudioSession {
-        StudioSession {
-            bpm: 120.0,
+    fn track_defaults() -> TrackSession {
+        TrackSession {
+            level: 0.8,
+            pan: 0.0,
+            muted: false,
+            soloed: false,
             cutoff_hz: 1_500.0,
             resonance: 0.9,
-            gain: 1.0,
             delay_on: false,
             delay_time: 0.25,
             delay_feedback: 0.3,
@@ -364,40 +357,41 @@ mod tests {
             osc_b_semis: 0.0,
             amp_env: [0.005, 0.1, 0.8, 0.3],
             filter_env: [0.01, 0.2, 0.3, 0.3],
-            tracks: (0..NUM_TRACKS)
-                .map(|_| TrackSession {
-                    level: 0.8,
-                    pan: 0.0,
-                    muted: false,
-                    soloed: false,
-                    gates: Vec::new(),
-                    notes: Vec::new(),
-                })
-                .collect(),
+            gates: Vec::new(),
+            notes: Vec::new(),
+        }
+    }
+
+    fn defaults() -> StudioSession {
+        StudioSession {
+            bpm: 120.0,
+            gain: 1.0,
+            tracks: (0..NUM_TRACKS).map(|_| track_defaults()).collect(),
         }
     }
 
     fn sample() -> StudioSession {
         let mut s = defaults();
         s.bpm = 140.0;
-        s.cutoff_hz = 820.0;
-        s.resonance = 2.0;
         s.gain = 0.7;
-        s.delay_on = true;
-        s.delay_time = 0.4;
-        s.delay_feedback = 0.55;
-        s.delay_mix = 0.45;
-        s.reverb_on = true;
-        s.reverb_mix = 0.6;
-        s.osc_mix = 0.8;
-        s.osc_b_semis = -12.0;
-        s.amp_env = [0.02, 0.3, 0.6, 1.2];
-        s.filter_env = [0.05, 0.4, 0.2, 0.8];
+        // Each track gets a distinct patch + fx to prove per-track persistence
         s.tracks[0].level = 0.5;
         s.tracks[0].pan = -0.5;
         s.tracks[0].muted = true;
+        s.tracks[0].cutoff_hz = 820.0;
+        s.tracks[0].resonance = 2.0;
+        s.tracks[0].delay_on = true;
+        s.tracks[0].delay_time = 0.4;
+        s.tracks[0].delay_feedback = 0.55;
+        s.tracks[0].delay_mix = 0.45;
+        s.tracks[0].amp_env = [0.02, 0.3, 0.6, 1.2];
         s.tracks[1].pan = 0.75;
         s.tracks[1].soloed = true;
+        s.tracks[1].reverb_on = true;
+        s.tracks[1].reverb_mix = 0.6;
+        s.tracks[1].osc_mix = 0.8;
+        s.tracks[1].osc_b_semis = -12.0;
+        s.tracks[1].filter_env = [0.05, 0.4, 0.2, 0.8];
         s.tracks[1].gates = vec![(0, 0), (2, 4), (5, 12)];
         // Velocity 1.0 maps cleanly through the 0..127 MIDI range
         s.tracks[2].notes = vec![

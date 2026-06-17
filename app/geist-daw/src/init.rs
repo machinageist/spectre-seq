@@ -17,7 +17,6 @@ use crate::control::{control_plane, EngineControl};
 use crate::engine::{
     default_grid_for, Engine, SynthProcessor, Track, DEFAULT_BPM, NUM_TRACKS, TRACK_BASE_MIDI,
 };
-use crate::fx::FxChain;
 
 // Fixed render block size; small enough for low latency, widely supported
 const BLOCK_FRAMES: u32 = 512;
@@ -38,18 +37,21 @@ pub fn start(rolling: bool) -> GeistResult<(Engine, EngineControl)> {
     let channels = device.max_output_channels.clamp(1, PREFERRED_CHANNELS);
     let audio = AudioConfig::new(sample_rate_hz, BLOCK_FRAMES, 0, channels)?;
 
-    // Build and prepare each track's instrument on the app thread before it
-    // crosses to the audio thread
+    // Build and prepare each track's instrument and effects chain on the app
+    // thread before it crosses to the audio thread
     let mut tracks = Vec::with_capacity(NUM_TRACKS);
     for (index, &base_midi) in TRACK_BASE_MIDI.iter().enumerate() {
-        let mut track = Track::new(sample_rate_hz, POLYPHONY, base_midi, default_grid_for(index));
+        let mut track = Track::new(
+            sample_rate_hz,
+            POLYPHONY,
+            base_midi,
+            default_grid_for(index),
+            channels as usize,
+            BLOCK_FRAMES as usize,
+        );
         track.prepare(&audio);
         tracks.push(track);
     }
-
-    // Build and prepare the effects chain on the app thread
-    let mut fx = FxChain::new(channels as usize, BLOCK_FRAMES as usize, sample_rate_hz);
-    fx.prepare(&audio);
 
     let block_len = channels as usize * BLOCK_FRAMES as usize;
     let (control, sink) = control_plane(NUM_TRACKS);
@@ -58,7 +60,6 @@ pub fn start(rolling: bool) -> GeistResult<(Engine, EngineControl)> {
         sample_rate_hz,
         block_len,
         sink,
-        fx,
         rolling,
         DEFAULT_BPM,
     );

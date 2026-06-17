@@ -170,16 +170,22 @@ impl GeistApp {
         self.reverb_mix = patch.reverb_mix;
 
         self.control.send(EngineCommand::SetBpm(patch.bpm));
-        self.control.send(EngineCommand::SetCutoff(patch.cutoff_hz));
-        self.control.send(EngineCommand::SetResonance(patch.resonance));
         self.control.send(EngineCommand::SetGain(patch.gain));
-        self.control
-            .send(EngineCommand::SetUnisonVoices(patch.unison_voices));
-        self.control.send(EngineCommand::SetDetune(patch.detune_cents));
-        self.control.send(EngineCommand::SetDelay(patch.delay_on));
-        self.control.send(EngineCommand::SetReverb(patch.reverb_on));
-        self.control
-            .send(EngineCommand::SetReverbMix(patch.reverb_mix));
+        // The classic GUI runs one global patch; broadcast it to every track
+        self.broadcast(|track| EngineCommand::SetCutoff { track, hz: patch.cutoff_hz });
+        self.broadcast(|track| EngineCommand::SetResonance { track, resonance: patch.resonance });
+        self.broadcast(|track| EngineCommand::SetUnisonVoices { track, voices: patch.unison_voices });
+        self.broadcast(|track| EngineCommand::SetDetune { track, cents: patch.detune_cents });
+        self.broadcast(|track| EngineCommand::SetDelay { track, on: patch.delay_on });
+        self.broadcast(|track| EngineCommand::SetReverb { track, on: patch.reverb_on });
+        self.broadcast(|track| EngineCommand::SetReverbMix { track, mix: patch.reverb_mix });
+    }
+
+    // Send a per-track command to every track; the classic GUI runs one patch
+    fn broadcast(&mut self, make: impl Fn(u8) -> EngineCommand) {
+        for track in 0..NUM_TRACKS as u8 {
+            self.control.send(make(track));
+        }
     }
 
     // Emit note on/off on the selected track as a key's held state changes
@@ -429,8 +435,8 @@ impl GeistApp {
                 .integer()
                 .text("Unison");
             if ui.add(voices).changed() {
-                self.control
-                    .send(EngineCommand::SetUnisonVoices(self.unison_voices));
+                let voices = self.unison_voices;
+                self.broadcast(|track| EngineCommand::SetUnisonVoices { track, voices });
             }
             if Knob::new(&mut self.detune_cents, 0.0..=50.0)
                 .label("Detune")
@@ -439,7 +445,8 @@ impl GeistApp {
                 .show(ui)
                 .changed()
             {
-                self.control.send(EngineCommand::SetDetune(self.detune_cents));
+                let cents = self.detune_cents;
+                self.broadcast(|track| EngineCommand::SetDetune { track, cents });
             }
         });
     }
@@ -455,7 +462,8 @@ impl GeistApp {
                 .show(ui)
                 .changed()
             {
-                self.control.send(EngineCommand::SetCutoff(self.cutoff_hz));
+                let hz = self.cutoff_hz;
+                self.broadcast(|track| EngineCommand::SetCutoff { track, hz });
             }
             if Knob::new(&mut self.resonance, 0.5..=6.0)
                 .label("Reso")
@@ -463,7 +471,8 @@ impl GeistApp {
                 .show(ui)
                 .changed()
             {
-                self.control.send(EngineCommand::SetResonance(self.resonance));
+                let resonance = self.resonance;
+                self.broadcast(|track| EngineCommand::SetResonance { track, resonance });
             }
             if Knob::new(&mut self.gain, 0.0..=1.5)
                 .label("Master")
@@ -481,10 +490,12 @@ impl GeistApp {
         ui.horizontal(|ui| {
             ui.label("FX:");
             if ui.toggle_value(&mut self.delay_on, "Delay").changed() {
-                self.control.send(EngineCommand::SetDelay(self.delay_on));
+                let on = self.delay_on;
+                self.broadcast(|track| EngineCommand::SetDelay { track, on });
             }
             if ui.toggle_value(&mut self.reverb_on, "Reverb").changed() {
-                self.control.send(EngineCommand::SetReverb(self.reverb_on));
+                let on = self.reverb_on;
+                self.broadcast(|track| EngineCommand::SetReverb { track, on });
             }
             if Knob::new(&mut self.reverb_mix, 0.0..=1.0)
                 .label("Verb Mix")
@@ -493,8 +504,8 @@ impl GeistApp {
                 .show(ui)
                 .changed()
             {
-                self.control
-                    .send(EngineCommand::SetReverbMix(self.reverb_mix));
+                let mix = self.reverb_mix;
+                self.broadcast(|track| EngineCommand::SetReverbMix { track, mix });
             }
         });
     }

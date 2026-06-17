@@ -278,9 +278,43 @@ impl NoteClip {
     }
 }
 
-// One mixer track: an instrument, its step pattern, its note clip, and mix state
+// A track's instrument patch: every synth macro is now per-track, so each track
+// has an independent sound. Applied to the track's SynthNode each block.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Patch {
+    pub cutoff_hz: f32,
+    pub resonance: f32,
+    pub unison_voices: usize,
+    pub detune_cents: f32,
+    pub osc_mix: f32,
+    pub osc_b_semis: f32,
+    // [attack, decay, sustain, release]
+    pub amp_env: [f32; 4],
+    pub filter_env: [f32; 4],
+}
+
+impl Default for Patch {
+    // Musical defaults matching the synth's startup voice
+    fn default() -> Self {
+        Self {
+            cutoff_hz: DEFAULT_CUTOFF_HZ,
+            resonance: DEFAULT_RESONANCE,
+            unison_voices: DEFAULT_UNISON_VOICES,
+            detune_cents: DEFAULT_DETUNE_CENTS,
+            osc_mix: DEFAULT_OSC_MIX,
+            osc_b_semis: DEFAULT_OSC_B_SEMIS,
+            amp_env: DEFAULT_AMP_ENV,
+            filter_env: DEFAULT_FILTER_ENV,
+        }
+    }
+}
+
+// One mixer track: an instrument, its patch, its own effects chain, its step
+// pattern, its note clip, and mix state
 pub struct Track {
     node: SynthNode,
+    patch: Patch,
+    fx: FxChain,
     sequencer: Sequencer,
     clip: NoteClip,
     level: f32,
@@ -290,10 +324,20 @@ pub struct Track {
 }
 
 impl Track {
-    // Build a track with its base note and seed pattern; node still needs prepare
-    pub fn new(sample_rate_hz: u32, polyphony: usize, base_midi: u8, grid: Grid) -> Self {
+    // Build a track with its base note and seed pattern; node + fx still need
+    // prepare. The per-track effects chain is sized for the stream block here.
+    pub fn new(
+        sample_rate_hz: u32,
+        polyphony: usize,
+        base_midi: u8,
+        grid: Grid,
+        channels: usize,
+        block_frames: usize,
+    ) -> Self {
         Self {
             node: SynthNode::new(sample_rate_hz as f32, polyphony),
+            patch: Patch::default(),
+            fx: FxChain::new(channels, block_frames, sample_rate_hz),
             sequencer: Sequencer::new(base_midi, grid),
             clip: NoteClip::new(DEFAULT_CLIP_LEN_BEATS),
             level: DEFAULT_TRACK_LEVEL,
@@ -303,9 +347,22 @@ impl Track {
         }
     }
 
-    // Prepare the track's instrument for the stream
+    // Prepare the track's instrument and effects chain for the stream
     pub fn prepare(&mut self, config: &geist_core::config::AudioConfig) {
         self.node.prepare(config);
+        self.fx.prepare(config);
+    }
+
+    // Push the patch macros into the instrument node for this block
+    fn apply_patch(&mut self) {
+        self.node.set_unison(self.patch.unison_voices, self.patch.detune_cents);
+        self.node.set_filter(self.patch.cutoff_hz, self.patch.resonance);
+        self.node.set_osc_mix(self.patch.osc_mix);
+        self.node.set_osc_b_semitones(self.patch.osc_b_semis);
+        let amp = self.patch.amp_env;
+        self.node.set_amp_env(amp[0], amp[1], amp[2], amp[3]);
+        let flt = self.patch.filter_env;
+        self.node.set_filter_env(flt[0], flt[1], flt[2], flt[3]);
     }
 }
 
@@ -317,22 +374,8 @@ pub struct SynthProcessor {
     sink: EngineSink,
     // Transport driving the tempo-synced sequencers
     transport: Transport,
-    // Macro filter base cutoff/resonance, applied to every track each block
-    cutoff_hz: f32,
-    resonance: f32,
-    // Oscillator A unison voices and detune, applied to every track each block
-    unison_voices: usize,
-    detune_cents: f32,
-    // Oscillator A/B blend and osc B pitch offset, applied to every track each block
-    osc_mix: f32,
-    osc_b_semis: f32,
-    // Amp/filter ADSR macros [attack, decay, sustain, release], applied per block
-    amp_env: [f32; 4],
-    filter_env: [f32; 4],
-    // Master output gain applied post-effects
+    // Master output gain applied post-mix
     gain: f32,
-    // Post-synth effects chain
-    fx: FxChain,
     // Per-track note events, preallocated so process_block never allocates
     track_events: Vec<Vec<NoteEvent>>,
     // One track's rendered block, summed into the master with its level
@@ -340,13 +383,12 @@ pub struct SynthProcessor {
 }
 
 impl SynthProcessor {
-    // Assemble the processor; tracks and fx must already be prepared
+    // Assemble the processor; each track owns its prepared instrument and fx
     pub fn new(
         tracks: Vec<Track>,
         sample_rate_hz: u32,
         block_len: usize,
         sink: EngineSink,
-        fx: FxChain,
         rolling: bool,
         bpm: f64,
     ) -> Self {
@@ -362,16 +404,7 @@ impl SynthProcessor {
             sample_rate_hz,
             sink,
             transport,
-            cutoff_hz: DEFAULT_CUTOFF_HZ,
-            resonance: DEFAULT_RESONANCE,
-            unison_voices: DEFAULT_UNISON_VOICES,
-            detune_cents: DEFAULT_DETUNE_CENTS,
-            osc_mix: DEFAULT_OSC_MIX,
-            osc_b_semis: DEFAULT_OSC_B_SEMIS,
-            amp_env: DEFAULT_AMP_ENV,
-            filter_env: DEFAULT_FILTER_ENV,
             gain: DEFAULT_GAIN,
-            fx,
             track_events,
             scratch: vec![0.0; block_len],
         }
@@ -386,16 +419,7 @@ impl BlockProcessor for SynthProcessor {
             sample_rate_hz,
             sink,
             transport,
-            cutoff_hz,
-            resonance,
-            unison_voices,
-            detune_cents,
-            osc_mix,
-            osc_b_semis,
-            amp_env,
-            filter_env,
             gain,
-            fx,
             track_events,
             scratch,
         } = self;
@@ -436,24 +460,76 @@ impl BlockProcessor for SynthProcessor {
                 EngineCommand::SetBpm(bpm) => {
                     transport.tempo_map_mut().set_tempo(0.0, bpm as f64);
                 }
-                EngineCommand::SetCutoff(hz) => *cutoff_hz = hz,
-                EngineCommand::SetResonance(res) => *resonance = res,
-                EngineCommand::SetGain(value) => *gain = value,
-                EngineCommand::SetDelay(on) => fx.set_delay(on),
-                EngineCommand::SetDelayTime(seconds) => fx.set_delay_time(seconds),
-                EngineCommand::SetDelayFeedback(feedback) => fx.set_delay_feedback(feedback),
-                EngineCommand::SetDelayMix(mix) => fx.set_delay_mix(mix),
-                EngineCommand::SetReverb(on) => fx.set_reverb(on),
-                EngineCommand::SetReverbMix(mix) => fx.set_reverb_mix(mix),
-                EngineCommand::SetUnisonVoices(voices) => *unison_voices = voices,
-                EngineCommand::SetDetune(cents) => *detune_cents = cents,
-                EngineCommand::SetOscMix(mix) => *osc_mix = mix,
-                EngineCommand::SetOscBSemis(semis) => *osc_b_semis = semis,
-                EngineCommand::SetAmpEnv { attack, decay, sustain, release } => {
-                    *amp_env = [attack, decay, sustain, release];
+                EngineCommand::SetCutoff { track, hz } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.cutoff_hz = hz;
+                    }
                 }
-                EngineCommand::SetFilterEnv { attack, decay, sustain, release } => {
-                    *filter_env = [attack, decay, sustain, release];
+                EngineCommand::SetResonance { track, resonance } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.resonance = resonance;
+                    }
+                }
+                EngineCommand::SetGain(value) => *gain = value,
+                EngineCommand::SetDelay { track, on } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.fx.set_delay(on);
+                    }
+                }
+                EngineCommand::SetDelayTime { track, seconds } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.fx.set_delay_time(seconds);
+                    }
+                }
+                EngineCommand::SetDelayFeedback { track, feedback } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.fx.set_delay_feedback(feedback);
+                    }
+                }
+                EngineCommand::SetDelayMix { track, mix } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.fx.set_delay_mix(mix);
+                    }
+                }
+                EngineCommand::SetReverb { track, on } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.fx.set_reverb(on);
+                    }
+                }
+                EngineCommand::SetReverbMix { track, mix } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.fx.set_reverb_mix(mix);
+                    }
+                }
+                EngineCommand::SetUnisonVoices { track, voices } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.unison_voices = voices;
+                    }
+                }
+                EngineCommand::SetDetune { track, cents } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.detune_cents = cents;
+                    }
+                }
+                EngineCommand::SetOscMix { track, mix } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.osc_mix = mix;
+                    }
+                }
+                EngineCommand::SetOscBSemis { track, semis } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.osc_b_semis = semis;
+                    }
+                }
+                EngineCommand::SetAmpEnv { track, attack, decay, sustain, release } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.amp_env = [attack, decay, sustain, release];
+                    }
+                }
+                EngineCommand::SetFilterEnv { track, attack, decay, sustain, release } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.filter_env = [attack, decay, sustain, release];
+                    }
                 }
                 EngineCommand::SetCell { track, step, row, on } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
@@ -520,14 +596,10 @@ impl BlockProcessor for SynthProcessor {
                 track.sequencer.advance_to_beat(beat, events);
                 track.clip.advance_to_beat(beat, events);
             }
-            track.node.set_unison(*unison_voices, *detune_cents);
-            track.node.set_filter(*cutoff_hz, *resonance);
-            track.node.set_osc_mix(*osc_mix);
-            track.node.set_osc_b_semitones(*osc_b_semis);
-            track.node.set_amp_env(amp_env[0], amp_env[1], amp_env[2], amp_env[3]);
-            track.node.set_filter_env(filter_env[0], filter_env[1], filter_env[2], filter_env[3]);
+            track.apply_patch();
 
-            // Render the track into scratch, then free the borrow before summing
+            // Render the track into scratch, then run its own effects chain in
+            // place, then free the borrow before summing
             {
                 let mut ctx = ProcessContext::new(
                     frames,
@@ -540,6 +612,7 @@ impl BlockProcessor for SynthProcessor {
                 );
                 track.node.process(&mut ctx);
             }
+            track.fx.process(scratch, frames);
             // Sum the audible contribution per channel, panned, capturing the peak
             let audible = !track.muted && (!any_solo || track.soloed);
             let mut track_peak = 0.0f32;
@@ -562,7 +635,6 @@ impl BlockProcessor for SynthProcessor {
                 meter.store(track_peak);
             }
         }
-        fx.process(output, frames);
 
         // Advance the transport past this block for the next one
         if rolling {
@@ -641,15 +713,20 @@ mod tests {
         let cfg = config(sample_rate_hz, block, channels);
         let mut tracks = Vec::new();
         for index in 0..NUM_TRACKS {
-            let mut track =
-                Track::new(sample_rate_hz, 8, TRACK_BASE_MIDI[index], default_grid_for(index));
+            let mut track = Track::new(
+                sample_rate_hz,
+                8,
+                TRACK_BASE_MIDI[index],
+                default_grid_for(index),
+                channels as usize,
+                block as usize,
+            );
             track.prepare(&cfg);
             tracks.push(track);
         }
         let (control, sink) = control_plane(NUM_TRACKS);
-        let fx = FxChain::new(channels as usize, block as usize, sample_rate_hz);
         let proc =
-            SynthProcessor::new(tracks, sample_rate_hz, block_len, sink, fx, rolling, DEFAULT_BPM);
+            SynthProcessor::new(tracks, sample_rate_hz, block_len, sink, rolling, DEFAULT_BPM);
         (control, proc, block_len)
     }
 
@@ -855,7 +932,7 @@ mod tests {
                 velocity: 1.0,
             });
             control.send(EngineCommand::RemoveNote { track: 2, pitch: key, start_beats: beat });
-            control.send(EngineCommand::SetCutoff(400.0 + (i % 800) as f32));
+            control.send(EngineCommand::SetCutoff { track: 0, hz: 400.0 + (i % 800) as f32 });
             control.send(EngineCommand::SetBpm(100.0 + (i % 60) as f32));
             proc.process_block(&[], &mut output, 2, frames);
         }
@@ -880,6 +957,70 @@ mod tests {
         }
         assert!(control.track_level(1) > 0.0, "seeded track should meter");
         assert_eq!(control.track_level(0), 0.0, "silent track should read zero");
+    }
+
+    #[test]
+    fn per_track_delay_rings_only_its_own_track() {
+        // Each track now owns its effects chain: a delay on track 0 must leave a
+        // ringing tail on track 0's meter while a track with no delay stays silent.
+        let (mut control, mut proc, len) = processor(false);
+        let frames = len / 2;
+        let mut output = vec![0.0f32; len];
+        control.send(EngineCommand::SetDelay { track: 0, on: true });
+        control.send(EngineCommand::SetDelayTime { track: 0, seconds: 0.05 });
+        control.send(EngineCommand::SetDelayFeedback { track: 0, feedback: 0.6 });
+        control.send(EngineCommand::SetDelayMix { track: 0, mix: 0.8 });
+        control.send(EngineCommand::NoteOn { track: 0, key: 60, velocity: 1.0 });
+        for _ in 0..4 {
+            proc.process_block(&[], &mut output, 2, frames);
+        }
+        control.send(EngineCommand::NoteOff { track: 0, key: 60 });
+        // Run long past the dry note so only the delay feedback can still ring
+        let mut tail = 0.0f32;
+        for _ in 0..200 {
+            proc.process_block(&[], &mut output, 2, frames);
+            tail += control.track_level(0);
+        }
+        assert!(tail > 0.0, "track 0's own delay produced no tail");
+        assert_eq!(control.track_level(2), 0.0, "track 2 has no delay or notes; stays silent");
+    }
+
+    #[test]
+    fn per_track_amp_env_is_independent() {
+        // Each track now owns its patch: a long release on track 2 must outlast a
+        // near-instant release on track 0 for the same gesture.
+        let (mut control, mut proc, len) = processor(false);
+        let frames = len / 2;
+        let mut output = vec![0.0f32; len];
+        control.send(EngineCommand::SetAmpEnv {
+            track: 0,
+            attack: 0.001,
+            decay: 0.01,
+            sustain: 0.0,
+            release: 0.005,
+        });
+        control.send(EngineCommand::SetAmpEnv {
+            track: 2,
+            attack: 0.001,
+            decay: 0.01,
+            sustain: 1.0,
+            release: 2.0,
+        });
+        control.send(EngineCommand::NoteOn { track: 0, key: 60, velocity: 1.0 });
+        control.send(EngineCommand::NoteOn { track: 2, key: 72, velocity: 1.0 });
+        for _ in 0..4 {
+            proc.process_block(&[], &mut output, 2, frames);
+        }
+        control.send(EngineCommand::NoteOff { track: 0, key: 60 });
+        control.send(EngineCommand::NoteOff { track: 2, key: 72 });
+        let mut t0 = 0.0f32;
+        let mut t2 = 0.0f32;
+        for _ in 0..20 {
+            proc.process_block(&[], &mut output, 2, frames);
+            t0 += control.track_level(0);
+            t2 += control.track_level(2);
+        }
+        assert!(t2 > 0.0 && t2 > t0 * 4.0, "track 2's long release should outlast track 0's: t0={t0} t2={t2}");
     }
 
     #[test]
