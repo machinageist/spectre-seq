@@ -15,8 +15,10 @@
 use eframe::egui;
 use geist_config::commands::CommandIntent;
 use geist_config::templates::{TemplateKind, TemplateRef};
+use std::collections::HashMap;
+
 use geist_ui::model::{
-    BrowserItem, BrowserModel, ChannelStrip, EffectSlot, GraphModel, GraphNode, Lane, Note,
+    BrowserItem, BrowserModel, ChannelStrip, Clip, EffectSlot, GraphModel, GraphNode, Lane, Note,
     ParamSpec, Port, RackModel, SessionModel, StepPattern, StepSequencerModel, TimelineModel,
 };
 use geist_ui::shell::draw_studio;
@@ -29,7 +31,7 @@ use crate::engine::{
     default_grid_for, Engine, DEFAULT_AMP_ENV, DEFAULT_FILTER_ENV, DEFAULT_OSC_B_SEMIS,
     DEFAULT_OSC_MIX, NUM_TRACKS, SEQ_ROWS, SEQ_STEPS, TRACK_BASE_MIDI,
 };
-use crate::session::{self, NoteSession, StudioSession, TrackSession};
+use crate::session::{self, ClipSession, NoteSession, StudioSession, TrackSession};
 
 // On-screen keyboard spans two octaves from C3
 const KEYBOARD_BASE_MIDI: u8 = 48;
@@ -167,10 +169,16 @@ pub struct StudioApp {
     track_racks: Vec<RackModel>,
     // Which track session.rack currently reflects
     rack_track: usize,
-    // Per-track piano-roll notes, mirroring the engine clips for diffing
-    track_notes: [Vec<Note>; NUM_TRACKS],
-    // Which track the shared piano-roll model currently reflects
-    piano_track: usize,
+    // Per-clip note content, keyed by engine clip id; clip-centric piano roll
+    clip_notes: HashMap<u64, Vec<Note>>,
+    // Last-synced per-clip notes, for diffing edits to the engine
+    clip_notes_mirror: HashMap<u64, Vec<Note>>,
+    // Which clip the shared piano-roll model currently reflects
+    piano_clip: Option<u64>,
+    // Last-synced timeline clip placements, for diffing to the engine
+    timeline_mirror: Vec<Clip>,
+    // Monotonic allocator for engine clip ids (new view clips arrive as id 0)
+    next_clip_id: u64,
     // Last-synced step patterns, mirroring the engine grids for diffing
     step_mirror: Vec<StepPattern>,
     // Per-key held state for the on-screen keyboard and the computer keyboard
@@ -197,8 +205,11 @@ impl StudioApp {
             mirror: EngineMirror::initial(),
             track_racks,
             rack_track: 0,
-            track_notes: std::array::from_fn(|_| Vec::new()),
-            piano_track: 0,
+            clip_notes: HashMap::new(),
+            clip_notes_mirror: HashMap::new(),
+            piano_clip: None,
+            timeline_mirror: Vec::new(),
+            next_clip_id: 1,
             step_mirror,
             kb_held: vec![false; KEYBOARD_KEYS],
             computer_held: [false; COMPUTER_KEYS.len()],
@@ -217,13 +228,31 @@ impl StudioApp {
                     .get(track)
                     .map(gates_of)
                     .unwrap_or_default();
-                let notes = self.track_notes[track]
+                // This track's placed clips with their note content (skip unassigned)
+                let clips = self
+                    .session
+                    .timeline
+                    .clips
                     .iter()
-                    .map(|n| NoteSession {
-                        pitch: n.pitch,
-                        start_beats: n.start_beats,
-                        len_beats: n.len_beats,
-                        velocity: n.velocity,
+                    .filter(|c| c.lane == track && c.id != 0)
+                    .map(|c| ClipSession {
+                        id: c.id,
+                        start_beats: c.start_beats,
+                        len_beats: c.len_beats,
+                        notes: self
+                            .clip_notes
+                            .get(&c.id)
+                            .map(|ns| {
+                                ns.iter()
+                                    .map(|n| NoteSession {
+                                        pitch: n.pitch,
+                                        start_beats: n.start_beats,
+                                        len_beats: n.len_beats,
+                                        velocity: n.velocity,
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
                     })
                     .collect();
                 TrackSession {
@@ -244,7 +273,7 @@ impl StudioApp {
                     amp_env: self.mirror.amp_env[track],
                     filter_env: self.mirror.filter_env[track],
                     gates,
-                    notes,
+                    clips,
                 }
             })
             .collect();
@@ -340,36 +369,68 @@ impl StudioApp {
                 }
                 self.step_mirror[track] = pattern.clone();
             }
-
-            // Rebuild the note clip
-            self.control.send(EngineCommand::ClearNotes { track: t });
-            let notes: Vec<Note> = state
-                .notes
-                .iter()
-                .map(|n| Note {
-                    pitch: n.pitch,
-                    start_beats: n.start_beats,
-                    len_beats: n.len_beats,
-                    velocity: n.velocity,
-                })
-                .collect();
-            for note in &notes {
-                self.control.send(EngineCommand::AddNote {
-                    track: t,
-                    pitch: note.pitch,
-                    start_beats: note.start_beats,
-                    len_beats: note.len_beats,
-                    velocity: note.velocity,
-                });
-            }
-            self.track_notes[track] = notes;
         }
 
-        // Bind the visible rack and piano roll to the selected track
+        // Tear down every known clip in the engine, then rebuild from the load
+        for clip in &self.session.timeline.clips {
+            self.control.send(EngineCommand::RemoveClip { track: clip.lane as u8, id: clip.id });
+        }
+        self.session.timeline.clips.clear();
+        self.session.timeline.selected = None;
+        self.clip_notes.clear();
+        self.clip_notes_mirror.clear();
+        let mut max_id = 0u64;
+        for (track, state) in loaded.tracks.iter().enumerate().take(NUM_TRACKS) {
+            let t = track as u8;
+            for clip in &state.clips {
+                self.control.send(EngineCommand::AddClip {
+                    track: t,
+                    id: clip.id,
+                    start_beats: clip.start_beats,
+                    len_beats: clip.len_beats,
+                });
+                let notes: Vec<Note> = clip
+                    .notes
+                    .iter()
+                    .map(|n| Note {
+                        pitch: n.pitch,
+                        start_beats: n.start_beats,
+                        len_beats: n.len_beats,
+                        velocity: n.velocity,
+                    })
+                    .collect();
+                for note in &notes {
+                    self.control.send(EngineCommand::AddClipNote {
+                        track: t,
+                        clip: clip.id,
+                        pitch: note.pitch,
+                        start_beats: note.start_beats,
+                        len_beats: note.len_beats,
+                        velocity: note.velocity,
+                    });
+                }
+                self.session.timeline.clips.push(Clip {
+                    id: clip.id,
+                    lane: track,
+                    name: format!("Clip {}", clip.id),
+                    start_beats: clip.start_beats,
+                    len_beats: clip.len_beats,
+                    kind: geist_ui::theme::SignalKind::Note,
+                });
+                self.clip_notes.insert(clip.id, notes.clone());
+                self.clip_notes_mirror.insert(clip.id, notes);
+                max_id = max_id.max(clip.id);
+            }
+        }
+        self.timeline_mirror = self.session.timeline.clips.clone();
+        self.next_clip_id = max_id + 1;
+        self.piano_clip = None;
+        self.session.piano.notes.clear();
+
+        // Bind the visible rack to the selected track
         let shown = self.session.mixer.selected.min(NUM_TRACKS - 1);
         self.session.rack = self.track_racks[shown].clone();
         self.rack_track = shown;
-        self.session.piano.notes = self.track_notes[shown].clone();
     }
 
     // Send one note transition to the engine on the mixer-selected track
@@ -424,25 +485,116 @@ impl StudioApp {
         self.session.transport.position_beats = self.control.position_beats();
     }
 
-    // Keep the piano roll bound to the selected track and push note edits to the
-    // engine. The shared roll model reflects one track at a time; switching tracks
-    // reloads that track's notes, and within a track a note diff emits Add/Remove.
-    fn sync_piano(&mut self) {
-        let track = self.session.mixer.selected.min(NUM_TRACKS - 1);
-        if track != self.piano_track {
-            // Show the newly selected track; its notes already mirror the engine
-            self.session.piano.notes = self.track_notes[track].clone();
-            self.piano_track = track;
+    // Diff timeline clip placements to the engine: assign ids to view-created
+    // clips (id 0), emit Move/Resize on edits, re-home on a lane change, and
+    // Remove deleted clips. A clip's lane is its track.
+    fn sync_timeline(&mut self) {
+        // Assign engine ids to clips the arrangement view just created
+        for clip in &mut self.session.timeline.clips {
+            if clip.id == 0 {
+                clip.id = self.next_clip_id;
+                self.next_clip_id += 1;
+                self.control.send(EngineCommand::AddClip {
+                    track: clip.lane as u8,
+                    id: clip.id,
+                    start_beats: clip.start_beats,
+                    len_beats: clip.len_beats,
+                });
+                self.clip_notes.insert(clip.id, Vec::new());
+                self.clip_notes_mirror.insert(clip.id, Vec::new());
+            }
+        }
+
+        let current = self.session.timeline.clips.clone();
+        for clip in &current {
+            match self.timeline_mirror.iter().find(|m| m.id == clip.id).cloned() {
+                Some(prev) if prev.lane != clip.lane => {
+                    // Lane change re-homes the clip on another track, notes and all
+                    self.control.send(EngineCommand::RemoveClip { track: prev.lane as u8, id: clip.id });
+                    self.control.send(EngineCommand::AddClip {
+                        track: clip.lane as u8,
+                        id: clip.id,
+                        start_beats: clip.start_beats,
+                        len_beats: clip.len_beats,
+                    });
+                    if let Some(notes) = self.clip_notes.get(&clip.id).cloned() {
+                        for note in &notes {
+                            self.control.send(EngineCommand::AddClipNote {
+                                track: clip.lane as u8,
+                                clip: clip.id,
+                                pitch: note.pitch,
+                                start_beats: note.start_beats,
+                                len_beats: note.len_beats,
+                                velocity: note.velocity,
+                            });
+                        }
+                    }
+                }
+                Some(prev) => {
+                    if (prev.start_beats - clip.start_beats).abs() > 1e-4 {
+                        self.control.send(EngineCommand::MoveClip {
+                            track: clip.lane as u8,
+                            id: clip.id,
+                            start_beats: clip.start_beats,
+                        });
+                    }
+                    if (prev.len_beats - clip.len_beats).abs() > 1e-4 {
+                        self.control.send(EngineCommand::ResizeClip {
+                            track: clip.lane as u8,
+                            id: clip.id,
+                            len_beats: clip.len_beats,
+                        });
+                    }
+                }
+                None => {} // freshly id-assigned clips were Added above
+            }
+        }
+
+        // Clips present before but gone now were deleted
+        for prev in self.timeline_mirror.clone() {
+            if !current.iter().any(|c| c.id == prev.id) {
+                self.control.send(EngineCommand::RemoveClip { track: prev.lane as u8, id: prev.id });
+                self.clip_notes.remove(&prev.id);
+                self.clip_notes_mirror.remove(&prev.id);
+                if self.piano_clip == Some(prev.id) {
+                    self.piano_clip = None;
+                }
+            }
+        }
+        self.timeline_mirror = current;
+    }
+
+    // Bind the piano roll to the selected timeline clip and diff its note edits to
+    // that clip in the engine. Notes are clip-relative. With no selection the roll
+    // is empty.
+    fn sync_clip_notes(&mut self) {
+        let selected = self
+            .session
+            .timeline
+            .selected_clip()
+            .map(|c| (c.id, c.lane, c.len_beats));
+        let Some((id, lane, len)) = selected else {
+            if self.piano_clip.is_some() {
+                self.session.piano.notes.clear();
+                self.piano_clip = None;
+            }
+            return;
+        };
+        if self.piano_clip != Some(id) {
+            // Show the newly selected clip's notes
+            self.session.piano.notes = self.clip_notes.get(&id).cloned().unwrap_or_default();
+            self.session.piano.length_beats = len.max(1.0);
+            self.piano_clip = Some(id);
             return;
         }
 
         let current = self.session.piano.notes.clone();
-        let mirror = std::mem::take(&mut self.track_notes[track]);
-        // Notes present now but not before were added
+        let mirror = self.clip_notes_mirror.get(&id).cloned().unwrap_or_default();
         for note in &current {
             if !mirror.iter().any(|m| same_note(m, note)) {
-                self.control.send(EngineCommand::AddNote {
-                    track: track as u8,
+                self.control.send(EngineCommand::AddClipNote {
+                    track: lane as u8,
+                    clip: id,
                     pitch: note.pitch,
                     start_beats: note.start_beats,
                     len_beats: note.len_beats,
@@ -450,17 +602,18 @@ impl StudioApp {
                 });
             }
         }
-        // Notes present before but not now were removed
         for note in &mirror {
             if !current.iter().any(|c| same_note(c, note)) {
-                self.control.send(EngineCommand::RemoveNote {
-                    track: track as u8,
+                self.control.send(EngineCommand::RemoveClipNote {
+                    track: lane as u8,
+                    clip: id,
                     pitch: note.pitch,
                     start_beats: note.start_beats,
                 });
             }
         }
-        self.track_notes[track] = current;
+        self.clip_notes.insert(id, current.clone());
+        self.clip_notes_mirror.insert(id, current);
     }
 
     // Push step-grid edits to the engine: a wholesale clear becomes one
@@ -704,7 +857,8 @@ impl eframe::App for StudioApp {
         // Reflect any view edits to the engine, then keep meters animating
         self.emit_engine_diff();
         self.sync_rack();
-        self.sync_piano();
+        self.sync_timeline();
+        self.sync_clip_notes();
         self.sync_steps();
 
         // Session persistence, after the syncs so the snapshot is current
@@ -809,6 +963,7 @@ fn initial_session() -> SessionModel {
             .collect(),
         clips: Vec::new(),
         length_beats: 32.0,
+        selected: None,
     };
 
     session.browser = browser_catalog();

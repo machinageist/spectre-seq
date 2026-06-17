@@ -1,14 +1,17 @@
 // Author: Jeff
-// Date: 2026-06-15
-// Description: Arrange lens: surface model plus the timeline/arrangement drawing.
-// Notes: Empty actions stay visible and come from workflow/frame planning. draw()
-//        renders lanes, clips as musical objects, a beat ruler, the playhead, and
-//        the loop region; clicking a clip emits a select intent.
+// Date: 2026-06-17
+// Description: Arrange lens: surface model plus the interactive timeline drawing.
+// Notes: draw() renders lanes, clips as musical objects, a beat ruler, the
+//        playhead, and the loop region. Clips are the source of playback truth:
+//        double-click an empty lane to create one, drag the body to move it
+//        (snapping to the beat on release), drag the right edge to resize, click
+//        to select, Delete to remove. The app diffs the mutated model to the
+//        engine. New clips carry id 0 until the app assigns a stable id.
 
 use egui::{pos2, vec2, Align2, FontId, Rect, Sense, Stroke, StrokeKind};
 use geist_config::commands::CommandIntent;
 
-use crate::model::{TimelineModel, Transport};
+use crate::model::{Clip, TimelineModel, Transport};
 use crate::renderer::ViewPlan;
 use crate::theme;
 use crate::views::{action_chips, LensSurface};
@@ -27,25 +30,33 @@ const RULER_H: f32 = 20.0;
 const LANE_H: f32 = 44.0;
 const PX_PER_BEAT: f32 = 16.0;
 const BEATS_PER_BAR: f32 = 4.0;
+// Width of the draggable resize handle on a clip's right edge
+const HANDLE_W: f32 = 6.0;
+// Default length, in beats, of a clip created by double-click
+const NEW_CLIP_BEATS: f32 = 4.0;
 
-// Draw the arrangement: lane gutter, beat ruler, clips, loop region, playhead
+// Draw the arrangement and apply create/select/move/resize/delete editing.
 pub fn draw(
     ui: &mut egui::Ui,
-    timeline: &TimelineModel,
+    timeline: &mut TimelineModel,
     transport: &Transport,
-    intents: &mut Vec<CommandIntent>,
+    _intents: &mut Vec<CommandIntent>,
 ) {
-    let lanes = timeline.lanes.len().max(1) as f32;
+    let lane_count = timeline.lanes.len();
+    let lanes = lane_count.max(1) as f32;
     let content = vec2(
         LABEL_W + timeline.length_beats * PX_PER_BEAT,
         RULER_H + lanes * LANE_H,
     );
 
     egui::ScrollArea::horizontal().show(ui, |ui| {
-        let (rect, _) = ui.allocate_exact_size(content, Sense::hover());
+        let (rect, bg) = ui.allocate_exact_size(content, Sense::click());
         let painter = ui.painter_at(rect);
         let grid_left = rect.left() + LABEL_W;
         let beat_x = |beat: f32| grid_left + beat * PX_PER_BEAT;
+        let x_beat = |x: f32| ((x - grid_left) / PX_PER_BEAT).max(0.0);
+        let y_lane = |y: f32| (((y - (rect.top() + RULER_H)) / LANE_H).floor() as i64)
+            .clamp(0, lane_count.saturating_sub(1) as i64) as usize;
 
         painter.rect_filled(rect, 0.0, theme::BG);
 
@@ -78,14 +89,13 @@ pub fn draw(
             bar += 1;
         }
 
-        // Lanes and clips
+        // Lanes
         for (lane_index, lane) in timeline.lanes.iter().enumerate() {
             let top = rect.top() + RULER_H + lane_index as f32 * LANE_H;
             let lane_rect = Rect::from_min_size(pos2(rect.left(), top), vec2(rect.width(), LANE_H));
             if lane_index % 2 == 1 {
                 painter.rect_filled(lane_rect, 0.0, theme::FAINT);
             }
-            // Lane name gutter
             painter.text(
                 pos2(rect.left() + 8.0, top + LANE_H * 0.5),
                 Align2::LEFT_CENTER,
@@ -99,22 +109,26 @@ pub fn draw(
             );
         }
 
-        // Clip blocks
-        for clip in &timeline.clips {
-            if clip.lane >= timeline.lanes.len() {
+        // Clip blocks: draw and interact. Collect any removal for after the loop.
+        let mut remove: Option<usize> = None;
+        for index in 0..timeline.clips.len() {
+            let clip = timeline.clips[index].clone();
+            if clip.lane >= lane_count {
                 continue;
             }
             let top = rect.top() + RULER_H + clip.lane as f32 * LANE_H + 4.0;
             let clip_rect = Rect::from_min_size(
                 pos2(beat_x(clip.start_beats), top),
-                vec2(clip.len_beats * PX_PER_BEAT, LANE_H - 8.0),
+                vec2((clip.len_beats * PX_PER_BEAT).max(2.0), LANE_H - 8.0),
             );
+            let selected = timeline.selected == Some(index);
             let color = clip.kind.color();
-            painter.rect_filled(clip_rect, theme::RADIUS_CONTROL, color.linear_multiply(0.30));
+            let fill = if selected { 0.45 } else { 0.30 };
+            painter.rect_filled(clip_rect, theme::RADIUS_CONTROL, color.linear_multiply(fill));
             painter.rect_stroke(
                 clip_rect,
                 theme::RADIUS_CONTROL,
-                Stroke::new(1.0, color),
+                Stroke::new(if selected { 2.0 } else { 1.0 }, color),
                 StrokeKind::Inside,
             );
             painter.text(
@@ -125,14 +139,84 @@ pub fn draw(
                 theme::TEXT,
             );
 
-            let resp = ui.interact(
-                clip_rect,
-                ui.id().with(("clip", clip.lane, clip.name.as_str())),
-                Sense::click(),
+            // Right-edge resize handle
+            let handle_rect = Rect::from_min_max(
+                pos2(clip_rect.right() - HANDLE_W, clip_rect.top()),
+                clip_rect.right_bottom(),
             );
-            if resp.clicked() {
-                intents.push(CommandIntent::new(format!("select_clip:{}", clip.name)));
+            let handle = ui.interact(handle_rect, ui.id().with(("clip_handle", index)), Sense::drag());
+            if handle.hovered() || handle.dragged() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             }
+            if handle.dragged() {
+                let new_right = handle.interact_pointer_pos().map(|p| p.x).unwrap_or(clip_rect.right());
+                timeline.selected = Some(index);
+                timeline.clips[index].len_beats = (x_beat(new_right) - clip.start_beats).max(0.25);
+            }
+            if handle.drag_stopped() {
+                let snapped = timeline.clips[index].len_beats.round().max(1.0);
+                timeline.clips[index].len_beats = snapped;
+            }
+
+            // Body: select + move (the handle sits on top and wins its strip)
+            let body = ui.interact(clip_rect, ui.id().with(("clip_body", index)), Sense::click_and_drag());
+            if body.clicked() {
+                timeline.selected = Some(index);
+            }
+            if body.dragged() {
+                timeline.selected = Some(index);
+                let dx = body.drag_delta().x / PX_PER_BEAT;
+                timeline.clips[index].start_beats = (clip.start_beats + dx).max(0.0);
+                if let Some(p) = body.interact_pointer_pos() {
+                    timeline.clips[index].lane = y_lane(p.y);
+                }
+            }
+            if body.drag_stopped() {
+                let snapped = timeline.clips[index].start_beats.round().max(0.0);
+                timeline.clips[index].start_beats = snapped;
+            }
+            if selected && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
+                remove = Some(index);
+            }
+        }
+        if let Some(index) = remove {
+            timeline.clips.remove(index);
+            timeline.selected = None;
+        }
+
+        // Double-click an empty lane to create a clip; a bare click deselects
+        if bg.double_clicked() {
+            if let Some(p) = bg.interact_pointer_pos() {
+                if p.x > grid_left {
+                    let over_clip = timeline.clips.iter().enumerate().any(|(i, c)| {
+                        if c.lane >= lane_count {
+                            return false;
+                        }
+                        let top = rect.top() + RULER_H + c.lane as f32 * LANE_H + 4.0;
+                        let r = Rect::from_min_size(
+                            pos2(beat_x(c.start_beats), top),
+                            vec2((c.len_beats * PX_PER_BEAT).max(2.0), LANE_H - 8.0),
+                        );
+                        let _ = i;
+                        r.contains(p)
+                    });
+                    if !over_clip {
+                        let lane = y_lane(p.y);
+                        let start = x_beat(p.x).round().max(0.0);
+                        timeline.clips.push(Clip {
+                            id: 0,
+                            lane,
+                            name: format!("Clip {}", timeline.clips.len() + 1),
+                            start_beats: start,
+                            len_beats: NEW_CLIP_BEATS,
+                            kind: crate::theme::SignalKind::Note,
+                        });
+                        timeline.selected = Some(timeline.clips.len() - 1);
+                    }
+                }
+            }
+        } else if bg.clicked() {
+            timeline.selected = None;
         }
 
         // Playhead

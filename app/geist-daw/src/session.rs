@@ -45,9 +45,8 @@ const PARAM_TRACK_OSC_B_SEMIS_BASE: u32 = 390;
 const PARAM_TRACK_AMP_ENV_BASE: u32 = 400;
 const PARAM_TRACK_FILTER_ENV_BASE: u32 = 420;
 
-// Clip ids distinguishing the piano-roll clip from the step-grid clip
-const PIANO_CLIP_ID: u64 = 0;
-const STEP_CLIP_ID: u64 = 1;
+// Reserved clip id for a track's step grid, kept clear of arrangement clip ids
+const STEP_CLIP_ID: u64 = u64::MAX;
 
 // Tick grid: musical ticks per beat, and per step (sixteenths)
 const TICKS_PER_BEAT: u64 = 960;
@@ -60,6 +59,15 @@ pub struct NoteSession {
     pub start_beats: f32,
     pub len_beats: f32,
     pub velocity: f32,
+}
+
+// One placed timeline clip with its id, position, length, and clip-relative notes
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClipSession {
+    pub id: u64,
+    pub start_beats: f32,
+    pub len_beats: f32,
+    pub notes: Vec<NoteSession>,
 }
 
 // One track's persisted state: its full instrument patch, its effects chain,
@@ -86,7 +94,8 @@ pub struct TrackSession {
     pub filter_env: [f32; 4],
     // Step gates that are on, as (row, step)
     pub gates: Vec<(u8, u8)>,
-    pub notes: Vec<NoteSession>,
+    // Placed timeline clips on this track
+    pub clips: Vec<ClipSession>,
 }
 
 // The whole studio session, independent of the on-disk encoding. Only the
@@ -134,20 +143,9 @@ impl StudioSession {
             state_blob: Vec::new(),
         });
 
-        // One track entry per track: mix flags plus piano and step clips
+        // One track entry per track: mix flags, the step grid, and timeline clips
         for (index, state) in self.tracks.iter().enumerate() {
             let base = base_midi(index);
-            let piano_notes = state
-                .notes
-                .iter()
-                .map(|note| NoteEntry {
-                    pitch: note.pitch,
-                    velocity: vel_to_u8(note.velocity),
-                    start_ticks: beats_to_ticks(note.start_beats),
-                    length_ticks: beats_to_ticks(note.len_beats),
-                    channel: 0,
-                })
-                .collect();
             let step_notes = state
                 .gates
                 .iter()
@@ -159,25 +157,37 @@ impl StudioSession {
                     channel: 0,
                 })
                 .collect();
+            let mut clips = vec![ClipEntry {
+                id: STEP_CLIP_ID,
+                start_ticks: 0,
+                length_ticks: 0,
+                kind: ClipKind::Midi { notes: step_notes },
+            }];
+            for clip in &state.clips {
+                let notes = clip
+                    .notes
+                    .iter()
+                    .map(|note| NoteEntry {
+                        pitch: note.pitch,
+                        velocity: vel_to_u8(note.velocity),
+                        start_ticks: beats_to_ticks(note.start_beats),
+                        length_ticks: beats_to_ticks(note.len_beats),
+                        channel: 0,
+                    })
+                    .collect();
+                clips.push(ClipEntry {
+                    id: clip.id,
+                    start_ticks: beats_to_ticks(clip.start_beats),
+                    length_ticks: beats_to_ticks(clip.len_beats),
+                    kind: ClipKind::Midi { notes },
+                });
+            }
             project.tracks.push(TrackEntry {
                 id: index as u64,
                 name: format!("Track {}", index + 1),
                 muted: state.muted,
                 soloed: state.soloed,
-                clips: vec![
-                    ClipEntry {
-                        id: PIANO_CLIP_ID,
-                        start_ticks: 0,
-                        length_ticks: 0,
-                        kind: ClipKind::Midi { notes: piano_notes },
-                    },
-                    ClipEntry {
-                        id: STEP_CLIP_ID,
-                        start_ticks: 0,
-                        length_ticks: 0,
-                        kind: ClipKind::Midi { notes: step_notes },
-                    },
-                ],
+                clips,
             });
         }
         project
@@ -234,34 +244,37 @@ impl StudioSession {
                     }
                 }
             }
-            state.notes.clear();
+            state.clips.clear();
             state.gates.clear();
             let base = base_midi(index);
             for clip in &entry.clips {
                 let ClipKind::Midi { notes } = &clip.kind else {
                     continue;
                 };
-                match clip.id {
-                    PIANO_CLIP_ID => {
-                        for note in notes {
-                            state.notes.push(NoteSession {
-                                pitch: note.pitch,
-                                start_beats: ticks_to_beats(note.start_ticks),
-                                len_beats: ticks_to_beats(note.length_ticks),
-                                velocity: vel_to_f32(note.velocity),
-                            });
+                if clip.id == STEP_CLIP_ID {
+                    for note in notes {
+                        let row = note.pitch.saturating_sub(base);
+                        let step = (note.start_ticks / STEP_TICKS) as u8;
+                        if (row as usize) < SEQ_ROWS && (step as usize) < SEQ_STEPS {
+                            state.gates.push((row, step));
                         }
                     }
-                    STEP_CLIP_ID => {
-                        for note in notes {
-                            let row = note.pitch.saturating_sub(base);
-                            let step = (note.start_ticks / STEP_TICKS) as u8;
-                            if (row as usize) < SEQ_ROWS && (step as usize) < SEQ_STEPS {
-                                state.gates.push((row, step));
-                            }
-                        }
-                    }
-                    _ => {}
+                } else {
+                    let clip_notes = notes
+                        .iter()
+                        .map(|note| NoteSession {
+                            pitch: note.pitch,
+                            start_beats: ticks_to_beats(note.start_ticks),
+                            len_beats: ticks_to_beats(note.length_ticks),
+                            velocity: vel_to_f32(note.velocity),
+                        })
+                        .collect();
+                    state.clips.push(ClipSession {
+                        id: clip.id,
+                        start_beats: ticks_to_beats(clip.start_ticks),
+                        len_beats: ticks_to_beats(clip.length_ticks),
+                        notes: clip_notes,
+                    });
                 }
             }
         }
@@ -358,7 +371,7 @@ mod tests {
             amp_env: [0.005, 0.1, 0.8, 0.3],
             filter_env: [0.01, 0.2, 0.3, 0.3],
             gates: Vec::new(),
-            notes: Vec::new(),
+            clips: Vec::new(),
         }
     }
 
@@ -394,9 +407,22 @@ mod tests {
         s.tracks[1].filter_env = [0.05, 0.4, 0.2, 0.8];
         s.tracks[1].gates = vec![(0, 0), (2, 4), (5, 12)];
         // Velocity 1.0 maps cleanly through the 0..127 MIDI range
-        s.tracks[2].notes = vec![
-            NoteSession { pitch: 60, start_beats: 0.0, len_beats: 1.0, velocity: 1.0 },
-            NoteSession { pitch: 67, start_beats: 2.5, len_beats: 0.5, velocity: 1.0 },
+        s.tracks[2].clips = vec![
+            ClipSession {
+                id: 1,
+                start_beats: 0.0,
+                len_beats: 8.0,
+                notes: vec![
+                    NoteSession { pitch: 60, start_beats: 0.0, len_beats: 1.0, velocity: 1.0 },
+                    NoteSession { pitch: 67, start_beats: 2.5, len_beats: 0.5, velocity: 1.0 },
+                ],
+            },
+            ClipSession {
+                id: 2,
+                start_beats: 16.0,
+                len_beats: 4.0,
+                notes: vec![NoteSession { pitch: 72, start_beats: 1.0, len_beats: 2.0, velocity: 1.0 }],
+            },
         ];
         s
     }

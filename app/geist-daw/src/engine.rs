@@ -180,12 +180,15 @@ const DEFAULT_TRACK_LEVEL: f32 = 0.8;
 
 // Most notes one clip can hold; sized so add/remove/clear stay allocation-free
 pub const MAX_CLIP_NOTES: usize = 256;
-// Default clip loop length, matching the UI piano roll
+// Most placed clips one track's arrangement can hold; fixed for realtime safety
+pub const MAX_CLIPS_PER_TRACK: usize = 64;
+// Default clip length in beats, matching the UI piano roll
 pub const DEFAULT_CLIP_LEN_BEATS: f32 = 16.0;
 // Start-beat tolerance when matching a note for removal
 const START_EPS: f32 = 1e-3;
 
-// One timed note in a looping clip, with its current sounding state
+// One timed note inside a clip, positioned relative to the clip start, with its
+// current sounding state
 #[derive(Copy, Clone)]
 struct ClipNote {
     pitch: u8,
@@ -195,86 +198,155 @@ struct ClipNote {
     sounding: bool,
 }
 
-// A looping piano-roll clip: arbitrary timed notes played against the transport
-// Level-based: each block, notes whose span contains the loop phase sound; the
-// rest are released. Robust to looping, seeking, and tempo changes.
-pub struct NoteClip {
+// One MIDI clip placed on the timeline. Notes are relative to the clip start and
+// play once across the clip's span at absolute transport position.
+struct ArrClip {
+    id: u64,
+    start_beats: f32,
+    len_beats: f32,
     notes: Vec<ClipNote>,
-    length_beats: f32,
 }
 
-impl NoteClip {
-    // Empty clip of a given loop length; capacity is fixed for realtime safety
-    pub fn new(length_beats: f32) -> Self {
+impl ArrClip {
+    // Empty clip; note capacity is fixed for realtime safety
+    fn new(id: u64, start_beats: f32, len_beats: f32) -> Self {
         Self {
+            id,
+            start_beats,
+            len_beats,
             notes: Vec::with_capacity(MAX_CLIP_NOTES),
-            length_beats,
         }
     }
 
-    // Add a note unless the clip is full (keeps the buffer from reallocating)
-    pub fn add(&mut self, pitch: u8, start_beats: f32, len_beats: f32, velocity: f32) {
-        if self.notes.len() < MAX_CLIP_NOTES {
-            self.notes.push(ClipNote {
-                pitch,
-                start_beats,
-                len_beats,
-                velocity,
-                sounding: false,
-            });
-        }
-    }
-
-    // Remove the first note matching pitch+start, releasing it if it was sounding
-    pub fn remove(&mut self, pitch: u8, start_beats: f32, out: &mut Vec<NoteEvent>) {
-        if let Some(index) = self
-            .notes
-            .iter()
-            .position(|n| n.pitch == pitch && (n.start_beats - start_beats).abs() < START_EPS)
-        {
-            if self.notes[index].sounding {
-                push_capped(out, NoteEvent::off(0, 0, pitch));
-            }
-            self.notes.swap_remove(index);
-        }
-    }
-
-    // Drop every note, releasing any that are sounding
-    pub fn clear(&mut self, out: &mut Vec<NoteEvent>) {
-        for note in &self.notes {
-            if note.sounding {
-                push_capped(out, NoteEvent::off(0, 0, note.pitch));
-            }
-        }
-        self.notes.clear();
-    }
-
-    // Trigger/release notes so the sounding set matches the loop phase at `beat`
-    pub fn advance_to_beat(&mut self, beat: f64, out: &mut Vec<NoteEvent>) {
-        if self.length_beats <= 0.0 {
-            return;
-        }
-        let phase = beat.rem_euclid(self.length_beats as f64) as f32;
+    // Release every sounding note in this clip
+    fn release(&mut self, out: &mut Vec<NoteEvent>) {
         for note in &mut self.notes {
-            let should = phase >= note.start_beats && phase < note.start_beats + note.len_beats;
-            if should && !note.sounding {
-                push_capped(out, NoteEvent::on(0, 0, note.pitch, note.velocity));
-                note.sounding = true;
-            } else if !should && note.sounding {
+            if note.sounding {
                 push_capped(out, NoteEvent::off(0, 0, note.pitch));
                 note.sounding = false;
             }
         }
     }
+}
 
-    // Release every sounding note, e.g. when the transport stops
+// A track's timeline: placed MIDI clips advanced by absolute transport beat.
+// Level-based like the old looping clip, but positioned: a note sounds when the
+// transport is inside its clip's span and inside the note's own span. Robust to
+// seeking, looping, and tempo changes.
+pub struct Arrangement {
+    clips: Vec<ArrClip>,
+}
+
+impl Arrangement {
+    // Empty arrangement; clip capacity is fixed for realtime safety
+    pub fn new() -> Self {
+        Self {
+            clips: Vec::with_capacity(MAX_CLIPS_PER_TRACK),
+        }
+    }
+
+    // Add a placed clip unless the arrangement is full or the id already exists
+    fn add_clip(&mut self, id: u64, start_beats: f32, len_beats: f32) {
+        if self.clips.len() < MAX_CLIPS_PER_TRACK && !self.clips.iter().any(|c| c.id == id) {
+            self.clips.push(ArrClip::new(id, start_beats, len_beats));
+        }
+    }
+
+    // Move a clip's start position
+    fn move_clip(&mut self, id: u64, start_beats: f32) {
+        if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
+            clip.start_beats = start_beats.max(0.0);
+        }
+    }
+
+    // Resize a clip's length
+    fn resize_clip(&mut self, id: u64, len_beats: f32) {
+        if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
+            clip.len_beats = len_beats.max(0.0);
+        }
+    }
+
+    // Remove a clip, releasing any of its sounding notes
+    fn remove_clip(&mut self, id: u64, out: &mut Vec<NoteEvent>) {
+        if let Some(index) = self.clips.iter().position(|c| c.id == id) {
+            self.clips[index].release(out);
+            self.clips.swap_remove(index);
+        }
+    }
+
+    // Add a note (relative to the clip start) to a clip, if room remains
+    fn add_note(&mut self, id: u64, pitch: u8, start_beats: f32, len_beats: f32, velocity: f32) {
+        if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
+            if clip.notes.len() < MAX_CLIP_NOTES {
+                clip.notes.push(ClipNote {
+                    pitch,
+                    start_beats,
+                    len_beats,
+                    velocity,
+                    sounding: false,
+                });
+            }
+        }
+    }
+
+    // Remove the first note matching pitch+start within a clip, releasing it if sounding
+    fn remove_note(&mut self, id: u64, pitch: u8, start_beats: f32, out: &mut Vec<NoteEvent>) {
+        if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
+            if let Some(index) = clip
+                .notes
+                .iter()
+                .position(|n| n.pitch == pitch && (n.start_beats - start_beats).abs() < START_EPS)
+            {
+                if clip.notes[index].sounding {
+                    push_capped(out, NoteEvent::off(0, 0, pitch));
+                }
+                clip.notes.swap_remove(index);
+            }
+        }
+    }
+
+    // Drop every note in a clip, releasing any that are sounding
+    fn clear_clip(&mut self, id: u64, out: &mut Vec<NoteEvent>) {
+        if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
+            clip.release(out);
+            clip.notes.clear();
+        }
+    }
+
+    // Trigger/release notes so the sounding set matches the absolute beat
+    pub fn advance(&mut self, beat: f64, out: &mut Vec<NoteEvent>) {
+        for clip in &mut self.clips {
+            if clip.len_beats <= 0.0 {
+                continue;
+            }
+            let start = clip.start_beats as f64;
+            let within = beat >= start && beat < start + clip.len_beats as f64;
+            let local = (beat - start) as f32;
+            for note in &mut clip.notes {
+                let should =
+                    within && local >= note.start_beats && local < note.start_beats + note.len_beats;
+                if should && !note.sounding {
+                    push_capped(out, NoteEvent::on(0, 0, note.pitch, note.velocity));
+                    note.sounding = true;
+                } else if !should && note.sounding {
+                    push_capped(out, NoteEvent::off(0, 0, note.pitch));
+                    note.sounding = false;
+                }
+            }
+        }
+    }
+
+    // Release every sounding note across all clips, e.g. when the transport stops
     pub fn release(&mut self, out: &mut Vec<NoteEvent>) {
-        for note in &mut self.notes {
-            if note.sounding {
-                push_capped(out, NoteEvent::off(0, 0, note.pitch));
-                note.sounding = false;
-            }
+        for clip in &mut self.clips {
+            clip.release(out);
         }
+    }
+}
+
+impl Default for Arrangement {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -316,7 +388,7 @@ pub struct Track {
     patch: Patch,
     fx: FxChain,
     sequencer: Sequencer,
-    clip: NoteClip,
+    arrangement: Arrangement,
     level: f32,
     pan: f32,
     muted: bool,
@@ -339,7 +411,7 @@ impl Track {
             patch: Patch::default(),
             fx: FxChain::new(channels, block_frames, sample_rate_hz),
             sequencer: Sequencer::new(base_midi, grid),
-            clip: NoteClip::new(DEFAULT_CLIP_LEN_BEATS),
+            arrangement: Arrangement::new(),
             level: DEFAULT_TRACK_LEVEL,
             pan: 0.0,
             muted: false,
@@ -453,7 +525,7 @@ impl BlockProcessor for SynthProcessor {
                         transport.stop();
                         for (track, events) in tracks.iter_mut().zip(track_events.iter_mut()) {
                             track.sequencer.release(events);
-                            track.clip.release(events);
+                            track.arrangement.release(events);
                         }
                     }
                 }
@@ -541,23 +613,45 @@ impl BlockProcessor for SynthProcessor {
                         t.sequencer.clear();
                     }
                 }
-                EngineCommand::AddNote { track, pitch, start_beats, len_beats, velocity } => {
+                EngineCommand::AddClip { track, id, start_beats, len_beats } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
-                        t.clip.add(pitch, start_beats, len_beats, velocity);
+                        t.arrangement.add_clip(id, start_beats, len_beats);
                     }
                 }
-                EngineCommand::RemoveNote { track, pitch, start_beats } => {
+                EngineCommand::MoveClip { track, id, start_beats } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.arrangement.move_clip(id, start_beats);
+                    }
+                }
+                EngineCommand::ResizeClip { track, id, len_beats } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.arrangement.resize_clip(id, len_beats);
+                    }
+                }
+                EngineCommand::RemoveClip { track, id } => {
                     if let (Some(t), Some(events)) =
                         (tracks.get_mut(track as usize), track_events.get_mut(track as usize))
                     {
-                        t.clip.remove(pitch, start_beats, events);
+                        t.arrangement.remove_clip(id, events);
                     }
                 }
-                EngineCommand::ClearNotes { track } => {
+                EngineCommand::AddClipNote { track, clip, pitch, start_beats, len_beats, velocity } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.arrangement.add_note(clip, pitch, start_beats, len_beats, velocity);
+                    }
+                }
+                EngineCommand::RemoveClipNote { track, clip, pitch, start_beats } => {
                     if let (Some(t), Some(events)) =
                         (tracks.get_mut(track as usize), track_events.get_mut(track as usize))
                     {
-                        t.clip.clear(events);
+                        t.arrangement.remove_note(clip, pitch, start_beats, events);
+                    }
+                }
+                EngineCommand::ClearClip { track, clip } => {
+                    if let (Some(t), Some(events)) =
+                        (tracks.get_mut(track as usize), track_events.get_mut(track as usize))
+                    {
+                        t.arrangement.clear_clip(clip, events);
                     }
                 }
                 EngineCommand::SetTrackLevel { track, level } => {
@@ -594,7 +688,7 @@ impl BlockProcessor for SynthProcessor {
             let events = &mut track_events[index];
             if rolling {
                 track.sequencer.advance_to_beat(beat, events);
-                track.clip.advance_to_beat(beat, events);
+                track.arrangement.advance(beat, events);
             }
             track.apply_patch();
 
@@ -848,51 +942,85 @@ mod tests {
     }
 
     #[test]
-    fn clip_triggers_and_releases_across_the_loop() {
-        let mut clip = NoteClip::new(4.0);
-        clip.add(60, 0.0, 1.0, 1.0);
+    fn placed_clip_triggers_only_inside_its_span() {
+        // A clip placed at beat 8 holding a note at local 0 must be silent before
+        // beat 8 and trigger once the transport reaches it.
+        let mut arr = Arrangement::new();
+        arr.add_clip(1, 8.0, 4.0);
+        arr.add_note(1, 60, 0.0, 1.0, 1.0);
         let mut out = Vec::with_capacity(MAX_BLOCK_EVENTS);
-        clip.advance_to_beat(0.0, &mut out);
+        arr.advance(0.0, &mut out);
+        assert!(out.is_empty(), "clip sounded before its start beat");
+        arr.advance(8.0, &mut out);
         assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 60));
         out.clear();
-        // Phase past the note's end releases it
-        clip.advance_to_beat(2.0, &mut out);
+        // Past the note's local end it releases
+        arr.advance(9.5, &mut out);
         assert!(out.iter().any(|e| e.kind == NoteEventKind::Off && e.key == 60));
-        out.clear();
-        // Looping back into the note retriggers it
-        clip.advance_to_beat(4.0, &mut out);
-        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 60));
     }
 
     #[test]
-    fn clip_remove_releases_a_sounding_note() {
-        let mut clip = NoteClip::new(4.0);
-        clip.add(64, 0.0, 2.0, 1.0);
+    fn moving_a_clip_shifts_its_trigger_beat() {
+        let mut arr = Arrangement::new();
+        arr.add_clip(1, 0.0, 4.0);
+        arr.add_note(1, 64, 0.0, 1.0, 1.0);
         let mut out = Vec::with_capacity(MAX_BLOCK_EVENTS);
-        clip.advance_to_beat(0.0, &mut out);
+        // At beat 0 it triggers; move it to beat 16 and beat 0 goes silent
+        arr.advance(0.0, &mut out);
+        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 64));
         out.clear();
-        clip.remove(64, 0.0, &mut out);
-        assert!(out.iter().any(|e| e.kind == NoteEventKind::Off && e.key == 64));
+        arr.release(&mut out);
+        out.clear();
+        arr.move_clip(1, 16.0);
+        arr.advance(0.0, &mut out);
+        assert!(out.is_empty(), "moved clip still triggered at the old position");
+        arr.advance(16.0, &mut out);
+        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 64));
     }
 
     #[test]
-    fn clip_add_stays_within_capacity() {
-        let mut clip = NoteClip::new(16.0);
-        let cap = clip.notes.capacity();
-        for i in 0..(MAX_CLIP_NOTES + 10) {
-            clip.add(60, i as f32 * 0.01, 0.1, 1.0);
+    fn two_clips_on_one_track_both_play() {
+        let mut arr = Arrangement::new();
+        arr.add_clip(1, 0.0, 4.0);
+        arr.add_note(1, 60, 0.0, 1.0, 1.0);
+        arr.add_clip(2, 8.0, 4.0);
+        arr.add_note(2, 67, 0.0, 1.0, 1.0);
+        let mut out = Vec::with_capacity(MAX_BLOCK_EVENTS);
+        arr.advance(0.0, &mut out);
+        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 60));
+        out.clear();
+        arr.advance(8.0, &mut out);
+        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 67));
+    }
+
+    #[test]
+    fn arrangement_stays_within_capacity() {
+        let mut arr = Arrangement::new();
+        let clip_cap = arr.clips.capacity();
+        // Overfill clips
+        for id in 0..(MAX_CLIPS_PER_TRACK as u64 + 10) {
+            arr.add_clip(id, 0.0, 4.0);
         }
-        assert_eq!(clip.notes.len(), MAX_CLIP_NOTES);
-        assert_eq!(clip.notes.capacity(), cap, "clip must not grow its buffer");
+        assert_eq!(arr.clips.len(), MAX_CLIPS_PER_TRACK);
+        assert_eq!(arr.clips.capacity(), clip_cap, "clip list grew its buffer");
+        // Overfill one clip's notes
+        let note_cap = arr.clips[0].notes.capacity();
+        for i in 0..(MAX_CLIP_NOTES + 10) {
+            arr.add_note(0, 60, i as f32 * 0.01, 0.1, 1.0);
+        }
+        assert_eq!(arr.clips[0].notes.len(), MAX_CLIP_NOTES);
+        assert_eq!(arr.clips[0].notes.capacity(), note_cap, "clip notes grew the buffer");
     }
 
     #[test]
-    fn add_note_command_sounds_on_an_empty_track() {
+    fn clip_command_sounds_on_an_empty_track() {
         // Track 0 carries no step pattern, so any sound proves the clip played
         let (mut control, mut proc, len) = processor(true);
         let mut output = vec![0.0f32; len];
-        control.send(EngineCommand::AddNote {
+        control.send(EngineCommand::AddClip { track: 0, id: 1, start_beats: 0.0, len_beats: 4.0 });
+        control.send(EngineCommand::AddClipNote {
             track: 0,
+            clip: 1,
             pitch: 60,
             start_beats: 0.0,
             len_beats: 4.0,
@@ -913,25 +1041,30 @@ mod tests {
         let frames = len / 2;
         let mut output = vec![0.0f32; len];
 
+        // A placed clip on track 2 receives the note churn below
+        control.send(EngineCommand::AddClip { track: 2, id: 1, start_beats: 0.0, len_beats: 16.0 });
+
         // Warm up so buffers reach their working size
         proc.process_block(&[], &mut output, 2, frames);
         let event_caps: Vec<usize> = proc.track_events.iter().map(|e| e.capacity()).collect();
         let scratch_cap = proc.scratch.capacity();
-        let clip_caps: Vec<usize> = proc.tracks.iter().map(|t| t.clip.notes.capacity()).collect();
+        let clip_list_caps: Vec<usize> = proc.tracks.iter().map(|t| t.arrangement.clips.capacity()).collect();
+        let note_cap = proc.tracks[2].arrangement.clips[0].notes.capacity();
 
         for i in 0..4000u32 {
             let key = 60 + (i % 12) as u8;
             let beat = (i % 16) as f32;
             control.send(EngineCommand::NoteOn { track: 0, key, velocity: 1.0 });
             control.send(EngineCommand::NoteOff { track: 0, key });
-            control.send(EngineCommand::AddNote {
+            control.send(EngineCommand::AddClipNote {
                 track: 2,
+                clip: 1,
                 pitch: key,
                 start_beats: beat,
                 len_beats: 1.0,
                 velocity: 1.0,
             });
-            control.send(EngineCommand::RemoveNote { track: 2, pitch: key, start_beats: beat });
+            control.send(EngineCommand::RemoveClipNote { track: 2, clip: 1, pitch: key, start_beats: beat });
             control.send(EngineCommand::SetCutoff { track: 0, hz: 400.0 + (i % 800) as f32 });
             control.send(EngineCommand::SetBpm(100.0 + (i % 60) as f32));
             proc.process_block(&[], &mut output, 2, frames);
@@ -941,10 +1074,12 @@ mod tests {
             assert_eq!(events.capacity(), cap, "track_events buffer grew");
         }
         assert_eq!(proc.scratch.capacity(), scratch_cap, "scratch buffer grew");
-        for (track, &cap) in proc.tracks.iter().zip(clip_caps.iter()) {
-            assert!(track.clip.notes.len() <= MAX_CLIP_NOTES, "clip note count unbounded");
-            assert_eq!(track.clip.notes.capacity(), cap, "clip buffer grew");
+        for (track, &cap) in proc.tracks.iter().zip(clip_list_caps.iter()) {
+            assert_eq!(track.arrangement.clips.capacity(), cap, "clip list grew");
         }
+        let clip = &proc.tracks[2].arrangement.clips[0];
+        assert!(clip.notes.len() <= MAX_CLIP_NOTES, "clip note count unbounded");
+        assert_eq!(clip.notes.capacity(), note_cap, "clip notes buffer grew");
     }
 
     #[test]

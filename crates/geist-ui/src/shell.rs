@@ -210,7 +210,7 @@ fn central(
                     views::step_sequencer::draw(ui, &mut session.step_seq, playhead, intents)
                 }
                 ArrangeTab::Timeline => {
-                    views::arrangement::draw(ui, &session.timeline, &session.transport, intents)
+                    views::arrangement::draw(ui, &mut session.timeline, &session.transport, intents)
                 }
             }
         }

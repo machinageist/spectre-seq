@@ -70,12 +70,20 @@ pub enum EngineCommand {
     SetCell { track: u8, step: u8, row: u8, on: bool },
     // Clear a track's whole step pattern
     ClearPattern { track: u8 },
-    // Add a timed note to a track's piano-roll clip
-    AddNote { track: u8, pitch: u8, start_beats: f32, len_beats: f32, velocity: f32 },
-    // Remove the matching note (pitch + start) from a track's clip
-    RemoveNote { track: u8, pitch: u8, start_beats: f32 },
-    // Clear a track's whole piano-roll clip
-    ClearNotes { track: u8 },
+    // Place a new MIDI clip on a track's timeline
+    AddClip { track: u8, id: u64, start_beats: f32, len_beats: f32 },
+    // Move a placed clip's start position
+    MoveClip { track: u8, id: u64, start_beats: f32 },
+    // Resize a placed clip's length
+    ResizeClip { track: u8, id: u64, len_beats: f32 },
+    // Remove a placed clip from a track's timeline
+    RemoveClip { track: u8, id: u64 },
+    // Add a timed note (relative to the clip start) to a clip
+    AddClipNote { track: u8, clip: u64, pitch: u8, start_beats: f32, len_beats: f32, velocity: f32 },
+    // Remove the matching note (pitch + start) from a clip
+    RemoveClipNote { track: u8, clip: u64, pitch: u8, start_beats: f32 },
+    // Clear all notes from a clip
+    ClearClip { track: u8, clip: u64 },
     // Set a track's mixer level
     SetTrackLevel { track: u8, level: f32 },
     // Set a track's stereo pan in [-1, 1] (left to right)
