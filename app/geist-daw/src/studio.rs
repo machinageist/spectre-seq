@@ -157,6 +157,57 @@ impl EngineMirror {
     }
 }
 
+// Shortest recorded note length in beats, so a tap still yields an audible note
+const MIN_RECORDED_LEN: f32 = 0.0625;
+// Initial length of a record clip in beats; it grows to cover captured notes
+const DEFAULT_RECORD_LEN: f32 = 4.0;
+
+// One finalized recorded note, positioned relative to its record clip's start
+#[derive(Copy, Clone, Debug, PartialEq)]
+struct RecordedNote {
+    pitch: u8,
+    start_beats: f32,
+    len_beats: f32,
+    velocity: f32,
+}
+
+// Captures live note gestures during recording into clip-relative notes. Pure
+// logic: note_on opens a note, note_off finalizes it, finalize closes the rest.
+struct MidiRecorder {
+    // Absolute transport beat where the record clip begins
+    clip_start: f32,
+    // Open notes as (pitch, start relative to clip, velocity)
+    pending: Vec<(u8, f32, f32)>,
+}
+
+impl MidiRecorder {
+    fn new(clip_start: f32) -> Self {
+        Self { clip_start, pending: Vec::new() }
+    }
+
+    // Open a note at an absolute beat, replacing any open note of the same pitch
+    fn note_on(&mut self, pitch: u8, velocity: f32, abs_beat: f32) {
+        let start = (abs_beat - self.clip_start).max(0.0);
+        self.pending.retain(|&(p, _, _)| p != pitch);
+        self.pending.push((pitch, start, velocity));
+    }
+
+    // Close a note at an absolute beat, yielding the finalized clip-relative note
+    fn note_off(&mut self, pitch: u8, abs_beat: f32) -> Option<RecordedNote> {
+        let index = self.pending.iter().position(|&(p, _, _)| p == pitch)?;
+        let (pitch, start, velocity) = self.pending.remove(index);
+        let end = (abs_beat - self.clip_start).max(start);
+        let len = (end - start).max(MIN_RECORDED_LEN);
+        Some(RecordedNote { pitch, start_beats: start, len_beats: len, velocity })
+    }
+
+    // Close every still-open note at an absolute beat
+    fn finalize(&mut self, abs_beat: f32) -> Vec<RecordedNote> {
+        let pitches: Vec<u8> = self.pending.iter().map(|&(p, _, _)| p).collect();
+        pitches.into_iter().filter_map(|p| self.note_off(p, abs_beat)).collect()
+    }
+}
+
 // Studio front-end: the lens shell over the engine, played live
 pub struct StudioApp {
     // Held so the audio stream stays open for the window's lifetime
@@ -179,6 +230,10 @@ pub struct StudioApp {
     timeline_mirror: Vec<Clip>,
     // Monotonic allocator for engine clip ids (new view clips arrive as id 0)
     next_clip_id: u64,
+    // Active MIDI recorder while recording; None otherwise
+    recorder: Option<MidiRecorder>,
+    // The (track, clip id) recording is capturing into, set at record start
+    record_target: Option<(usize, u64)>,
     // Last-synced step patterns, mirroring the engine grids for diffing
     step_mirror: Vec<StepPattern>,
     // Per-key held state for the on-screen keyboard and the computer keyboard
@@ -210,6 +265,8 @@ impl StudioApp {
             piano_clip: None,
             timeline_mirror: Vec::new(),
             next_clip_id: 1,
+            recorder: None,
+            record_target: None,
             step_mirror,
             kb_held: vec![false; KEYBOARD_KEYS],
             computer_held: [false; COMPUTER_KEYS.len()],
@@ -433,15 +490,124 @@ impl StudioApp {
         self.rack_track = shown;
     }
 
-    // Send one note transition to the engine on the mixer-selected track
+    // Send one note transition to the engine on the mixer-selected track, and
+    // capture it into the record clip when recording that track.
     fn note_event(&mut self, ev: KeyEvent) {
-        let track = self.session.mixer.selected.min(NUM_TRACKS - 1) as u8;
+        let track = self.session.mixer.selected.min(NUM_TRACKS - 1);
+        let t = track as u8;
         let command = if ev.down {
-            EngineCommand::NoteOn { track, key: ev.midi, velocity: UI_VELOCITY }
+            EngineCommand::NoteOn { track: t, key: ev.midi, velocity: UI_VELOCITY }
         } else {
-            EngineCommand::NoteOff { track, key: ev.midi }
+            EngineCommand::NoteOff { track: t, key: ev.midi }
         };
         self.control.send(command);
+
+        // Capture into the record clip if this is the armed, recording track
+        if self.record_target.map(|(rt, _)| rt) == Some(track) {
+            let abs = self.control.position_beats() as f32;
+            if ev.down {
+                if let Some(rec) = self.recorder.as_mut() {
+                    rec.note_on(ev.midi, UI_VELOCITY, abs);
+                }
+            } else if let Some(note) = self.recorder.as_mut().and_then(|rec| rec.note_off(ev.midi, abs)) {
+                self.commit_recorded(track, note);
+            }
+        }
+    }
+
+    // Start/stop the MIDI recorder on the recording+playing edge. On start, a
+    // record clip is created on the armed selected track and selected so the
+    // piano roll follows it; on stop, any still-open notes are finalized.
+    fn sync_recording(&mut self) {
+        let recording = self.session.transport.recording && self.session.transport.playing;
+        if recording && self.recorder.is_none() {
+            let start = (self.control.position_beats() as f32).max(0.0).floor();
+            self.recorder = Some(MidiRecorder::new(start));
+            let track = self.session.mixer.selected.min(NUM_TRACKS - 1);
+            let armed = self.session.mixer.channels.get(track).map(|c| c.armed).unwrap_or(false);
+            if armed {
+                let id = self.next_clip_id;
+                self.next_clip_id += 1;
+                self.control.send(EngineCommand::AddClip {
+                    track: track as u8,
+                    id,
+                    start_beats: start,
+                    len_beats: DEFAULT_RECORD_LEN,
+                });
+                let clip = Clip {
+                    id,
+                    lane: track,
+                    name: "Rec".to_string(),
+                    start_beats: start,
+                    len_beats: DEFAULT_RECORD_LEN,
+                    kind: geist_ui::theme::SignalKind::Note,
+                };
+                self.session.timeline.clips.push(clip.clone());
+                self.timeline_mirror.push(clip);
+                self.clip_notes.insert(id, Vec::new());
+                self.clip_notes_mirror.insert(id, Vec::new());
+                self.session.timeline.selected = Some(self.session.timeline.clips.len() - 1);
+                self.record_target = Some((track, id));
+            } else {
+                self.record_target = None;
+            }
+        } else if !recording && self.recorder.is_some() {
+            let abs = self.control.position_beats() as f32;
+            let finished = self.recorder.as_mut().map(|rec| rec.finalize(abs)).unwrap_or_default();
+            if let Some((track, _)) = self.record_target {
+                for note in finished {
+                    self.commit_recorded(track, note);
+                }
+            }
+            self.recorder = None;
+            self.record_target = None;
+        }
+    }
+
+    // Append one finalized recorded note to the record clip in the engine and the
+    // mirrors, growing the clip to cover it.
+    fn commit_recorded(&mut self, track: usize, note: RecordedNote) {
+        let Some((rt_track, clip_id)) = self.record_target else {
+            return;
+        };
+        if track != rt_track {
+            return;
+        }
+        self.control.send(EngineCommand::AddClipNote {
+            track: track as u8,
+            clip: clip_id,
+            pitch: note.pitch,
+            start_beats: note.start_beats,
+            len_beats: note.len_beats,
+            velocity: note.velocity,
+        });
+        let ui_note = Note {
+            pitch: note.pitch,
+            start_beats: note.start_beats,
+            len_beats: note.len_beats,
+            velocity: note.velocity,
+        };
+        self.clip_notes.entry(clip_id).or_default().push(ui_note);
+        self.clip_notes_mirror.entry(clip_id).or_default().push(ui_note);
+        if self.piano_clip == Some(clip_id) {
+            self.session.piano.notes.push(ui_note);
+        }
+
+        // Grow the clip (and its mirror) to cover the recorded note's end
+        let note_end = note.start_beats + note.len_beats;
+        if let Some(pos) = self.session.timeline.clips.iter().position(|c| c.id == clip_id) {
+            if note_end > self.session.timeline.clips[pos].len_beats {
+                self.session.timeline.clips[pos].len_beats = note_end;
+                self.control.send(EngineCommand::ResizeClip {
+                    track: track as u8,
+                    id: clip_id,
+                    len_beats: note_end,
+                });
+                if let Some(m) = self.timeline_mirror.iter_mut().find(|c| c.id == clip_id) {
+                    m.len_beats = note_end;
+                }
+            }
+        }
     }
 
     // Poll the computer keyboard and play mapped notes, edge-detected per key
@@ -826,6 +992,8 @@ impl eframe::App for StudioApp {
     // eframe 0.34 hands a root Ui; the shell composes panels via show_inside
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // Open/close the recorder before any notes are captured this frame
+        self.sync_recording();
         self.handle_computer_keys(&ctx);
         self.sync_monitor();
 
@@ -1296,6 +1464,39 @@ mod tests {
             item.intent.args.get("target").unwrap(),
             "selected_parameter"
         );
+    }
+
+    #[test]
+    fn recorder_captures_a_note_relative_to_the_clip_start() {
+        // Record clip starts at beat 4; a note played from 5.0 to 6.5 lands at
+        // local start 1.0 with length 1.5.
+        let mut rec = MidiRecorder::new(4.0);
+        rec.note_on(60, 0.9, 5.0);
+        let note = rec.note_off(60, 6.5).expect("note should finalize");
+        assert_eq!(note.pitch, 60);
+        assert!((note.start_beats - 1.0).abs() < 1e-4);
+        assert!((note.len_beats - 1.5).abs() < 1e-4);
+        assert!((note.velocity - 0.9).abs() < 1e-4);
+    }
+
+    #[test]
+    fn recorder_finalizes_still_open_notes_on_stop() {
+        let mut rec = MidiRecorder::new(0.0);
+        rec.note_on(64, 1.0, 2.0);
+        rec.note_on(67, 1.0, 2.0);
+        // Stopping at beat 4 closes both held notes
+        let closed = rec.finalize(4.0);
+        assert_eq!(closed.len(), 2);
+        assert!(closed.iter().all(|n| (n.start_beats - 2.0).abs() < 1e-4));
+        assert!(closed.iter().all(|n| (n.len_beats - 2.0).abs() < 1e-4));
+    }
+
+    #[test]
+    fn recorder_gives_a_tap_a_minimum_length() {
+        let mut rec = MidiRecorder::new(0.0);
+        rec.note_on(72, 1.0, 1.0);
+        let note = rec.note_off(72, 1.0).unwrap();
+        assert!(note.len_beats >= MIN_RECORDED_LEN);
     }
 
     #[test]

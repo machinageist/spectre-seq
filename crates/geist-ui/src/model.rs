@@ -15,6 +15,7 @@ use geist_config::commands::CommandIntent;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Transport {
     pub playing: bool,
+    pub recording: bool,
     pub bpm: f32,
     pub position_beats: f64,
     pub loop_enabled: bool,
@@ -26,6 +27,7 @@ impl Default for Transport {
     fn default() -> Self {
         Self {
             playing: false,
+            recording: false,
             bpm: 120.0,
             position_beats: 0.0,
             loop_enabled: false,

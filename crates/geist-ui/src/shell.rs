@@ -60,6 +60,13 @@ fn transport_bar(
             session.transport.playing = !session.transport.playing;
             out.intents.push(CommandIntent::new("toggle_play"));
         }
+        // Record arm: lit red while recording; the app captures armed-track notes
+        let rec = session.transport.recording;
+        let rec_label = RichText::new("⏺").color(if rec { theme::ACCENT } else { theme::TEXT_MUTED });
+        if ui.add(egui::Button::new(rec_label).fill(if rec { theme::ACCENT.linear_multiply(0.18) } else { theme::PANEL_RAISED })).clicked() {
+            session.transport.recording = !session.transport.recording;
+            out.intents.push(CommandIntent::new("toggle_record"));
+        }
         if ui
             .add(
                 egui::DragValue::new(&mut session.transport.bpm)
