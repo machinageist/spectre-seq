@@ -1,0 +1,32 @@
+version = 1
+profile_id = "performance"
+display_name = "Performance"
+startup_lens = "arrange"
+
+[lenses]
+order = ["arrange", "mix", "shape", "browser", "build", "modulation"]
+visible = ["arrange", "mix", "shape", "browser", "build", "modulation"]
+
+[layout]
+density = "spacious"
+left_panel = "macro_strip"
+right_panel = "context_shelf"
+bottom_panel = "meters"
+transport = "top"
+
+[graph]
+cable_labels = "hidden"
+show_latency = true
+show_route_health = true
+empty_actions = ["add_scene", "add_clip", "open_browser"]
+
+[context_shelf.track]
+actions = ["arm", "mute", "solo", "pin_macro", "protect_destructive_actions"]
+
+[commands.aliases]
+"Panic" = { command = "all_notes_off" }
+"Pin Macro" = { command = "pin_selected_parameter" }
+
+[keybindings]
+"Cmd+K" = "open_command_palette"
+"Space" = "toggle_transport"

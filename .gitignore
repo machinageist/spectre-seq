@@ -1,0 +1,8 @@
+# Rust build artifacts
+/target
+
+# macOS finder metadata
+.DS_Store
+
+# Claude Code per-machine settings (project skills/agents stay tracked)
+.claude/settings.local.json

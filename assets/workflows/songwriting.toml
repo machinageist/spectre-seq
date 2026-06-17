@@ -1,0 +1,32 @@
+version = 1
+profile_id = "songwriting"
+display_name = "Songwriting"
+startup_lens = "arrange"
+
+[lenses]
+order = ["arrange", "browser", "shape", "mix", "build", "modulation"]
+visible = ["arrange", "browser", "shape", "mix", "build", "modulation"]
+
+[layout]
+density = "spacious"
+left_panel = "browser"
+right_panel = "context_shelf"
+transport = "top"
+
+[graph]
+cable_labels = "hidden"
+show_latency = false
+show_route_health = true
+empty_actions = ["add_instrument", "add_sample", "open_browser"]
+
+[context_shelf.track]
+actions = ["record_clip", "add_instrument", "add_effect", "arm", "mute", "solo"]
+
+[commands.aliases]
+"New Song Part" = { command = "add_clip" }
+"Record Idea" = { command = "record_clip" }
+
+[keybindings]
+"Cmd+K" = "open_command_palette"
+"A" = "switch_lens:arrange"
+"R" = "record_clip"

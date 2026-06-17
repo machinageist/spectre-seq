@@ -1,0 +1,16 @@
+# ==============================================================================
+# File: crates/geist-lv2-host/Cargo.toml
+# Layer: LV2 host
+# Purpose: LV2 plugin host; presents the same AudioNode contract as the CLAP host
+# Status: Implemented incrementally; scanner first. Graph and manifest/FFI deps
+#         land with the world/instance slice once the lilv-vs-raw-ABI choice is made.
+# Contract: Keep comments terse, declarative, and synchronized with code.
+# ==============================================================================
+
+[package]
+name = "geist-lv2-host"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Scanner is pure std; graph and FFI dependencies arrive with the loading slice

@@ -1,0 +1,19 @@
+<!--
+File: docs/adr/003-cbor-project-format.md
+Layer: documentation
+Purpose: Define 003 cbor project format responsibilities and integration boundaries.
+Status: Pseudocode scaffold; implementation intentionally pending.
+Contract: Keep comments terse, declarative, and synchronized with code.
+-->
+
+# 003 Cbor Project Format
+
+## Pseudocode plan
+- Declare responsibility: Define 003 cbor project format responsibilities and integration boundaries.
+- Define public types before behavior.
+- Separate real-time-safe paths from UI/app paths.
+- Prefer explicit errors over implicit panics.
+- Add tests beside behavior once implementation begins.
+- State current architecture, not aspiration.
+- Record tradeoffs and invariants.
+- Link decisions to implementation files.

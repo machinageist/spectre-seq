@@ -1,0 +1,24 @@
+# ==============================================================================
+# File: crates/geist-project/Cargo.toml
+# Layer: project persistence
+# Purpose: Versioned on-disk DAW project format; CBOR project + TOML settings.
+# Status: Implemented incrementally; schema first.
+# Contract: Keep comments terse, declarative, and synchronized with code.
+# ==============================================================================
+
+[package]
+name = "geist-project"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Decoupled wire format: serde DTOs, not internal engine types
+serde = { version = "1", features = ["derive"] }
+# Compact byte-string encoding for opaque plugin state blobs
+serde_bytes = "0.11"
+# Compact binary project file
+ciborium = "0.2"
+# Human-readable settings file
+toml = "0.8"
+# Content-addressed audio asset references
+blake3 = "1"

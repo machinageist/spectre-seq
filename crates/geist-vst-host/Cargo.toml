@@ -1,0 +1,20 @@
+# ==============================================================================
+# File: crates/geist-vst-host/Cargo.toml
+# Layer: plugin host
+# Purpose: VST3 plugin host; wraps the raw vst3 COM bindings in a safe API.
+# Status: Implemented incrementally; scanner first. FFI deps land with that slice.
+# Contract: Keep comments terse, declarative, and synchronized with code.
+# ==============================================================================
+
+[package]
+name = "geist-vst-host"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+geist-core = { path = "../geist-core" }
+geist-graph = { path = "../geist-graph" }
+# Raw VST3 COM bindings (MIT-licensed headers as of SDK 3.8.0)
+vst3 = "0.3"
+# Load the bundle's shared library and resolve the factory entry point
+libloading = "0.8"

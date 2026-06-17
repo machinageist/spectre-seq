@@ -1,0 +1,17 @@
+# ==============================================================================
+# File: plugins/geist-synth/Cargo.toml
+# Layer: synth plugin
+# Purpose: Flagship wavetable/subtractive synth; engine + AudioNode integration.
+# Status: Implemented incrementally; engine first (osc/filter/voice).
+# Contract: Keep comments terse, declarative, and synchronized with code.
+# ==============================================================================
+
+[package]
+name = "geist-synth"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+geist-dsp = { path = "../../crates/geist-dsp" }
+geist-core = { path = "../../crates/geist-core" }
+geist-graph = { path = "../../crates/geist-graph" }

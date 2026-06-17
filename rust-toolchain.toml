@@ -1,0 +1,19 @@
+# ==============================================================================
+# File: rust-toolchain.toml
+# Layer: toolchain pin
+# Purpose: pin nightly for std::simd
+# Status: Pseudocode scaffold; implementation intentionally pending.
+# Contract: Keep comments terse, declarative, and synchronized with code.
+# ==============================================================================
+
+# Pseudocode plan:
+# - Declare responsibility: pin nightly for std::simd
+# - Define public types before behavior.
+# - Separate real-time-safe paths from UI/app paths.
+# - Prefer explicit errors over implicit panics.
+# - Add tests beside behavior once implementation begins.
+# - Keep config explicit and reproducible.
+# - Document each non-default setting inline.
+
+[toolchain]
+channel = "nightly"

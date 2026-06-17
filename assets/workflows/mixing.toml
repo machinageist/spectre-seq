@@ -1,0 +1,42 @@
+version = 1
+profile_id = "mixing"
+display_name = "Mixing"
+startup_lens = "mix"
+
+[lenses]
+order = ["mix", "arrange", "shape", "build", "modulation", "browser"]
+visible = ["mix", "arrange", "shape", "build", "modulation", "browser"]
+
+[layout]
+density = "compact"
+left_panel = "meters"
+right_panel = "context_shelf"
+bottom_panel = "browser"
+transport = "top"
+
+[graph]
+cable_labels = "on_hover"
+show_latency = true
+show_route_health = true
+empty_actions = ["add_audio_track", "add_bus", "open_browser"]
+
+[context_shelf.track]
+actions = ["show_inserts", "add_send", "route_output", "mute", "solo", "show_graph_branch"]
+
+[commands.aliases]
+"Make Bus" = { command = "add_bus" }
+"Print Stem" = { command = "bounce_selected_track" }
+
+[keybindings]
+"Cmd+K" = "open_command_palette"
+"X" = "switch_lens:mix"
+
+[[templates]]
+name = "Parallel Drum Bus"
+kind = "rack"
+args = { inserts = "compressor,saturator,eq", blend = "0.5" }
+
+[[templates]]
+name = "Stem Print Track"
+kind = "track"
+args = { role = "print", input = "selected_bus" }
