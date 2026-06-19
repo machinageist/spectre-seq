@@ -15,6 +15,7 @@ use geist_config::commands::CommandIntent;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Transport {
     pub playing: bool,
+    pub recording: bool,
     pub bpm: f32,
     pub position_beats: f64,
     pub loop_enabled: bool,
@@ -26,6 +27,7 @@ impl Default for Transport {
     fn default() -> Self {
         Self {
             playing: false,
+            recording: false,
             bpm: 120.0,
             position_beats: 0.0,
             loop_enabled: false,
@@ -270,9 +272,11 @@ impl PianoRollModel {
     }
 }
 
-// A clip placed on an arrangement lane
+// A clip placed on an arrangement lane. `id` is engine-stable (0 means "newly
+// created in the view, not yet assigned an id by the app").
 #[derive(Clone, Debug, PartialEq)]
 pub struct Clip {
+    pub id: u64,
     pub lane: usize,
     pub name: String,
     pub start_beats: f32,
@@ -286,12 +290,21 @@ pub struct Lane {
     pub name: String,
 }
 
-// The arrangement timeline: lanes and clips over beats
+// The arrangement timeline: lanes and clips over beats, plus the selected clip
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TimelineModel {
     pub lanes: Vec<Lane>,
     pub clips: Vec<Clip>,
     pub length_beats: f32,
+    // Index into `clips` of the selected clip, if any (the piano roll edits it)
+    pub selected: Option<usize>,
+}
+
+impl TimelineModel {
+    // The selected clip, if the index is in range
+    pub fn selected_clip(&self) -> Option<&Clip> {
+        self.selected.and_then(|i| self.clips.get(i))
+    }
 }
 
 // A window of output samples for the oscilloscope
@@ -513,11 +526,12 @@ impl SessionModel {
                 Lane { name: "Lead".into() },
             ],
             clips: vec![
-                Clip { lane: 0, name: "Beat".into(), start_beats: 0.0, len_beats: 8.0, kind: SignalKind::Audio },
-                Clip { lane: 1, name: "Bassline".into(), start_beats: 0.0, len_beats: 16.0, kind: SignalKind::Note },
-                Clip { lane: 2, name: "Hook".into(), start_beats: 4.0, len_beats: 8.0, kind: SignalKind::Note },
+                Clip { id: 1, lane: 0, name: "Beat".into(), start_beats: 0.0, len_beats: 8.0, kind: SignalKind::Audio },
+                Clip { id: 2, lane: 1, name: "Bassline".into(), start_beats: 0.0, len_beats: 16.0, kind: SignalKind::Note },
+                Clip { id: 3, lane: 2, name: "Hook".into(), start_beats: 4.0, len_beats: 8.0, kind: SignalKind::Note },
             ],
             length_beats: 32.0,
+            selected: None,
         };
 
         // A two-track step sequencer; track 0 carries a four-on-the-floor kick

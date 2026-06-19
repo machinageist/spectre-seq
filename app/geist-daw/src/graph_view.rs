@@ -13,6 +13,7 @@
 use eframe::egui;
 
 use crate::control::{EngineCommand, EngineControl};
+use crate::engine::NUM_TRACKS;
 
 // Node box dimensions
 const NODE_W: f32 = 116.0;
@@ -86,11 +87,16 @@ impl GraphView {
                 match i {
                     DELAY => {
                         *delay_on = !*delay_on;
-                        control.send(EngineCommand::SetDelay(*delay_on));
+                        // The classic chain is global; toggle every track's delay
+                        for track in 0..NUM_TRACKS as u8 {
+                            control.send(EngineCommand::SetDelay { track, on: *delay_on });
+                        }
                     }
                     REVERB => {
                         *reverb_on = !*reverb_on;
-                        control.send(EngineCommand::SetReverb(*reverb_on));
+                        for track in 0..NUM_TRACKS as u8 {
+                            control.send(EngineCommand::SetReverb { track, on: *reverb_on });
+                        }
                     }
                     _ => {}
                 }

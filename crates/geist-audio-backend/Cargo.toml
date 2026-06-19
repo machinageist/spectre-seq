@@ -15,3 +15,5 @@ edition = "2021"
 geist-core = { path = "../geist-core" }
 # Cross-platform audio I/O; wraps CoreAudio/WASAPI/ALSA behind one API
 cpal = "0.15"
+# Lock-free SPSC ring for handing captured input frames to the app thread
+rtrb = "0.3"

@@ -16,6 +16,8 @@ use rtrb::{Consumer, Producer, RingBuffer};
 
 // Default depth of the command ring; one block rarely drains this many
 const COMMAND_CAPACITY: usize = 256;
+// Depth of the audio-asset transfer ring (recorded clips handed to the engine)
+const ASSET_CAPACITY: usize = 64;
 // Depth of the scope sample ring; sized to outpace the UI frame rate
 const SCOPE_CAPACITY: usize = 8_192;
 // Keep every Nth output sample for the scope, thinning the audio-rate stream
@@ -36,46 +38,57 @@ pub enum EngineCommand {
     SetPlaying(bool),
     // Set the transport tempo in beats per minute
     SetBpm(f32),
-    // Set the base filter cutoff in hertz
-    SetCutoff(f32),
-    // Set the filter resonance
-    SetResonance(f32),
+    // Set a track's base filter cutoff in hertz
+    SetCutoff { track: u8, hz: f32 },
+    // Set a track's filter resonance
+    SetResonance { track: u8, resonance: f32 },
     // Set the master output gain
     SetGain(f32),
-    // Toggle the delay effect
-    SetDelay(bool),
-    // Set the delay time in seconds (both channels)
-    SetDelayTime(f32),
-    // Set the delay feedback amount
-    SetDelayFeedback(f32),
-    // Set the delay dry/wet mix
-    SetDelayMix(f32),
-    // Toggle the reverb effect
-    SetReverb(bool),
-    // Set the reverb dry/wet mix
-    SetReverbMix(f32),
-    // Set oscillator A unison voice count
-    SetUnisonVoices(usize),
-    // Set oscillator A unison detune spread in cents
-    SetDetune(f32),
-    // Set the oscillator A/B blend (0 = sine, 1 = saw)
-    SetOscMix(f32),
-    // Set oscillator B's pitch offset in semitones
-    SetOscBSemis(f32),
-    // Set the amplitude ADSR (attack/decay/release seconds, sustain 0..1)
-    SetAmpEnv { attack: f32, decay: f32, sustain: f32, release: f32 },
-    // Set the filter ADSR (attack/decay/release seconds, sustain 0..1)
-    SetFilterEnv { attack: f32, decay: f32, sustain: f32, release: f32 },
+    // Toggle a track's delay effect
+    SetDelay { track: u8, on: bool },
+    // Set a track's delay time in seconds (both channels)
+    SetDelayTime { track: u8, seconds: f32 },
+    // Set a track's delay feedback amount
+    SetDelayFeedback { track: u8, feedback: f32 },
+    // Set a track's delay dry/wet mix
+    SetDelayMix { track: u8, mix: f32 },
+    // Toggle a track's reverb effect
+    SetReverb { track: u8, on: bool },
+    // Set a track's reverb dry/wet mix
+    SetReverbMix { track: u8, mix: f32 },
+    // Set a track's oscillator A unison voice count
+    SetUnisonVoices { track: u8, voices: usize },
+    // Set a track's oscillator A unison detune spread in cents
+    SetDetune { track: u8, cents: f32 },
+    // Set a track's oscillator A/B blend (0 = sine, 1 = saw)
+    SetOscMix { track: u8, mix: f32 },
+    // Set a track's oscillator B pitch offset in semitones
+    SetOscBSemis { track: u8, semis: f32 },
+    // Set a track's amplitude ADSR (attack/decay/release seconds, sustain 0..1)
+    SetAmpEnv { track: u8, attack: f32, decay: f32, sustain: f32, release: f32 },
+    // Set a track's filter ADSR (attack/decay/release seconds, sustain 0..1)
+    SetFilterEnv { track: u8, attack: f32, decay: f32, sustain: f32, release: f32 },
     // Toggle one step-sequencer cell on a track
     SetCell { track: u8, step: u8, row: u8, on: bool },
     // Clear a track's whole step pattern
     ClearPattern { track: u8 },
-    // Add a timed note to a track's piano-roll clip
-    AddNote { track: u8, pitch: u8, start_beats: f32, len_beats: f32, velocity: f32 },
-    // Remove the matching note (pitch + start) from a track's clip
-    RemoveNote { track: u8, pitch: u8, start_beats: f32 },
-    // Clear a track's whole piano-roll clip
-    ClearNotes { track: u8 },
+    // Place a new MIDI clip on a track's timeline
+    AddClip { track: u8, id: u64, start_beats: f32, len_beats: f32 },
+    // Move a placed clip's start position
+    MoveClip { track: u8, id: u64, start_beats: f32 },
+    // Resize a placed clip's length
+    ResizeClip { track: u8, id: u64, len_beats: f32 },
+    // Remove a placed clip from a track's timeline
+    RemoveClip { track: u8, id: u64 },
+    // Add a timed note (relative to the clip start) to a clip
+    AddClipNote { track: u8, clip: u64, pitch: u8, start_beats: f32, len_beats: f32, velocity: f32 },
+    // Remove the matching note (pitch + start) from a clip
+    RemoveClipNote { track: u8, clip: u64, pitch: u8, start_beats: f32 },
+    // Clear all notes from a clip
+    ClearClip { track: u8, clip: u64 },
+    // Place a recorded audio clip on a track; its samples arrive via the asset
+    // ring in `slot` beforehand (the asset carries its own channel layout).
+    AddAudioClip { track: u8, id: u64, start_beats: f32, len_beats: f32, slot: usize },
     // Set a track's mixer level
     SetTrackLevel { track: u8, level: f32 },
     // Set a track's stereo pan in [-1, 1] (left to right)
@@ -84,6 +97,15 @@ pub enum EngineCommand {
     SetTrackMute { track: u8, on: bool },
     // Solo or unsolo a track
     SetTrackSolo { track: u8, on: bool },
+}
+
+// A recorded audio buffer handed to the engine out-of-band from the command
+// ring (commands are Copy; this carries the shared sample buffer). The audio
+// thread moves it into a pre-sized slot, so no allocation happens there.
+pub struct AudioAsset {
+    pub slot: usize,
+    pub samples: Arc<[f32]>,
+    pub channels: u16,
 }
 
 // Lock-free latest-value output meter shared across the thread boundary
@@ -141,6 +163,8 @@ pub struct EngineControl {
     // Latest transport beat position for the UI playhead
     position: Arc<BeatClock>,
     scope: Consumer<f32>,
+    // Recorded audio buffers handed to the engine out-of-band
+    assets: Producer<AudioAsset>,
     // Rolling display window the UI redraws each frame
     scope_view: Vec<f32>,
 }
@@ -151,6 +175,7 @@ pub struct EngineSink {
     pub meter: Arc<LevelMeter>,
     pub track_meters: Arc<Vec<LevelMeter>>,
     pub position: Arc<BeatClock>,
+    pub assets: Consumer<AudioAsset>,
     scope: Producer<f32>,
 }
 
@@ -158,6 +183,7 @@ pub struct EngineSink {
 pub fn control_plane(num_tracks: usize) -> (EngineControl, EngineSink) {
     let (command_tx, command_rx) = RingBuffer::new(COMMAND_CAPACITY);
     let (scope_tx, scope_rx) = RingBuffer::new(SCOPE_CAPACITY);
+    let (asset_tx, asset_rx) = RingBuffer::new(ASSET_CAPACITY);
     let meter = Arc::new(LevelMeter::new());
     let track_meters = Arc::new((0..num_tracks).map(|_| LevelMeter::new()).collect::<Vec<_>>());
     let position = Arc::new(BeatClock::new());
@@ -168,6 +194,7 @@ pub fn control_plane(num_tracks: usize) -> (EngineControl, EngineSink) {
             track_meters: Arc::clone(&track_meters),
             position: Arc::clone(&position),
             scope: scope_rx,
+            assets: asset_tx,
             scope_view: Vec::with_capacity(SCOPE_VIEW_LEN),
         },
         EngineSink {
@@ -175,6 +202,7 @@ pub fn control_plane(num_tracks: usize) -> (EngineControl, EngineSink) {
             meter,
             track_meters,
             position,
+            assets: asset_rx,
             scope: scope_tx,
         },
     )
@@ -196,6 +224,12 @@ impl EngineControl {
     // Enqueue a command; dropped (returns false) only if the ring is saturated
     pub fn send(&mut self, command: EngineCommand) -> bool {
         self.commands.push(command).is_ok()
+    }
+
+    // Hand a recorded audio buffer to the engine; false if the ring is saturated.
+    // Send the asset before the AddAudioClip command that references its slot.
+    pub fn send_asset(&mut self, asset: AudioAsset) -> bool {
+        self.assets.push(asset).is_ok()
     }
 
     // Current output peak for meters and scopes
