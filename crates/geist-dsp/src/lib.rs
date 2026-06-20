@@ -31,7 +31,10 @@ pub mod prelude {
     pub use crate::filter::svf::{Svf, SvfMode};
     pub use crate::fx::chorus::Chorus;
     pub use crate::fx::delay::StereoDelay;
+    pub use crate::fx::distortion::{Distortion, DistortionMode};
     pub use crate::fx::eq::ParametricEq;
+    pub use crate::fx::flanger::Flanger;
+    pub use crate::fx::phaser::Phaser;
     pub use crate::fx::reverb::{Convolver, Reverb};
     pub use crate::fx::saturator::{SaturationCurve, Saturator};
     pub use crate::lfo::{Lfo, LfoWaveform, StepSequencer};

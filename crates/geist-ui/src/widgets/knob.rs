@@ -15,6 +15,8 @@ const SWEEP_DEG: f32 = 270.0;
 const START_DEG: f32 = -135.0;
 // Pixels of vertical drag that span the whole range
 const DRAG_FULL_PX: f32 = 200.0;
+// Drag is this much slower while Shift is held, for fine adjustment
+const FINE_FACTOR: f32 = 6.0;
 // Arc sampling resolution
 const ARC_STEPS: usize = 24;
 
@@ -121,8 +123,14 @@ impl<'a> Knob<'a> {
             if resp.double_clicked() {
                 value = self.default;
             } else if resp.dragged() {
+                // Shift slows the drag for fine adjustment
+                let span = if ui.input(|i| i.modifiers.shift) {
+                    DRAG_FULL_PX * FINE_FACTOR
+                } else {
+                    DRAG_FULL_PX
+                };
                 let pos = position_of(value, lo, hi, self.taper);
-                let next = (pos - resp.drag_delta().y / DRAG_FULL_PX).clamp(0.0, 1.0);
+                let next = (pos - resp.drag_delta().y / span).clamp(0.0, 1.0);
                 value = value_at(next, lo, hi, self.taper);
             }
             if value != original {

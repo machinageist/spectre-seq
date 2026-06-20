@@ -93,6 +93,15 @@ impl WavetableOsc {
         table.sample(self.phasor.tick())
     }
 
+    // Next sample with the read phase offset by `pm` cycles (phase modulation).
+    // The phasor still advances by one sample; only the read point shifts, so the
+    // base frequency is unchanged. Used for 2-operator FM/PM.
+    #[inline]
+    pub fn next_sample_pm(&mut self, table: &Wavetable, pm: f32) -> f32 {
+        let phase = self.phasor.tick() + pm;
+        table.sample(phase - phase.floor())
+    }
+
     // Next sample morphing two equal-length tables by `morph` in [0, 1]
     #[inline]
     pub fn next_morphed(&mut self, a: &Wavetable, b: &Wavetable, morph: f32) -> f32 {

@@ -27,6 +27,9 @@ pub struct VoicePool {
     ages: Vec<u64>,
     next_age: u64,
     steal_mode: StealMode,
+    // Max voices that may sound at once; <= voices.len(). New notes allocate and
+    // steal only within this cap, so polyphony is adjustable without reallocating.
+    active_cap: usize,
 }
 
 impl VoicePool {
@@ -38,12 +41,22 @@ impl VoicePool {
             ages: vec![0; count],
             next_age: 1,
             steal_mode: StealMode::Oldest,
+            active_cap: count,
         }
     }
 
     // Choose how busy voices are reclaimed
     pub fn set_steal_mode(&mut self, mode: StealMode) {
         self.steal_mode = mode;
+    }
+
+    // Cap how many voices may sound at once, within the allocated pool
+    pub fn set_active_voices(&mut self, voices: usize) {
+        let cap = voices.clamp(1, self.voices.len());
+        self.active_cap = cap;
+        for voice in &mut self.voices[cap..] {
+            voice.reset();
+        }
     }
 
     // Configure every voice identically (patch application)
@@ -90,21 +103,21 @@ impl VoicePool {
         }
     }
 
-    // Pick a free voice, otherwise steal per the steal mode
+    // Pick a free voice, otherwise steal per the steal mode. Allocation is
+    // confined to the active cap so polyphony stays within the configured limit.
     fn allocate(&mut self) -> usize {
-        if let Some(free) = self.voices.iter().position(|v| !v.is_active()) {
+        let cap = self.active_cap.clamp(1, self.voices.len());
+        if let Some(free) = self.voices[..cap].iter().position(|v| !v.is_active()) {
             return free;
         }
         match self.steal_mode {
-            StealMode::Oldest => self
-                .ages
+            StealMode::Oldest => self.ages[..cap]
                 .iter()
                 .enumerate()
                 .min_by_key(|(_, &age)| age)
                 .map(|(i, _)| i)
                 .unwrap_or(0),
-            StealMode::Quietest => self
-                .voices
+            StealMode::Quietest => self.voices[..cap]
                 .iter()
                 .enumerate()
                 .min_by(|(_, a), (_, b)| {
@@ -195,6 +208,30 @@ mod tests {
             pool.note_on(note, 1.0);
         }
         assert!(pool.active_voice_count() <= 3);
+    }
+
+    #[test]
+    fn active_cap_limits_polyphony() {
+        let mut pool = VoicePool::new(SAMPLE_RATE, 8);
+        pool.set_active_voices(2);
+        for note in 60..68 {
+            pool.note_on(note, 1.0);
+        }
+        assert!(pool.active_voice_count() <= 2, "active cap not respected");
+    }
+
+    #[test]
+    fn reducing_active_cap_silences_excess_voices() {
+        let mut pool = VoicePool::new(SAMPLE_RATE, 8);
+        for note in 60..64 {
+            pool.note_on(note, 1.0);
+        }
+        assert_eq!(pool.active_voice_count(), 4);
+        pool.set_active_voices(2);
+        assert!(
+            pool.active_voice_count() <= 2,
+            "excess voices kept sounding"
+        );
     }
 
     #[test]

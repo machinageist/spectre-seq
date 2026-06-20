@@ -15,11 +15,12 @@ use geist_audio_backend::prelude::{BlockProcessor, CpalBackend, Stream};
 use geist_core::context::ProcessContext;
 use geist_core::events::NoteEvent;
 use geist_core::transport::TransportSnapshot;
+use geist_dsp::prelude::{Lfo, LfoWaveform};
 use geist_graph::node::AudioNode;
-use geist_synth::prelude::SynthNode;
+use geist_synth::prelude::{ModMatrix, ModRoute, SynthNode};
 use geist_timeline::prelude::Transport;
 
-use crate::control::{EngineCommand, EngineSink};
+use crate::control::{EngineCommand, EngineSink, LfoDestination};
 use crate::fx::FxChain;
 
 // Most audio assets (recorded buffers) the engine holds at once. The store is
@@ -126,7 +127,10 @@ impl Sequencer {
         self.release_sounding(out);
         for row in 0..SEQ_ROWS {
             if self.grid[row][column] {
-                push_capped(out, NoteEvent::on(0, 0, self.base_midi + row as u8, STEP_VELOCITY));
+                push_capped(
+                    out,
+                    NoteEvent::on(0, 0, self.base_midi + row as u8, STEP_VELOCITY),
+                );
                 self.sounding[row] = true;
             }
         }
@@ -183,12 +187,31 @@ const DEFAULT_DETUNE_CENTS: f32 = 0.0;
 // Startup oscillator blend (sine/saw) and osc B pitch offset, matching OscStack
 pub const DEFAULT_OSC_MIX: f32 = 0.5;
 pub const DEFAULT_OSC_B_SEMIS: f32 = 0.0;
+// Startup oscillator A coarse, A/B fine tuning, and FM index (all neutral/off)
+pub const DEFAULT_OSC_A_SEMIS: f32 = 0.0;
+pub const DEFAULT_OSC_A_CENTS: f32 = 0.0;
+pub const DEFAULT_OSC_B_CENTS: f32 = 0.0;
+pub const DEFAULT_FM_AMOUNT: f32 = 0.0;
+// Startup active-voice cap; the pool is allocated with this many voices
+pub const DEFAULT_VOICES: usize = 16;
+// Startup LFO route: available but neutral until depth rises above zero
+pub const DEFAULT_LFO_RATE_HZ: f32 = 2.0;
+pub const DEFAULT_LFO_DEPTH: f32 = 0.0;
+pub const DEFAULT_LFO_DEST: LfoDestination = LfoDestination::Cutoff;
 // Startup amp/filter ADSR, matching the voice's musical defaults
 // [attack, decay, sustain, release]
 pub const DEFAULT_AMP_ENV: [f32; 4] = [0.005, 0.1, 0.8, 0.3];
 pub const DEFAULT_FILTER_ENV: [f32; 4] = [0.01, 0.2, 0.3, 0.3];
 // Startup transport tempo
 pub const DEFAULT_BPM: f64 = 120.0;
+
+fn lfo_dest_index(dest: LfoDestination) -> usize {
+    match dest {
+        LfoDestination::Cutoff => MOD_DEST_CUTOFF,
+        LfoDestination::Pitch => MOD_DEST_PITCH,
+        LfoDestination::Fm => MOD_DEST_FM,
+    }
+}
 
 // Default per-track mixer level
 const DEFAULT_TRACK_LEVEL: f32 = 0.8;
@@ -199,6 +222,14 @@ pub const MAX_CLIP_NOTES: usize = 256;
 pub const MAX_CLIPS_PER_TRACK: usize = 64;
 // Start-beat tolerance when matching a note for removal
 const START_EPS: f32 = 1e-3;
+
+// Track-local modulation matrix indices
+const MOD_SRC_LFO: usize = 0;
+const MOD_DEST_CUTOFF: usize = 0;
+const MOD_DEST_PITCH: usize = 1;
+const MOD_DEST_FM: usize = 2;
+const MOD_SOURCE_COUNT: usize = 1;
+const MOD_DEST_COUNT: usize = 3;
 
 // One timed note inside a clip, positioned relative to the clip start, with its
 // current sounding state
@@ -273,7 +304,12 @@ impl Arrangement {
     // Place an audio clip referencing an asset slot, if room remains
     fn add_audio_clip(&mut self, id: u64, start_beats: f32, len_beats: f32, slot: usize) {
         if self.audio.len() < MAX_CLIPS_PER_TRACK && !self.audio.iter().any(|c| c.id == id) {
-            self.audio.push(AudioArrClip { id, start_beats, len_beats, slot });
+            self.audio.push(AudioArrClip {
+                id,
+                start_beats,
+                len_beats,
+                slot,
+            });
         }
     }
 
@@ -399,8 +435,9 @@ impl Arrangement {
             let within = beat >= start && beat < start + clip.len_beats as f64;
             let local = (beat - start) as f32;
             for note in &mut clip.notes {
-                let should =
-                    within && local >= note.start_beats && local < note.start_beats + note.len_beats;
+                let should = within
+                    && local >= note.start_beats
+                    && local < note.start_beats + note.len_beats;
                 if should && !note.sounding {
                     push_capped(out, NoteEvent::on(0, 0, note.pitch, note.velocity));
                     note.sounding = true;
@@ -426,6 +463,148 @@ impl Default for Arrangement {
     }
 }
 
+// Scenes (launchable clip slots) per track in the session view
+pub const MAX_SCENES: usize = 8;
+// Default length, in beats, of a freshly created session clip
+const DEFAULT_SESSION_LEN: f32 = 4.0;
+
+// One launchable session clip slot: notes loop over `len_beats` while playing
+struct SessionSlot {
+    filled: bool,
+    len_beats: f32,
+    notes: Vec<ClipNote>,
+}
+
+impl SessionSlot {
+    fn new() -> Self {
+        Self {
+            filled: false,
+            len_beats: DEFAULT_SESSION_LEN,
+            notes: Vec::with_capacity(MAX_CLIP_NOTES),
+        }
+    }
+
+    // Release every sounding note in this slot
+    fn release(&mut self, out: &mut Vec<NoteEvent>) {
+        for note in &mut self.notes {
+            if note.sounding {
+                push_capped(out, NoteEvent::off(0, 0, note.pitch));
+                note.sounding = false;
+            }
+        }
+    }
+}
+
+// A track's session clip launcher: fixed scene slots, at most one playing. The
+// playing slot loops its notes against the absolute transport beat (phase-locked
+// to the song), additively with the timeline arrangement and step sequencer.
+pub struct SessionClips {
+    slots: Vec<SessionSlot>,
+    playing: Option<usize>,
+}
+
+impl SessionClips {
+    // Build an empty launcher with MAX_SCENES slots
+    fn new() -> Self {
+        Self {
+            slots: (0..MAX_SCENES).map(|_| SessionSlot::new()).collect(),
+            playing: None,
+        }
+    }
+
+    // Mark a slot filled (created in the view), keeping its notes
+    fn create(&mut self, scene: usize, len_beats: f32) {
+        if let Some(slot) = self.slots.get_mut(scene) {
+            slot.filled = true;
+            slot.len_beats = len_beats.max(0.25);
+        }
+    }
+
+    // Launch a filled slot immediately, releasing the previously playing one
+    fn launch(&mut self, scene: usize, out: &mut Vec<NoteEvent>) {
+        if self.slots.get(scene).map(|s| s.filled).unwrap_or(false) {
+            if let Some(p) = self.playing {
+                if p != scene {
+                    self.slots[p].release(out);
+                }
+            }
+            self.playing = Some(scene);
+        }
+    }
+
+    // Stop the playing slot
+    fn stop(&mut self, out: &mut Vec<NoteEvent>) {
+        if let Some(p) = self.playing.take() {
+            self.slots[p].release(out);
+        }
+    }
+
+    // Add a timed note (relative to the slot start) to a slot
+    fn add_note(&mut self, scene: usize, pitch: u8, start_beats: f32, len_beats: f32, velocity: f32) {
+        if let Some(slot) = self.slots.get_mut(scene) {
+            if slot.notes.len() < MAX_CLIP_NOTES {
+                slot.filled = true;
+                slot.notes.push(ClipNote {
+                    pitch,
+                    start_beats,
+                    len_beats,
+                    velocity,
+                    sounding: false,
+                });
+            }
+        }
+    }
+
+    // Remove the matching note (pitch + start) from a slot
+    fn remove_note(&mut self, scene: usize, pitch: u8, start_beats: f32, out: &mut Vec<NoteEvent>) {
+        if let Some(slot) = self.slots.get_mut(scene) {
+            if let Some(i) = slot.notes.iter().position(|n| {
+                n.pitch == pitch && (n.start_beats - start_beats).abs() < START_EPS
+            }) {
+                if slot.notes[i].sounding {
+                    push_capped(out, NoteEvent::off(0, 0, pitch));
+                }
+                slot.notes.remove(i);
+            }
+        }
+    }
+
+    // Advance the playing slot, looping its notes over the slot length
+    fn advance(&mut self, beat: f64, out: &mut Vec<NoteEvent>) {
+        let Some(p) = self.playing else {
+            return;
+        };
+        let slot = &mut self.slots[p];
+        if slot.len_beats <= 0.0 {
+            return;
+        }
+        let local = beat.rem_euclid(slot.len_beats as f64) as f32;
+        for note in &mut slot.notes {
+            let should = local >= note.start_beats && local < note.start_beats + note.len_beats;
+            if should && !note.sounding {
+                push_capped(out, NoteEvent::on(0, 0, note.pitch, note.velocity));
+                note.sounding = true;
+            } else if !should && note.sounding {
+                push_capped(out, NoteEvent::off(0, 0, note.pitch));
+                note.sounding = false;
+            }
+        }
+    }
+
+    // Release the playing slot's sounding notes (transport stop/pause)
+    fn release(&mut self, out: &mut Vec<NoteEvent>) {
+        if let Some(p) = self.playing {
+            self.slots[p].release(out);
+        }
+    }
+}
+
+impl Default for SessionClips {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // A track's instrument patch: every synth macro is now per-track, so each track
 // has an independent sound. Applied to the track's SynthNode each block.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -435,7 +614,16 @@ pub struct Patch {
     pub unison_voices: usize,
     pub detune_cents: f32,
     pub osc_mix: f32,
+    pub osc_a_semis: f32,
     pub osc_b_semis: f32,
+    pub osc_a_cents: f32,
+    pub osc_b_cents: f32,
+    pub fm_amount: f32,
+    // Active-voice cap (polyphony), within the allocated pool
+    pub polyphony: usize,
+    pub lfo_rate_hz: f32,
+    pub lfo_depth: f32,
+    pub lfo_dest: LfoDestination,
     // [attack, decay, sustain, release]
     pub amp_env: [f32; 4],
     pub filter_env: [f32; 4],
@@ -450,7 +638,15 @@ impl Default for Patch {
             unison_voices: DEFAULT_UNISON_VOICES,
             detune_cents: DEFAULT_DETUNE_CENTS,
             osc_mix: DEFAULT_OSC_MIX,
+            osc_a_semis: DEFAULT_OSC_A_SEMIS,
             osc_b_semis: DEFAULT_OSC_B_SEMIS,
+            osc_a_cents: DEFAULT_OSC_A_CENTS,
+            osc_b_cents: DEFAULT_OSC_B_CENTS,
+            fm_amount: DEFAULT_FM_AMOUNT,
+            polyphony: DEFAULT_VOICES,
+            lfo_rate_hz: DEFAULT_LFO_RATE_HZ,
+            lfo_depth: DEFAULT_LFO_DEPTH,
+            lfo_dest: DEFAULT_LFO_DEST,
             amp_env: DEFAULT_AMP_ENV,
             filter_env: DEFAULT_FILTER_ENV,
         }
@@ -462,9 +658,12 @@ impl Default for Patch {
 pub struct Track {
     node: SynthNode,
     patch: Patch,
+    lfo: Lfo,
+    mod_matrix: ModMatrix,
     fx: FxChain,
     sequencer: Sequencer,
     arrangement: Arrangement,
+    session: SessionClips,
     level: f32,
     pan: f32,
     muted: bool,
@@ -485,9 +684,12 @@ impl Track {
         Self {
             node: SynthNode::new(sample_rate_hz as f32, polyphony),
             patch: Patch::default(),
+            lfo: Lfo::new(LfoWaveform::Sine),
+            mod_matrix: ModMatrix::new(),
             fx: FxChain::new(channels, block_frames, sample_rate_hz),
             sequencer: Sequencer::new(base_midi, grid),
             arrangement: Arrangement::new(),
+            session: SessionClips::new(),
             level: DEFAULT_TRACK_LEVEL,
             pan: 0.0,
             muted: false,
@@ -501,12 +703,37 @@ impl Track {
         self.fx.prepare(config);
     }
 
-    // Push the patch macros into the instrument node for this block
-    fn apply_patch(&mut self) {
-        self.node.set_unison(self.patch.unison_voices, self.patch.detune_cents);
-        self.node.set_filter(self.patch.cutoff_hz, self.patch.resonance);
+    // Push the patch macros into the instrument node for this block. The LFO is
+    // a per-block (control-rate) source: it is ticked once per block, so its
+    // effective sample rate is the block rate (sample_rate / frames).
+    fn apply_patch(&mut self, frames: usize) {
+        let block_rate = self.node.sample_rate() / frames.max(1) as f32;
+        self.lfo.set_frequency(self.patch.lfo_rate_hz, block_rate);
+        self.mod_matrix.clear();
+        self.mod_matrix.add_route(ModRoute::bipolar(
+            MOD_SRC_LFO,
+            lfo_dest_index(self.patch.lfo_dest),
+            self.patch.lfo_depth,
+        ));
+        let sources = [self.lfo.next_sample(); MOD_SOURCE_COUNT];
+        let mut dests = [0.0f32; MOD_DEST_COUNT];
+        self.mod_matrix.resolve(&sources, &mut dests);
+        let cutoff = (self.patch.cutoff_hz + dests[MOD_DEST_CUTOFF]).clamp(20.0, 18_000.0);
+        let pitch = dests[MOD_DEST_PITCH];
+        let fm_amount = (self.patch.fm_amount + dests[MOD_DEST_FM]).max(0.0);
+
+        self.node
+            .set_unison(self.patch.unison_voices, self.patch.detune_cents);
+        self.node.set_filter(cutoff, self.patch.resonance);
         self.node.set_osc_mix(self.patch.osc_mix);
-        self.node.set_osc_b_semitones(self.patch.osc_b_semis);
+        self.node
+            .set_osc_a_semitones(self.patch.osc_a_semis + pitch);
+        self.node
+            .set_osc_b_semitones(self.patch.osc_b_semis + pitch);
+        self.node.set_osc_a_cents(self.patch.osc_a_cents);
+        self.node.set_osc_b_cents(self.patch.osc_b_cents);
+        self.node.set_fm_amount(fm_amount);
+        self.node.set_polyphony(self.patch.polyphony);
         let amp = self.patch.amp_env;
         self.node.set_amp_env(amp[0], amp[1], amp[2], amp[3]);
         let flt = self.patch.filter_env;
@@ -564,7 +791,13 @@ impl SynthProcessor {
 
 impl BlockProcessor for SynthProcessor {
     // Drain commands, mix every track, run master fx, and publish the peak
-    fn process_block(&mut self, _input: &[f32], output: &mut [f32], channels: usize, frames: usize) {
+    fn process_block(
+        &mut self,
+        _input: &[f32],
+        output: &mut [f32],
+        channels: usize,
+        frames: usize,
+    ) {
         let Self {
             tracks,
             sample_rate_hz,
@@ -584,14 +817,21 @@ impl BlockProcessor for SynthProcessor {
         // the Arc is built on the UI thread and only its pointer is stored here)
         while let Ok(asset) = sink.assets.pop() {
             if let Some(slot) = audio_assets.get_mut(asset.slot) {
-                *slot = Some(StoredAsset { samples: asset.samples, channels: asset.channels });
+                *slot = Some(StoredAsset {
+                    samples: asset.samples,
+                    channels: asset.channels,
+                });
             }
         }
 
         // Translate queued UI commands into per-track events, transport, and macros
         while let Ok(command) = sink.commands.pop() {
             match command {
-                EngineCommand::NoteOn { track, key, velocity } => {
+                EngineCommand::NoteOn {
+                    track,
+                    key,
+                    velocity,
+                } => {
                     if let Some(events) = track_events.get_mut(track as usize) {
                         push_capped(events, NoteEvent::on(0, 0, key, velocity));
                     }
@@ -614,7 +854,29 @@ impl BlockProcessor for SynthProcessor {
                         for (track, events) in tracks.iter_mut().zip(track_events.iter_mut()) {
                             track.sequencer.release(events);
                             track.arrangement.release(events);
+                            track.session.release(events);
                         }
+                    }
+                }
+                EngineCommand::Play => {
+                    transport.play();
+                }
+                EngineCommand::Pause => {
+                    // Hold the playhead; silence sounding sequenced notes so nothing drones
+                    transport.pause();
+                    for (track, events) in tracks.iter_mut().zip(track_events.iter_mut()) {
+                        track.sequencer.release(events);
+                        track.arrangement.release(events);
+                        track.session.release(events);
+                    }
+                }
+                EngineCommand::Stop => {
+                    // Return to the origin and silence sounding sequenced notes
+                    transport.stop();
+                    for (track, events) in tracks.iter_mut().zip(track_events.iter_mut()) {
+                        track.sequencer.release(events);
+                        track.arrangement.release(events);
+                        track.session.release(events);
                     }
                 }
                 EngineCommand::SetBpm(bpm) => {
@@ -681,17 +943,115 @@ impl BlockProcessor for SynthProcessor {
                         t.patch.osc_b_semis = semis;
                     }
                 }
-                EngineCommand::SetAmpEnv { track, attack, decay, sustain, release } => {
+                EngineCommand::SetOscACoarse { track, semis } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.osc_a_semis = semis;
+                    }
+                }
+                EngineCommand::SetOscAFine { track, cents } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.osc_a_cents = cents;
+                    }
+                }
+                EngineCommand::SetOscBFine { track, cents } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.osc_b_cents = cents;
+                    }
+                }
+                EngineCommand::SetFmAmount { track, amount } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.fm_amount = amount;
+                    }
+                }
+                EngineCommand::SetPolyphony { track, voices } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.polyphony = voices;
+                    }
+                }
+                EngineCommand::SetLfoRate { track, hz } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.lfo_rate_hz = hz.max(0.0);
+                    }
+                }
+                EngineCommand::SetLfoDepth { track, depth } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.lfo_depth = depth;
+                    }
+                }
+                EngineCommand::SetLfoDest { track, dest } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.patch.lfo_dest = dest;
+                    }
+                }
+                EngineCommand::SetFxOn { track, fx, on } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.fx.set_fx_on(fx, on);
+                    }
+                }
+                EngineCommand::SetFxParam { track, fx, param, value } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.fx.set_fx_param(fx, param, value);
+                    }
+                }
+                EngineCommand::CreateSessionSlot { track, scene, len_beats } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.session.create(scene as usize, len_beats);
+                    }
+                }
+                EngineCommand::LaunchSlot { track, scene } => {
+                    if let (Some(t), Some(events)) =
+                        (tracks.get_mut(track as usize), track_events.get_mut(track as usize))
+                    {
+                        t.session.launch(scene as usize, events);
+                    }
+                }
+                EngineCommand::StopSlot { track } => {
+                    if let (Some(t), Some(events)) =
+                        (tracks.get_mut(track as usize), track_events.get_mut(track as usize))
+                    {
+                        t.session.stop(events);
+                    }
+                }
+                EngineCommand::AddSessionNote { track, scene, pitch, start_beats, len_beats, velocity } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.session.add_note(scene as usize, pitch, start_beats, len_beats, velocity);
+                    }
+                }
+                EngineCommand::RemoveSessionNote { track, scene, pitch, start_beats } => {
+                    if let (Some(t), Some(events)) =
+                        (tracks.get_mut(track as usize), track_events.get_mut(track as usize))
+                    {
+                        t.session.remove_note(scene as usize, pitch, start_beats, events);
+                    }
+                }
+                EngineCommand::SetAmpEnv {
+                    track,
+                    attack,
+                    decay,
+                    sustain,
+                    release,
+                } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
                         t.patch.amp_env = [attack, decay, sustain, release];
                     }
                 }
-                EngineCommand::SetFilterEnv { track, attack, decay, sustain, release } => {
+                EngineCommand::SetFilterEnv {
+                    track,
+                    attack,
+                    decay,
+                    sustain,
+                    release,
+                } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
                         t.patch.filter_env = [attack, decay, sustain, release];
                     }
                 }
-                EngineCommand::SetCell { track, step, row, on } => {
+                EngineCommand::SetCell {
+                    track,
+                    step,
+                    row,
+                    on,
+                } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
                         t.sequencer.set_cell(step as usize, row as usize, on);
                     }
@@ -701,50 +1061,86 @@ impl BlockProcessor for SynthProcessor {
                         t.sequencer.clear();
                     }
                 }
-                EngineCommand::AddClip { track, id, start_beats, len_beats } => {
+                EngineCommand::AddClip {
+                    track,
+                    id,
+                    start_beats,
+                    len_beats,
+                } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
                         t.arrangement.add_clip(id, start_beats, len_beats);
                     }
                 }
-                EngineCommand::MoveClip { track, id, start_beats } => {
+                EngineCommand::MoveClip {
+                    track,
+                    id,
+                    start_beats,
+                } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
                         t.arrangement.move_clip(id, start_beats);
                     }
                 }
-                EngineCommand::ResizeClip { track, id, len_beats } => {
+                EngineCommand::ResizeClip {
+                    track,
+                    id,
+                    len_beats,
+                } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
                         t.arrangement.resize_clip(id, len_beats);
                     }
                 }
                 EngineCommand::RemoveClip { track, id } => {
-                    if let (Some(t), Some(events)) =
-                        (tracks.get_mut(track as usize), track_events.get_mut(track as usize))
-                    {
+                    if let (Some(t), Some(events)) = (
+                        tracks.get_mut(track as usize),
+                        track_events.get_mut(track as usize),
+                    ) {
                         t.arrangement.remove_clip(id, events);
                     }
                 }
-                EngineCommand::AddClipNote { track, clip, pitch, start_beats, len_beats, velocity } => {
+                EngineCommand::AddClipNote {
+                    track,
+                    clip,
+                    pitch,
+                    start_beats,
+                    len_beats,
+                    velocity,
+                } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
-                        t.arrangement.add_note(clip, pitch, start_beats, len_beats, velocity);
+                        t.arrangement
+                            .add_note(clip, pitch, start_beats, len_beats, velocity);
                     }
                 }
-                EngineCommand::RemoveClipNote { track, clip, pitch, start_beats } => {
-                    if let (Some(t), Some(events)) =
-                        (tracks.get_mut(track as usize), track_events.get_mut(track as usize))
-                    {
+                EngineCommand::RemoveClipNote {
+                    track,
+                    clip,
+                    pitch,
+                    start_beats,
+                } => {
+                    if let (Some(t), Some(events)) = (
+                        tracks.get_mut(track as usize),
+                        track_events.get_mut(track as usize),
+                    ) {
                         t.arrangement.remove_note(clip, pitch, start_beats, events);
                     }
                 }
                 EngineCommand::ClearClip { track, clip } => {
-                    if let (Some(t), Some(events)) =
-                        (tracks.get_mut(track as usize), track_events.get_mut(track as usize))
-                    {
+                    if let (Some(t), Some(events)) = (
+                        tracks.get_mut(track as usize),
+                        track_events.get_mut(track as usize),
+                    ) {
                         t.arrangement.clear_clip(clip, events);
                     }
                 }
-                EngineCommand::AddAudioClip { track, id, start_beats, len_beats, slot } => {
+                EngineCommand::AddAudioClip {
+                    track,
+                    id,
+                    start_beats,
+                    len_beats,
+                    slot,
+                } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
-                        t.arrangement.add_audio_clip(id, start_beats, len_beats, slot);
+                        t.arrangement
+                            .add_audio_clip(id, start_beats, len_beats, slot);
                     }
                 }
                 EngineCommand::SetTrackLevel { track, level } => {
@@ -782,8 +1178,9 @@ impl BlockProcessor for SynthProcessor {
             if rolling {
                 track.sequencer.advance_to_beat(beat, events);
                 track.arrangement.advance(beat, events);
+                track.session.advance(beat, events);
             }
-            track.apply_patch();
+            track.apply_patch(frames);
 
             // Render the track into scratch, then run its own effects chain in
             // place, then free the borrow before summing
@@ -801,7 +1198,14 @@ impl BlockProcessor for SynthProcessor {
             }
             // Mix any audio clips on this track over the synth output, then fx
             if rolling {
-                track.arrangement.mix_audio(&snapshot, beat, scratch, frames, channels, audio_assets);
+                track.arrangement.mix_audio(
+                    &snapshot,
+                    beat,
+                    scratch,
+                    frames,
+                    channels,
+                    audio_assets,
+                );
             }
             track.fx.process(scratch, frames);
             // Sum the audible contribution per channel, panned, capturing the peak
@@ -925,8 +1329,14 @@ mod tests {
             tracks.push(track);
         }
         let (control, sink) = control_plane(NUM_TRACKS);
-        let proc =
-            SynthProcessor::new(tracks, sample_rate_hz, block_len, sink, rolling, DEFAULT_BPM);
+        let proc = SynthProcessor::new(
+            tracks,
+            sample_rate_hz,
+            block_len,
+            sink,
+            rolling,
+            DEFAULT_BPM,
+        );
         (control, proc, block_len)
     }
 
@@ -1009,7 +1419,10 @@ mod tests {
         for _ in 0..8 {
             proc.process_block(&[], &mut output, 2, len / 2);
         }
-        assert!(control.position_beats() > 0.0, "playhead position did not advance");
+        assert!(
+            control.position_beats() > 0.0,
+            "playhead position did not advance"
+        );
     }
 
     #[test]
@@ -1019,7 +1432,10 @@ mod tests {
         for _ in 0..4 {
             proc.process_block(&[], &mut output, 2, len / 2);
         }
-        assert!(output.iter().all(|&s| s == 0.0), "stopped transport should be silent");
+        assert!(
+            output.iter().all(|&s| s == 0.0),
+            "stopped transport should be silent"
+        );
 
         control.send(EngineCommand::SetPlaying(true));
         let mut energy = 0.0f32;
@@ -1035,9 +1451,16 @@ mod tests {
         let (mut control, mut proc, len) = processor(false);
         let mut output = vec![0.0f32; len];
         proc.process_block(&[], &mut output, 2, len / 2);
-        assert!(output.iter().all(|&s| s == 0.0), "expected silence before any note");
+        assert!(
+            output.iter().all(|&s| s == 0.0),
+            "expected silence before any note"
+        );
 
-        control.send(EngineCommand::NoteOn { track: 0, key: 69, velocity: 1.0 });
+        control.send(EngineCommand::NoteOn {
+            track: 0,
+            key: 69,
+            velocity: 1.0,
+        });
         let mut energy = 0.0f32;
         for _ in 0..8 {
             proc.process_block(&[], &mut output, 2, len / 2);
@@ -1058,11 +1481,15 @@ mod tests {
         arr.advance(0.0, &mut out);
         assert!(out.is_empty(), "clip sounded before its start beat");
         arr.advance(8.0, &mut out);
-        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 60));
+        assert!(out
+            .iter()
+            .any(|e| e.kind == NoteEventKind::On && e.key == 60));
         out.clear();
         // Past the note's local end it releases
         arr.advance(9.5, &mut out);
-        assert!(out.iter().any(|e| e.kind == NoteEventKind::Off && e.key == 60));
+        assert!(out
+            .iter()
+            .any(|e| e.kind == NoteEventKind::Off && e.key == 60));
     }
 
     #[test]
@@ -1073,15 +1500,22 @@ mod tests {
         let mut out = Vec::with_capacity(MAX_BLOCK_EVENTS);
         // At beat 0 it triggers; move it to beat 16 and beat 0 goes silent
         arr.advance(0.0, &mut out);
-        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 64));
+        assert!(out
+            .iter()
+            .any(|e| e.kind == NoteEventKind::On && e.key == 64));
         out.clear();
         arr.release(&mut out);
         out.clear();
         arr.move_clip(1, 16.0);
         arr.advance(0.0, &mut out);
-        assert!(out.is_empty(), "moved clip still triggered at the old position");
+        assert!(
+            out.is_empty(),
+            "moved clip still triggered at the old position"
+        );
         arr.advance(16.0, &mut out);
-        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 64));
+        assert!(out
+            .iter()
+            .any(|e| e.kind == NoteEventKind::On && e.key == 64));
     }
 
     #[test]
@@ -1093,10 +1527,50 @@ mod tests {
         arr.add_note(2, 67, 0.0, 1.0, 1.0);
         let mut out = Vec::with_capacity(MAX_BLOCK_EVENTS);
         arr.advance(0.0, &mut out);
-        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 60));
+        assert!(out
+            .iter()
+            .any(|e| e.kind == NoteEventKind::On && e.key == 60));
         out.clear();
         arr.advance(8.0, &mut out);
-        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 67));
+        assert!(out
+            .iter()
+            .any(|e| e.kind == NoteEventKind::On && e.key == 67));
+    }
+
+    #[test]
+    fn session_slot_launches_loops_and_stops() {
+        let mut s = SessionClips::new();
+        s.create(0, 2.0);
+        s.add_note(0, 60, 0.0, 1.0, 1.0);
+        let mut out = Vec::with_capacity(MAX_BLOCK_EVENTS);
+
+        // Nothing plays until a slot is launched
+        s.advance(0.0, &mut out);
+        assert!(out.is_empty(), "unlaunched session made sound");
+
+        // Launch: the note triggers at the loop origin
+        s.launch(0, &mut out);
+        out.clear();
+        s.advance(0.0, &mut out);
+        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 60));
+
+        // Past the note's end (but inside the 2-beat loop) it releases
+        out.clear();
+        s.advance(1.5, &mut out);
+        assert!(out.iter().any(|e| e.kind == NoteEventKind::Off && e.key == 60));
+
+        // It retriggers when the loop wraps back to the origin
+        out.clear();
+        s.advance(2.0, &mut out);
+        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 60));
+
+        // Stop releases the sounding note and silences further advances
+        out.clear();
+        s.stop(&mut out);
+        assert!(out.iter().any(|e| e.kind == NoteEventKind::Off && e.key == 60));
+        out.clear();
+        s.advance(2.0, &mut out);
+        assert!(out.is_empty(), "stopped session still played");
     }
 
     #[test]
@@ -1115,7 +1589,11 @@ mod tests {
             arr.add_note(0, 60, i as f32 * 0.01, 0.1, 1.0);
         }
         assert_eq!(arr.clips[0].notes.len(), MAX_CLIP_NOTES);
-        assert_eq!(arr.clips[0].notes.capacity(), note_cap, "clip notes grew the buffer");
+        assert_eq!(
+            arr.clips[0].notes.capacity(),
+            note_cap,
+            "clip notes grew the buffer"
+        );
     }
 
     #[test]
@@ -1123,7 +1601,10 @@ mod tests {
         // A mono ramp asset placed at beat 0 should land verbatim in scratch
         let mut arr = Arrangement::new();
         let samples: Arc<[f32]> = (0..8).map(|i| i as f32).collect::<Vec<_>>().into();
-        let assets = vec![Some(StoredAsset { samples, channels: 1 })];
+        let assets = vec![Some(StoredAsset {
+            samples,
+            channels: 1,
+        })];
         arr.add_audio_clip(1, 0.0, 4.0, 0);
         let snap = TransportSnapshot::stopped(48_000);
         let mut scratch = vec![0.0f32; 4];
@@ -1135,7 +1616,10 @@ mod tests {
     fn audio_clip_is_silent_outside_its_span() {
         let mut arr = Arrangement::new();
         let samples: Arc<[f32]> = vec![1.0f32; 8].into();
-        let assets = vec![Some(StoredAsset { samples, channels: 1 })];
+        let assets = vec![Some(StoredAsset {
+            samples,
+            channels: 1,
+        })];
         arr.add_audio_clip(1, 0.0, 1.0, 0);
         let snap = TransportSnapshot::stopped(48_000);
         let mut scratch = vec![0.0f32; 4];
@@ -1149,7 +1633,12 @@ mod tests {
         // Track 0 carries no step pattern, so any sound proves the clip played
         let (mut control, mut proc, len) = processor(true);
         let mut output = vec![0.0f32; len];
-        control.send(EngineCommand::AddClip { track: 0, id: 1, start_beats: 0.0, len_beats: 4.0 });
+        control.send(EngineCommand::AddClip {
+            track: 0,
+            id: 1,
+            start_beats: 0.0,
+            len_beats: 4.0,
+        });
         control.send(EngineCommand::AddClipNote {
             track: 0,
             clip: 1,
@@ -1161,7 +1650,39 @@ mod tests {
         for _ in 0..8 {
             proc.process_block(&[], &mut output, 2, len / 2);
         }
-        assert!(control.track_level(0) > 0.0, "clip note did not sound on track 0");
+        assert!(
+            control.track_level(0) > 0.0,
+            "clip note did not sound on track 0"
+        );
+    }
+
+    #[test]
+    fn lfo_destinations_map_to_track_modulation_slots() {
+        assert_eq!(lfo_dest_index(LfoDestination::Cutoff), MOD_DEST_CUTOFF);
+        assert_eq!(lfo_dest_index(LfoDestination::Pitch), MOD_DEST_PITCH);
+        assert_eq!(lfo_dest_index(LfoDestination::Fm), MOD_DEST_FM);
+    }
+
+    #[test]
+    fn lfo_commands_update_the_target_track_patch() {
+        let (mut control, mut proc, len) = processor(false);
+        let mut output = vec![0.0f32; len];
+        control.send(EngineCommand::SetLfoRate { track: 2, hz: 4.5 });
+        control.send(EngineCommand::SetLfoDepth {
+            track: 2,
+            depth: 1.25,
+        });
+        control.send(EngineCommand::SetLfoDest {
+            track: 2,
+            dest: LfoDestination::Fm,
+        });
+
+        proc.process_block(&[], &mut output, 2, len / 2);
+
+        assert_eq!(proc.tracks[2].patch.lfo_rate_hz, 4.5);
+        assert_eq!(proc.tracks[2].patch.lfo_depth, 1.25);
+        assert_eq!(proc.tracks[2].patch.lfo_dest, LfoDestination::Fm);
+        assert_eq!(proc.tracks[1].patch.lfo_dest, DEFAULT_LFO_DEST);
     }
 
     #[test]
@@ -1174,19 +1695,32 @@ mod tests {
         let mut output = vec![0.0f32; len];
 
         // A placed clip on track 2 receives the note churn below
-        control.send(EngineCommand::AddClip { track: 2, id: 1, start_beats: 0.0, len_beats: 16.0 });
+        control.send(EngineCommand::AddClip {
+            track: 2,
+            id: 1,
+            start_beats: 0.0,
+            len_beats: 16.0,
+        });
 
         // Warm up so buffers reach their working size
         proc.process_block(&[], &mut output, 2, frames);
         let event_caps: Vec<usize> = proc.track_events.iter().map(|e| e.capacity()).collect();
         let scratch_cap = proc.scratch.capacity();
-        let clip_list_caps: Vec<usize> = proc.tracks.iter().map(|t| t.arrangement.clips.capacity()).collect();
+        let clip_list_caps: Vec<usize> = proc
+            .tracks
+            .iter()
+            .map(|t| t.arrangement.clips.capacity())
+            .collect();
         let note_cap = proc.tracks[2].arrangement.clips[0].notes.capacity();
 
         for i in 0..4000u32 {
             let key = 60 + (i % 12) as u8;
             let beat = (i % 16) as f32;
-            control.send(EngineCommand::NoteOn { track: 0, key, velocity: 1.0 });
+            control.send(EngineCommand::NoteOn {
+                track: 0,
+                key,
+                velocity: 1.0,
+            });
             control.send(EngineCommand::NoteOff { track: 0, key });
             control.send(EngineCommand::AddClipNote {
                 track: 2,
@@ -1196,8 +1730,32 @@ mod tests {
                 len_beats: 1.0,
                 velocity: 1.0,
             });
-            control.send(EngineCommand::RemoveClipNote { track: 2, clip: 1, pitch: key, start_beats: beat });
-            control.send(EngineCommand::SetCutoff { track: 0, hz: 400.0 + (i % 800) as f32 });
+            control.send(EngineCommand::RemoveClipNote {
+                track: 2,
+                clip: 1,
+                pitch: key,
+                start_beats: beat,
+            });
+            control.send(EngineCommand::SetCutoff {
+                track: 0,
+                hz: 400.0 + (i % 800) as f32,
+            });
+            control.send(EngineCommand::SetLfoRate {
+                track: 0,
+                hz: 0.25 + (i % 20) as f32,
+            });
+            control.send(EngineCommand::SetLfoDepth {
+                track: 0,
+                depth: (i % 500) as f32,
+            });
+            control.send(EngineCommand::SetLfoDest {
+                track: 0,
+                dest: match i % 3 {
+                    0 => LfoDestination::Cutoff,
+                    1 => LfoDestination::Pitch,
+                    _ => LfoDestination::Fm,
+                },
+            });
             control.send(EngineCommand::SetBpm(100.0 + (i % 60) as f32));
             proc.process_block(&[], &mut output, 2, frames);
         }
@@ -1210,7 +1768,10 @@ mod tests {
             assert_eq!(track.arrangement.clips.capacity(), cap, "clip list grew");
         }
         let clip = &proc.tracks[2].arrangement.clips[0];
-        assert!(clip.notes.len() <= MAX_CLIP_NOTES, "clip note count unbounded");
+        assert!(
+            clip.notes.len() <= MAX_CLIP_NOTES,
+            "clip note count unbounded"
+        );
         assert_eq!(clip.notes.capacity(), note_cap, "clip notes buffer grew");
     }
 
@@ -1234,10 +1795,20 @@ mod tests {
         let frames = len / 2;
         let mut output = vec![0.0f32; len];
         control.send(EngineCommand::SetDelay { track: 0, on: true });
-        control.send(EngineCommand::SetDelayTime { track: 0, seconds: 0.05 });
-        control.send(EngineCommand::SetDelayFeedback { track: 0, feedback: 0.6 });
+        control.send(EngineCommand::SetDelayTime {
+            track: 0,
+            seconds: 0.05,
+        });
+        control.send(EngineCommand::SetDelayFeedback {
+            track: 0,
+            feedback: 0.6,
+        });
         control.send(EngineCommand::SetDelayMix { track: 0, mix: 0.8 });
-        control.send(EngineCommand::NoteOn { track: 0, key: 60, velocity: 1.0 });
+        control.send(EngineCommand::NoteOn {
+            track: 0,
+            key: 60,
+            velocity: 1.0,
+        });
         for _ in 0..4 {
             proc.process_block(&[], &mut output, 2, frames);
         }
@@ -1249,7 +1820,11 @@ mod tests {
             tail += control.track_level(0);
         }
         assert!(tail > 0.0, "track 0's own delay produced no tail");
-        assert_eq!(control.track_level(2), 0.0, "track 2 has no delay or notes; stays silent");
+        assert_eq!(
+            control.track_level(2),
+            0.0,
+            "track 2 has no delay or notes; stays silent"
+        );
     }
 
     #[test]
@@ -1273,8 +1848,16 @@ mod tests {
             sustain: 1.0,
             release: 2.0,
         });
-        control.send(EngineCommand::NoteOn { track: 0, key: 60, velocity: 1.0 });
-        control.send(EngineCommand::NoteOn { track: 2, key: 72, velocity: 1.0 });
+        control.send(EngineCommand::NoteOn {
+            track: 0,
+            key: 60,
+            velocity: 1.0,
+        });
+        control.send(EngineCommand::NoteOn {
+            track: 2,
+            key: 72,
+            velocity: 1.0,
+        });
         for _ in 0..4 {
             proc.process_block(&[], &mut output, 2, frames);
         }
@@ -1287,7 +1870,10 @@ mod tests {
             t0 += control.track_level(0);
             t2 += control.track_level(2);
         }
-        assert!(t2 > 0.0 && t2 > t0 * 4.0, "track 2's long release should outlast track 0's: t0={t0} t2={t2}");
+        assert!(
+            t2 > 0.0 && t2 > t0 * 4.0,
+            "track 2's long release should outlast track 0's: t0={t0} t2={t2}"
+        );
     }
 
     #[test]
@@ -1296,7 +1882,10 @@ mod tests {
         let (mut control, mut proc, len) = processor(true);
         let frames = len / 2;
         let mut output = vec![0.0f32; len];
-        control.send(EngineCommand::SetTrackPan { track: 1, pan: -1.0 });
+        control.send(EngineCommand::SetTrackPan {
+            track: 1,
+            pan: -1.0,
+        });
         let mut left = 0.0f32;
         let mut right = 0.0f32;
         for _ in 0..8 {
@@ -1305,7 +1894,10 @@ mod tests {
             right += output[frames..].iter().map(|s| s.abs()).sum::<f32>();
         }
         assert!(left > 0.0, "left channel should carry the panned track");
-        assert!(right < left * 0.01, "hard-left pan leaked right: {right} vs {left}");
+        assert!(
+            right < left * 0.01,
+            "hard-left pan leaked right: {right} vs {left}"
+        );
     }
 
     #[test]
@@ -1315,13 +1907,19 @@ mod tests {
         for _ in 0..8 {
             proc.process_block(&[], &mut output, 2, len / 2);
         }
-        assert!(output.iter().any(|&s| s != 0.0), "transport should be sounding");
+        assert!(
+            output.iter().any(|&s| s != 0.0),
+            "transport should be sounding"
+        );
 
         control.send(EngineCommand::SetGain(0.0));
         for _ in 0..2 {
             proc.process_block(&[], &mut output, 2, len / 2);
         }
-        assert!(output.iter().all(|&s| s == 0.0), "gain=0 did not silence output");
+        assert!(
+            output.iter().all(|&s| s == 0.0),
+            "gain=0 did not silence output"
+        );
     }
 
     #[test]
@@ -1332,13 +1930,19 @@ mod tests {
         for _ in 0..8 {
             proc.process_block(&[], &mut output, 2, len / 2);
         }
-        assert!(output.iter().any(|&s| s != 0.0), "track 1 should be sounding");
+        assert!(
+            output.iter().any(|&s| s != 0.0),
+            "track 1 should be sounding"
+        );
 
         control.send(EngineCommand::SetTrackMute { track: 1, on: true });
         for _ in 0..2 {
             proc.process_block(&[], &mut output, 2, len / 2);
         }
-        assert!(output.iter().all(|&s| s == 0.0), "muted track still audible");
+        assert!(
+            output.iter().all(|&s| s == 0.0),
+            "muted track still audible"
+        );
     }
 
     #[test]
@@ -1348,13 +1952,19 @@ mod tests {
         for _ in 0..8 {
             proc.process_block(&[], &mut output, 2, len / 2);
         }
-        assert!(output.iter().any(|&s| s != 0.0), "track 1 should be sounding");
+        assert!(
+            output.iter().any(|&s| s != 0.0),
+            "track 1 should be sounding"
+        );
 
         // Track 0 has no pattern; soloing it mutes everything else
         control.send(EngineCommand::SetTrackSolo { track: 0, on: true });
         for _ in 0..2 {
             proc.process_block(&[], &mut output, 2, len / 2);
         }
-        assert!(output.iter().all(|&s| s == 0.0), "solo did not isolate the empty track");
+        assert!(
+            output.iter().all(|&s| s == 0.0),
+            "solo did not isolate the empty track"
+        );
     }
 }

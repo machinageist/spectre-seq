@@ -25,78 +25,298 @@ const SCOPE_DECIMATION: usize = 4;
 // Width of the rolling scope window the UI displays
 const SCOPE_VIEW_LEN: usize = 1_024;
 
+// Destination for the per-track LFO modulation source
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum LfoDestination {
+    Cutoff,
+    Pitch,
+    Fm,
+}
+
+// A modulation/character effect slot in the per-track chain. Delay and reverb
+// keep their own dedicated commands; these are the per-sample DSP effects.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum FxKind {
+    Distortion,
+    Phaser,
+    Flanger,
+    Chorus,
+}
+
 // One instruction from the UI thread to the audio thread
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum EngineCommand {
     // Start a note on a track at a MIDI key and normalized velocity
-    NoteOn { track: u8, key: u8, velocity: f32 },
+    NoteOn {
+        track: u8,
+        key: u8,
+        velocity: f32,
+    },
     // Release a note on a track at a MIDI key
-    NoteOff { track: u8, key: u8 },
+    NoteOff {
+        track: u8,
+        key: u8,
+    },
     // Silence every sounding voice
     AllNotesOff,
     // Start or stop the transport (drives the tempo-synced sequencer)
     SetPlaying(bool),
+    // Start playback from the current position (Ableton-style transport)
+    Play,
+    // Hold the playhead in place and silence sounding notes
+    Pause,
+    // Stop, return the playhead to the origin, and silence sounding notes
+    Stop,
     // Set the transport tempo in beats per minute
     SetBpm(f32),
     // Set a track's base filter cutoff in hertz
-    SetCutoff { track: u8, hz: f32 },
+    SetCutoff {
+        track: u8,
+        hz: f32,
+    },
     // Set a track's filter resonance
-    SetResonance { track: u8, resonance: f32 },
+    SetResonance {
+        track: u8,
+        resonance: f32,
+    },
     // Set the master output gain
     SetGain(f32),
     // Toggle a track's delay effect
-    SetDelay { track: u8, on: bool },
+    SetDelay {
+        track: u8,
+        on: bool,
+    },
     // Set a track's delay time in seconds (both channels)
-    SetDelayTime { track: u8, seconds: f32 },
+    SetDelayTime {
+        track: u8,
+        seconds: f32,
+    },
     // Set a track's delay feedback amount
-    SetDelayFeedback { track: u8, feedback: f32 },
+    SetDelayFeedback {
+        track: u8,
+        feedback: f32,
+    },
     // Set a track's delay dry/wet mix
-    SetDelayMix { track: u8, mix: f32 },
+    SetDelayMix {
+        track: u8,
+        mix: f32,
+    },
     // Toggle a track's reverb effect
-    SetReverb { track: u8, on: bool },
+    SetReverb {
+        track: u8,
+        on: bool,
+    },
     // Set a track's reverb dry/wet mix
-    SetReverbMix { track: u8, mix: f32 },
+    SetReverbMix {
+        track: u8,
+        mix: f32,
+    },
     // Set a track's oscillator A unison voice count
-    SetUnisonVoices { track: u8, voices: usize },
+    SetUnisonVoices {
+        track: u8,
+        voices: usize,
+    },
     // Set a track's oscillator A unison detune spread in cents
-    SetDetune { track: u8, cents: f32 },
+    SetDetune {
+        track: u8,
+        cents: f32,
+    },
     // Set a track's oscillator A/B blend (0 = sine, 1 = saw)
-    SetOscMix { track: u8, mix: f32 },
-    // Set a track's oscillator B pitch offset in semitones
-    SetOscBSemis { track: u8, semis: f32 },
+    SetOscMix {
+        track: u8,
+        mix: f32,
+    },
+    // Set a track's oscillator B pitch offset in semitones (coarse)
+    SetOscBSemis {
+        track: u8,
+        semis: f32,
+    },
+    // Set a track's oscillator A coarse pitch offset in semitones
+    SetOscACoarse {
+        track: u8,
+        semis: f32,
+    },
+    // Set a track's oscillator A fine tuning in cents
+    SetOscAFine {
+        track: u8,
+        cents: f32,
+    },
+    // Set a track's oscillator B fine tuning in cents
+    SetOscBFine {
+        track: u8,
+        cents: f32,
+    },
+    // Set a track's 2-operator FM index (osc A modulates B)
+    SetFmAmount {
+        track: u8,
+        amount: f32,
+    },
+    // Set a track's active-voice cap (polyphony)
+    SetPolyphony {
+        track: u8,
+        voices: usize,
+    },
+    // Set a track's free-running LFO rate in hertz
+    SetLfoRate {
+        track: u8,
+        hz: f32,
+    },
+    // Set a track's LFO depth in destination units
+    SetLfoDepth {
+        track: u8,
+        depth: f32,
+    },
+    // Route a track's LFO to one destination
+    SetLfoDest {
+        track: u8,
+        dest: LfoDestination,
+    },
+    // Toggle one of a track's character/modulation effects
+    SetFxOn {
+        track: u8,
+        fx: FxKind,
+        on: bool,
+    },
+    // Set one parameter (addressed by index) of a track's character effect
+    SetFxParam {
+        track: u8,
+        fx: FxKind,
+        param: u8,
+        value: f32,
+    },
+    // Mark a session slot created (filled) with a length, ready to launch
+    CreateSessionSlot {
+        track: u8,
+        scene: u8,
+        len_beats: f32,
+    },
+    // Launch a track's session slot (starts looping when the transport rolls)
+    LaunchSlot {
+        track: u8,
+        scene: u8,
+    },
+    // Stop a track's playing session slot
+    StopSlot {
+        track: u8,
+    },
+    // Add a note (relative to the slot start) to a session slot
+    AddSessionNote {
+        track: u8,
+        scene: u8,
+        pitch: u8,
+        start_beats: f32,
+        len_beats: f32,
+        velocity: f32,
+    },
+    // Remove the matching note (pitch + start) from a session slot
+    RemoveSessionNote {
+        track: u8,
+        scene: u8,
+        pitch: u8,
+        start_beats: f32,
+    },
     // Set a track's amplitude ADSR (attack/decay/release seconds, sustain 0..1)
-    SetAmpEnv { track: u8, attack: f32, decay: f32, sustain: f32, release: f32 },
+    SetAmpEnv {
+        track: u8,
+        attack: f32,
+        decay: f32,
+        sustain: f32,
+        release: f32,
+    },
     // Set a track's filter ADSR (attack/decay/release seconds, sustain 0..1)
-    SetFilterEnv { track: u8, attack: f32, decay: f32, sustain: f32, release: f32 },
+    SetFilterEnv {
+        track: u8,
+        attack: f32,
+        decay: f32,
+        sustain: f32,
+        release: f32,
+    },
     // Toggle one step-sequencer cell on a track
-    SetCell { track: u8, step: u8, row: u8, on: bool },
+    SetCell {
+        track: u8,
+        step: u8,
+        row: u8,
+        on: bool,
+    },
     // Clear a track's whole step pattern
-    ClearPattern { track: u8 },
+    ClearPattern {
+        track: u8,
+    },
     // Place a new MIDI clip on a track's timeline
-    AddClip { track: u8, id: u64, start_beats: f32, len_beats: f32 },
+    AddClip {
+        track: u8,
+        id: u64,
+        start_beats: f32,
+        len_beats: f32,
+    },
     // Move a placed clip's start position
-    MoveClip { track: u8, id: u64, start_beats: f32 },
+    MoveClip {
+        track: u8,
+        id: u64,
+        start_beats: f32,
+    },
     // Resize a placed clip's length
-    ResizeClip { track: u8, id: u64, len_beats: f32 },
+    ResizeClip {
+        track: u8,
+        id: u64,
+        len_beats: f32,
+    },
     // Remove a placed clip from a track's timeline
-    RemoveClip { track: u8, id: u64 },
+    RemoveClip {
+        track: u8,
+        id: u64,
+    },
     // Add a timed note (relative to the clip start) to a clip
-    AddClipNote { track: u8, clip: u64, pitch: u8, start_beats: f32, len_beats: f32, velocity: f32 },
+    AddClipNote {
+        track: u8,
+        clip: u64,
+        pitch: u8,
+        start_beats: f32,
+        len_beats: f32,
+        velocity: f32,
+    },
     // Remove the matching note (pitch + start) from a clip
-    RemoveClipNote { track: u8, clip: u64, pitch: u8, start_beats: f32 },
+    RemoveClipNote {
+        track: u8,
+        clip: u64,
+        pitch: u8,
+        start_beats: f32,
+    },
     // Clear all notes from a clip
-    ClearClip { track: u8, clip: u64 },
+    #[allow(dead_code)]
+    ClearClip {
+        track: u8,
+        clip: u64,
+    },
     // Place a recorded audio clip on a track; its samples arrive via the asset
     // ring in `slot` beforehand (the asset carries its own channel layout).
-    AddAudioClip { track: u8, id: u64, start_beats: f32, len_beats: f32, slot: usize },
+    AddAudioClip {
+        track: u8,
+        id: u64,
+        start_beats: f32,
+        len_beats: f32,
+        slot: usize,
+    },
     // Set a track's mixer level
-    SetTrackLevel { track: u8, level: f32 },
+    SetTrackLevel {
+        track: u8,
+        level: f32,
+    },
     // Set a track's stereo pan in [-1, 1] (left to right)
-    SetTrackPan { track: u8, pan: f32 },
+    SetTrackPan {
+        track: u8,
+        pan: f32,
+    },
     // Mute or unmute a track
-    SetTrackMute { track: u8, on: bool },
+    SetTrackMute {
+        track: u8,
+        on: bool,
+    },
     // Solo or unsolo a track
-    SetTrackSolo { track: u8, on: bool },
+    SetTrackSolo {
+        track: u8,
+        on: bool,
+    },
 }
 
 // A recorded audio buffer handed to the engine out-of-band from the command
@@ -185,7 +405,11 @@ pub fn control_plane(num_tracks: usize) -> (EngineControl, EngineSink) {
     let (scope_tx, scope_rx) = RingBuffer::new(SCOPE_CAPACITY);
     let (asset_tx, asset_rx) = RingBuffer::new(ASSET_CAPACITY);
     let meter = Arc::new(LevelMeter::new());
-    let track_meters = Arc::new((0..num_tracks).map(|_| LevelMeter::new()).collect::<Vec<_>>());
+    let track_meters = Arc::new(
+        (0..num_tracks)
+            .map(|_| LevelMeter::new())
+            .collect::<Vec<_>>(),
+    );
     let position = Arc::new(BeatClock::new());
     (
         EngineControl {
@@ -239,7 +463,10 @@ impl EngineControl {
 
     // Latest post-fader peak for one track; zero for an out-of-range index
     pub fn track_level(&self, track: usize) -> f32 {
-        self.track_meters.get(track).map(LevelMeter::read).unwrap_or(0.0)
+        self.track_meters
+            .get(track)
+            .map(LevelMeter::read)
+            .unwrap_or(0.0)
     }
 
     // Latest transport position in beats for the UI playhead
@@ -308,16 +535,33 @@ mod tests {
     #[test]
     fn commands_arrive_in_order() {
         let (mut control, mut sink) = control_plane(3);
-        assert!(control.send(EngineCommand::NoteOn { track: 0, key: 60, velocity: 1.0 }));
+        assert!(control.send(EngineCommand::NoteOn {
+            track: 0,
+            key: 60,
+            velocity: 1.0
+        }));
         assert!(control.send(EngineCommand::NoteOff { track: 0, key: 60 }));
         assert_eq!(
             sink.commands.pop().ok(),
-            Some(EngineCommand::NoteOn { track: 0, key: 60, velocity: 1.0 })
+            Some(EngineCommand::NoteOn {
+                track: 0,
+                key: 60,
+                velocity: 1.0
+            })
         );
         assert_eq!(
             sink.commands.pop().ok(),
             Some(EngineCommand::NoteOff { track: 0, key: 60 })
         );
         assert!(sink.commands.pop().is_err());
+    }
+
+    #[test]
+    fn commands_remain_copy_for_the_realtime_ring() {
+        fn assert_copy<T: Copy>() {}
+
+        assert_copy::<EngineCommand>();
+        assert_copy::<LfoDestination>();
+        assert_copy::<FxKind>();
     }
 }

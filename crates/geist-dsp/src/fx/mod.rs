@@ -1,14 +1,18 @@
 // =============================================================================
 // File: crates/geist-dsp/src/fx/mod.rs
 // Layer: DSP primitives
-// Purpose: Effects (delay, chorus, saturator, EQ, reverb); shared delay line
-// Status: Implemented; delay + saturator + chorus + EQ + convolution reverb.
+// Purpose: Effects (delay, chorus, flanger, phaser, distortion, EQ, reverb)
+// Status: Implemented; delay + saturator + chorus + flanger + phaser +
+//         distortion + EQ + convolution reverb. Shared fractional delay line.
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
 pub mod chorus;
 pub mod delay;
+pub mod distortion;
 pub mod eq;
+pub mod flanger;
+pub mod phaser;
 pub mod reverb;
 pub mod saturator;
 

@@ -19,19 +19,22 @@ use std::collections::HashMap;
 
 use geist_ui::model::{
     BrowserItem, BrowserModel, ChannelStrip, Clip, EffectSlot, GraphModel, GraphNode, Lane, Note,
-    ParamSpec, Port, RackModel, SessionModel, StepPattern, StepSequencerModel, TimelineModel,
+    ParamSpec, Port, RackModel, SessionGrid, SessionModel, StepPattern, StepSequencerModel,
+    TimelineModel,
 };
-use geist_ui::shell::draw_studio;
-use geist_ui::state::UIState;
+use geist_ui::shell::{draw_studio, TransportAction};
+use geist_ui::state::{DetailView, MainView, UIState};
 use geist_ui::theme::{self, SignalKind};
 use geist_ui::widgets::{KeyEvent, Keyboard, Taper};
 
 use std::sync::Arc;
 
-use crate::control::{AudioAsset, EngineCommand, EngineControl};
+use crate::control::{AudioAsset, EngineCommand, EngineControl, FxKind, LfoDestination};
 use crate::engine::{
-    default_grid_for, Engine, DEFAULT_AMP_ENV, DEFAULT_FILTER_ENV, DEFAULT_OSC_B_SEMIS,
-    DEFAULT_OSC_MIX, MAX_AUDIO_ASSETS, NUM_TRACKS, SEQ_ROWS, SEQ_STEPS, TRACK_BASE_MIDI,
+    default_grid_for, Engine, DEFAULT_AMP_ENV, DEFAULT_FILTER_ENV, DEFAULT_FM_AMOUNT,
+    DEFAULT_LFO_DEPTH, DEFAULT_LFO_DEST, DEFAULT_LFO_RATE_HZ, DEFAULT_OSC_A_CENTS,
+    DEFAULT_OSC_A_SEMIS, DEFAULT_OSC_B_CENTS, DEFAULT_OSC_B_SEMIS, DEFAULT_OSC_MIX, DEFAULT_VOICES,
+    MAX_AUDIO_ASSETS, NUM_TRACKS, SEQ_ROWS, SEQ_STEPS, TRACK_BASE_MIDI,
 };
 use crate::recorder::AudioRecorder;
 use crate::session::{self, ClipSession, NoteSession, StudioSession, TrackSession};
@@ -56,14 +59,41 @@ const DEFAULT_DELAY_MIX: f32 = 0.3;
 
 // Stable rack slot order so the diff can read params back by index
 const SLOT_OSC: usize = 0;
-const SLOT_FILTER: usize = 1;
-const SLOT_AMP_ENV: usize = 2;
-const SLOT_FILTER_ENV: usize = 3;
-const SLOT_DELAY: usize = 4;
-const SLOT_REVERB: usize = 5;
+const SLOT_LFO: usize = 1;
+const SLOT_FILTER: usize = 2;
+const SLOT_AMP_ENV: usize = 3;
+const SLOT_FILTER_ENV: usize = 4;
+const SLOT_DELAY: usize = 5;
+const SLOT_REVERB: usize = 6;
+// Character/modulation effect slots and their FxKind + param count
+const SLOT_DISTORTION: usize = 7;
+const SLOT_PHASER: usize = 8;
+const SLOT_FLANGER: usize = 9;
+const SLOT_CHORUS: usize = 10;
+// (slot index, FxKind, param count) driving the generic character-effect diff;
+// the array index is the per-track mirror index for each effect
+const FX_SLOTS: [(usize, FxKind, usize); 4] = [
+    (SLOT_DISTORTION, FxKind::Distortion, 3),
+    (SLOT_PHASER, FxKind::Phaser, 4),
+    (SLOT_FLANGER, FxKind::Flanger, 4),
+    (SLOT_CHORUS, FxKind::Chorus, 3),
+];
+// Default params per FX_SLOTS index; unused trailing slots stay 0. These match
+// the EffectSlot ParamSpecs so the frame-one mirror diff is silent.
+const FX_DEFAULTS: [[f32; 4]; 4] = [
+    [2.0, 0.7, 1.0, 0.0], // Distortion: drive, tone, mix
+    [0.5, 1.0, 0.5, 0.5], // Phaser: rate, depth, feedback, mix
+    [0.3, 2.0, 0.5, 0.5], // Flanger: rate, depth(ms), feedback, mix
+    [0.8, 4.0, 0.5, 0.0], // Chorus: rate, depth(ms), mix
+];
 // Oscillator slot parameter order
 const OSC_SHAPE: usize = 0;
-const OSC_B_SEMIS: usize = 1;
+const OSC_A_COARSE: usize = 1;
+const OSC_A_FINE: usize = 2;
+const OSC_B_SEMIS: usize = 3;
+const OSC_B_FINE: usize = 4;
+const OSC_FM: usize = 5;
+const OSC_VOICES: usize = 6;
 // Filter slot parameter order
 const FILTER_CUTOFF: usize = 0;
 const FILTER_RESO: usize = 1;
@@ -78,12 +108,26 @@ const DELAY_FEEDBACK: usize = 1;
 const DELAY_MIX: usize = 2;
 // Reverb slot parameter order
 const REVERB_MIX: usize = 0;
+// LFO slot parameter order
+const LFO_RATE: usize = 0;
+const LFO_DEPTH: usize = 1;
+const LFO_DEST: usize = 2;
 // Envelope time knob range in seconds
 const ENV_TIME_MAX: f32 = 4.0;
 // Delay time knob range in seconds
 const DELAY_TIME_MAX: f32 = 1.5;
-// Oscillator B pitch-offset knob range in semitones
+// Oscillator pitch-offset knob range in semitones (coarse) and cents (fine)
 const OSC_B_SEMIS_RANGE: f32 = 24.0;
+const OSC_CENTS_RANGE: f32 = 100.0;
+// FM index knob range (oscillator A modulating B)
+const FM_AMOUNT_MAX: f32 = 4.0;
+// Polyphony knob range (active voices), matching the engine's allocated pool
+const VOICES_MAX: f32 = 16.0;
+// Default length, in beats, of a created session clip (matches the engine)
+const SESSION_CLIP_LEN: f32 = 4.0;
+// LFO ranges; depth units depend on the destination
+const LFO_RATE_MAX: f32 = 20.0;
+const LFO_DEPTH_MAX: f32 = 5_000.0;
 
 // Resolution of the on-the-fly spectrum analyzer drawn in the monitor strip
 const SPECTRUM_BINS: usize = 48;
@@ -121,9 +165,17 @@ struct EngineMirror {
     delay_mix: [f32; NUM_TRACKS],
     reverb_on: [bool; NUM_TRACKS],
     reverb_mix: [f32; NUM_TRACKS],
-    // Oscillator A/B blend and osc B pitch offset
+    // Oscillator A/B blend, coarse/fine pitch per osc, and FM index
     osc_mix: [f32; NUM_TRACKS],
     osc_b_semis: [f32; NUM_TRACKS],
+    osc_a_semis: [f32; NUM_TRACKS],
+    osc_a_cents: [f32; NUM_TRACKS],
+    osc_b_cents: [f32; NUM_TRACKS],
+    fm_amount: [f32; NUM_TRACKS],
+    polyphony: [usize; NUM_TRACKS],
+    lfo_rate_hz: [f32; NUM_TRACKS],
+    lfo_depth: [f32; NUM_TRACKS],
+    lfo_dest: [LfoDestination; NUM_TRACKS],
     // Amp/filter ADSR macros [attack, decay, sustain, release]
     amp_env: [[f32; 4]; NUM_TRACKS],
     filter_env: [[f32; 4]; NUM_TRACKS],
@@ -131,6 +183,9 @@ struct EngineMirror {
     track_pan: [f32; NUM_TRACKS],
     track_muted: [bool; NUM_TRACKS],
     track_soloed: [bool; NUM_TRACKS],
+    // Character effects: per track, per FX_SLOTS index — bypass + up to 4 params
+    fx_on: [[bool; 4]; NUM_TRACKS],
+    fx_param: [[[f32; 4]; 4]; NUM_TRACKS],
 }
 
 impl EngineMirror {
@@ -150,12 +205,23 @@ impl EngineMirror {
             reverb_mix: [DEFAULT_REVERB_MIX; NUM_TRACKS],
             osc_mix: [DEFAULT_OSC_MIX; NUM_TRACKS],
             osc_b_semis: [DEFAULT_OSC_B_SEMIS; NUM_TRACKS],
+            osc_a_semis: [DEFAULT_OSC_A_SEMIS; NUM_TRACKS],
+            osc_a_cents: [DEFAULT_OSC_A_CENTS; NUM_TRACKS],
+            osc_b_cents: [DEFAULT_OSC_B_CENTS; NUM_TRACKS],
+            fm_amount: [DEFAULT_FM_AMOUNT; NUM_TRACKS],
+            polyphony: [DEFAULT_VOICES; NUM_TRACKS],
+            lfo_rate_hz: [DEFAULT_LFO_RATE_HZ; NUM_TRACKS],
+            lfo_depth: [DEFAULT_LFO_DEPTH; NUM_TRACKS],
+            lfo_dest: [DEFAULT_LFO_DEST; NUM_TRACKS],
             amp_env: [DEFAULT_AMP_ENV; NUM_TRACKS],
             filter_env: [DEFAULT_FILTER_ENV; NUM_TRACKS],
             track_level: [DEFAULT_TRACK_LEVEL; NUM_TRACKS],
             track_pan: [0.0; NUM_TRACKS],
             track_muted: [false; NUM_TRACKS],
             track_soloed: [false; NUM_TRACKS],
+            // All character effects start bypassed at their default params
+            fx_on: [[false; 4]; NUM_TRACKS],
+            fx_param: [FX_DEFAULTS; NUM_TRACKS],
         }
     }
 }
@@ -185,7 +251,10 @@ struct MidiRecorder {
 
 impl MidiRecorder {
     fn new(clip_start: f32) -> Self {
-        Self { clip_start, pending: Vec::new() }
+        Self {
+            clip_start,
+            pending: Vec::new(),
+        }
     }
 
     // Open a note at an absolute beat, replacing any open note of the same pitch
@@ -201,13 +270,21 @@ impl MidiRecorder {
         let (pitch, start, velocity) = self.pending.remove(index);
         let end = (abs_beat - self.clip_start).max(start);
         let len = (end - start).max(MIN_RECORDED_LEN);
-        Some(RecordedNote { pitch, start_beats: start, len_beats: len, velocity })
+        Some(RecordedNote {
+            pitch,
+            start_beats: start,
+            len_beats: len,
+            velocity,
+        })
     }
 
     // Close every still-open note at an absolute beat
     fn finalize(&mut self, abs_beat: f32) -> Vec<RecordedNote> {
         let pitches: Vec<u8> = self.pending.iter().map(|&(p, _, _)| p).collect();
-        pitches.into_iter().filter_map(|p| self.note_off(p, abs_beat)).collect()
+        pitches
+            .into_iter()
+            .filter_map(|p| self.note_off(p, abs_beat))
+            .collect()
     }
 }
 
@@ -229,6 +306,11 @@ pub struct StudioApp {
     clip_notes_mirror: HashMap<u64, Vec<Note>>,
     // Which clip the shared piano-roll model currently reflects
     piano_clip: Option<u64>,
+    // Session-slot note content + last-synced mirror, keyed by (track, scene)
+    session_notes: HashMap<(u8, u8), Vec<Note>>,
+    session_notes_mirror: HashMap<(u8, u8), Vec<Note>>,
+    // Which session slot the piano roll currently edits (in Session view)
+    session_edit: Option<(u8, u8)>,
     // Last-synced timeline clip placements, for diffing to the engine
     timeline_mirror: Vec<Clip>,
     // Monotonic allocator for engine clip ids (new view clips arrive as id 0)
@@ -277,6 +359,9 @@ impl StudioApp {
             clip_notes: HashMap::new(),
             clip_notes_mirror: HashMap::new(),
             piano_clip: None,
+            session_notes: HashMap::new(),
+            session_notes_mirror: HashMap::new(),
+            session_edit: None,
             timeline_mirror: Vec::new(),
             next_clip_id: 1,
             recorder: None,
@@ -345,6 +430,16 @@ impl StudioApp {
                     reverb_mix: self.mirror.reverb_mix[track],
                     osc_mix: self.mirror.osc_mix[track],
                     osc_b_semis: self.mirror.osc_b_semis[track],
+                    osc_a_semis: self.mirror.osc_a_semis[track],
+                    osc_a_cents: self.mirror.osc_a_cents[track],
+                    osc_b_cents: self.mirror.osc_b_cents[track],
+                    fm_amount: self.mirror.fm_amount[track],
+                    polyphony: self.mirror.polyphony[track],
+                    lfo_rate_hz: self.mirror.lfo_rate_hz[track],
+                    lfo_depth: self.mirror.lfo_depth[track],
+                    lfo_dest: self.mirror.lfo_dest[track],
+                    fx_on: self.mirror.fx_on[track],
+                    fx_param: self.mirror.fx_param[track],
                     amp_env: self.mirror.amp_env[track],
                     filter_env: self.mirror.filter_env[track],
                     gates,
@@ -376,10 +471,22 @@ impl StudioApp {
             let t = track as u8;
 
             // Mix flags to the engine, mirror, and strip
-            self.control.send(EngineCommand::SetTrackLevel { track: t, level: state.level });
-            self.control.send(EngineCommand::SetTrackPan { track: t, pan: state.pan });
-            self.control.send(EngineCommand::SetTrackMute { track: t, on: state.muted });
-            self.control.send(EngineCommand::SetTrackSolo { track: t, on: state.soloed });
+            self.control.send(EngineCommand::SetTrackLevel {
+                track: t,
+                level: state.level,
+            });
+            self.control.send(EngineCommand::SetTrackPan {
+                track: t,
+                pan: state.pan,
+            });
+            self.control.send(EngineCommand::SetTrackMute {
+                track: t,
+                on: state.muted,
+            });
+            self.control.send(EngineCommand::SetTrackSolo {
+                track: t,
+                on: state.soloed,
+            });
             self.mirror.track_level[track] = state.level;
             self.mirror.track_pan[track] = state.pan;
             self.mirror.track_muted[track] = state.muted;
@@ -392,16 +499,96 @@ impl StudioApp {
             }
 
             // Per-track patch + fx to the engine and the mirror
-            self.control.send(EngineCommand::SetCutoff { track: t, hz: state.cutoff_hz });
-            self.control.send(EngineCommand::SetResonance { track: t, resonance: state.resonance });
-            self.control.send(EngineCommand::SetDelay { track: t, on: state.delay_on });
-            self.control.send(EngineCommand::SetDelayTime { track: t, seconds: state.delay_time });
-            self.control.send(EngineCommand::SetDelayFeedback { track: t, feedback: state.delay_feedback });
-            self.control.send(EngineCommand::SetDelayMix { track: t, mix: state.delay_mix });
-            self.control.send(EngineCommand::SetReverb { track: t, on: state.reverb_on });
-            self.control.send(EngineCommand::SetReverbMix { track: t, mix: state.reverb_mix });
-            self.control.send(EngineCommand::SetOscMix { track: t, mix: state.osc_mix });
-            self.control.send(EngineCommand::SetOscBSemis { track: t, semis: state.osc_b_semis });
+            self.control.send(EngineCommand::SetCutoff {
+                track: t,
+                hz: state.cutoff_hz,
+            });
+            self.control.send(EngineCommand::SetResonance {
+                track: t,
+                resonance: state.resonance,
+            });
+            self.control.send(EngineCommand::SetDelay {
+                track: t,
+                on: state.delay_on,
+            });
+            self.control.send(EngineCommand::SetDelayTime {
+                track: t,
+                seconds: state.delay_time,
+            });
+            self.control.send(EngineCommand::SetDelayFeedback {
+                track: t,
+                feedback: state.delay_feedback,
+            });
+            self.control.send(EngineCommand::SetDelayMix {
+                track: t,
+                mix: state.delay_mix,
+            });
+            self.control.send(EngineCommand::SetReverb {
+                track: t,
+                on: state.reverb_on,
+            });
+            self.control.send(EngineCommand::SetReverbMix {
+                track: t,
+                mix: state.reverb_mix,
+            });
+            self.control.send(EngineCommand::SetOscMix {
+                track: t,
+                mix: state.osc_mix,
+            });
+            self.control.send(EngineCommand::SetOscBSemis {
+                track: t,
+                semis: state.osc_b_semis,
+            });
+            self.control.send(EngineCommand::SetOscACoarse {
+                track: t,
+                semis: state.osc_a_semis,
+            });
+            self.control.send(EngineCommand::SetOscAFine {
+                track: t,
+                cents: state.osc_a_cents,
+            });
+            self.control.send(EngineCommand::SetOscBFine {
+                track: t,
+                cents: state.osc_b_cents,
+            });
+            self.control.send(EngineCommand::SetFmAmount {
+                track: t,
+                amount: state.fm_amount,
+            });
+            self.control.send(EngineCommand::SetPolyphony {
+                track: t,
+                voices: state.polyphony,
+            });
+            self.control.send(EngineCommand::SetLfoRate {
+                track: t,
+                hz: state.lfo_rate_hz,
+            });
+            self.control.send(EngineCommand::SetLfoDepth {
+                track: t,
+                depth: state.lfo_depth,
+            });
+            self.control.send(EngineCommand::SetLfoDest {
+                track: t,
+                dest: state.lfo_dest,
+            });
+            // Character effects: bypass + every param, then mirror them
+            for (fx_idx, &(_, fx_kind, nparams)) in FX_SLOTS.iter().enumerate() {
+                self.control.send(EngineCommand::SetFxOn {
+                    track: t,
+                    fx: fx_kind,
+                    on: state.fx_on[fx_idx],
+                });
+                for p in 0..nparams {
+                    self.control.send(EngineCommand::SetFxParam {
+                        track: t,
+                        fx: fx_kind,
+                        param: p as u8,
+                        value: state.fx_param[fx_idx][p],
+                    });
+                }
+            }
+            self.mirror.fx_on[track] = state.fx_on;
+            self.mirror.fx_param[track] = state.fx_param;
             self.control.send(EngineCommand::SetAmpEnv {
                 track: t,
                 attack: state.amp_env[ENV_ATTACK],
@@ -426,6 +613,14 @@ impl StudioApp {
             self.mirror.reverb_mix[track] = state.reverb_mix;
             self.mirror.osc_mix[track] = state.osc_mix;
             self.mirror.osc_b_semis[track] = state.osc_b_semis;
+            self.mirror.osc_a_semis[track] = state.osc_a_semis;
+            self.mirror.osc_a_cents[track] = state.osc_a_cents;
+            self.mirror.osc_b_cents[track] = state.osc_b_cents;
+            self.mirror.fm_amount[track] = state.fm_amount;
+            self.mirror.polyphony[track] = state.polyphony;
+            self.mirror.lfo_rate_hz[track] = state.lfo_rate_hz;
+            self.mirror.lfo_depth[track] = state.lfo_depth;
+            self.mirror.lfo_dest[track] = state.lfo_dest;
             self.mirror.amp_env[track] = state.amp_env;
             self.mirror.filter_env[track] = state.filter_env;
 
@@ -440,7 +635,12 @@ impl StudioApp {
                 pattern.clear();
                 for &(row, step) in &state.gates {
                     pattern.set(row as usize, step as usize, true);
-                    self.control.send(EngineCommand::SetCell { track: t, step, row, on: true });
+                    self.control.send(EngineCommand::SetCell {
+                        track: t,
+                        step,
+                        row,
+                        on: true,
+                    });
                 }
                 self.step_mirror[track] = pattern.clone();
             }
@@ -448,7 +648,10 @@ impl StudioApp {
 
         // Tear down every known clip in the engine, then rebuild from the load
         for clip in &self.session.timeline.clips {
-            self.control.send(EngineCommand::RemoveClip { track: clip.lane as u8, id: clip.id });
+            self.control.send(EngineCommand::RemoveClip {
+                track: clip.lane as u8,
+                id: clip.id,
+            });
         }
         self.session.timeline.clips.clear();
         self.session.timeline.selected = None;
@@ -514,9 +717,16 @@ impl StudioApp {
         let track = self.session.mixer.selected.min(NUM_TRACKS - 1);
         let t = track as u8;
         let command = if ev.down {
-            EngineCommand::NoteOn { track: t, key: ev.midi, velocity: UI_VELOCITY }
+            EngineCommand::NoteOn {
+                track: t,
+                key: ev.midi,
+                velocity: UI_VELOCITY,
+            }
         } else {
-            EngineCommand::NoteOff { track: t, key: ev.midi }
+            EngineCommand::NoteOff {
+                track: t,
+                key: ev.midi,
+            }
         };
         self.control.send(command);
 
@@ -527,7 +737,11 @@ impl StudioApp {
                 if let Some(rec) = self.recorder.as_mut() {
                     rec.note_on(ev.midi, UI_VELOCITY, abs);
                 }
-            } else if let Some(note) = self.recorder.as_mut().and_then(|rec| rec.note_off(ev.midi, abs)) {
+            } else if let Some(note) = self
+                .recorder
+                .as_mut()
+                .and_then(|rec| rec.note_off(ev.midi, abs))
+            {
                 self.commit_recorded(track, note);
             }
         }
@@ -546,7 +760,13 @@ impl StudioApp {
                 ar.start();
             }
             let track = self.session.mixer.selected.min(NUM_TRACKS - 1);
-            let armed = self.session.mixer.channels.get(track).map(|c| c.armed).unwrap_or(false);
+            let armed = self
+                .session
+                .mixer
+                .channels
+                .get(track)
+                .map(|c| c.armed)
+                .unwrap_or(false);
             if armed {
                 let id = self.next_clip_id;
                 self.next_clip_id += 1;
@@ -575,7 +795,11 @@ impl StudioApp {
             }
         } else if !recording && self.recorder.is_some() {
             let abs = self.control.position_beats() as f32;
-            let finished = self.recorder.as_mut().map(|rec| rec.finalize(abs)).unwrap_or_default();
+            let finished = self
+                .recorder
+                .as_mut()
+                .map(|rec| rec.finalize(abs))
+                .unwrap_or_default();
             let target = self.record_target;
             if let Some((track, _)) = target {
                 for note in finished {
@@ -618,7 +842,11 @@ impl StudioApp {
         }
 
         let samples: Arc<[f32]> = Arc::from(audio.samples);
-        self.control.send_asset(AudioAsset { slot, samples, channels });
+        self.control.send_asset(AudioAsset {
+            slot,
+            samples,
+            channels,
+        });
         let id = self.next_clip_id;
         self.next_clip_id += 1;
         self.control.send(EngineCommand::AddAudioClip {
@@ -664,14 +892,23 @@ impl StudioApp {
             velocity: note.velocity,
         };
         self.clip_notes.entry(clip_id).or_default().push(ui_note);
-        self.clip_notes_mirror.entry(clip_id).or_default().push(ui_note);
+        self.clip_notes_mirror
+            .entry(clip_id)
+            .or_default()
+            .push(ui_note);
         if self.piano_clip == Some(clip_id) {
             self.session.piano.notes.push(ui_note);
         }
 
         // Grow the clip (and its mirror) to cover the recorded note's end
         let note_end = note.start_beats + note.len_beats;
-        if let Some(pos) = self.session.timeline.clips.iter().position(|c| c.id == clip_id) {
+        if let Some(pos) = self
+            .session
+            .timeline
+            .clips
+            .iter()
+            .position(|c| c.id == clip_id)
+        {
             if note_end > self.session.timeline.clips[pos].len_beats {
                 self.session.timeline.clips[pos].len_beats = note_end;
                 self.control.send(EngineCommand::ResizeClip {
@@ -688,11 +925,16 @@ impl StudioApp {
 
     // Poll the computer keyboard and play mapped notes, edge-detected per key
     fn handle_computer_keys(&mut self, ctx: &egui::Context) {
+        // Ignore note keys while a command combo is held (e.g. Cmd+S is not note S)
+        let cmd = ctx.input(|i| i.modifiers.command);
         let down = ctx.input(|i| COMPUTER_KEYS.map(|(key, _)| i.keys_down.contains(&key)));
         for (index, (_, midi)) in COMPUTER_KEYS.iter().enumerate() {
-            let now = down[index];
+            let now = down[index] && !cmd;
             if now != self.computer_held[index] {
-                self.note_event(KeyEvent { midi: *midi, down: now });
+                self.note_event(KeyEvent {
+                    midi: *midi,
+                    down: now,
+                });
                 self.computer_held[index] = now;
             }
         }
@@ -749,10 +991,18 @@ impl StudioApp {
 
         let current = self.session.timeline.clips.clone();
         for clip in &current {
-            match self.timeline_mirror.iter().find(|m| m.id == clip.id).cloned() {
+            match self
+                .timeline_mirror
+                .iter()
+                .find(|m| m.id == clip.id)
+                .cloned()
+            {
                 Some(prev) if prev.lane != clip.lane => {
                     // Lane change re-homes the clip on another track, notes and all
-                    self.control.send(EngineCommand::RemoveClip { track: prev.lane as u8, id: clip.id });
+                    self.control.send(EngineCommand::RemoveClip {
+                        track: prev.lane as u8,
+                        id: clip.id,
+                    });
                     self.control.send(EngineCommand::AddClip {
                         track: clip.lane as u8,
                         id: clip.id,
@@ -795,7 +1045,10 @@ impl StudioApp {
         // Clips present before but gone now were deleted
         for prev in self.timeline_mirror.clone() {
             if !current.iter().any(|c| c.id == prev.id) {
-                self.control.send(EngineCommand::RemoveClip { track: prev.lane as u8, id: prev.id });
+                self.control.send(EngineCommand::RemoveClip {
+                    track: prev.lane as u8,
+                    id: prev.id,
+                });
                 self.clip_notes.remove(&prev.id);
                 self.clip_notes_mirror.remove(&prev.id);
                 if self.piano_clip == Some(prev.id) {
@@ -832,6 +1085,18 @@ impl StudioApp {
 
         let current = self.session.piano.notes.clone();
         let mirror = self.clip_notes_mirror.get(&id).cloned().unwrap_or_default();
+        // Removes first so an in-place edit (move/resize) clears the old note
+        // before its replacement is added at the same pitch/start this block.
+        for note in &mirror {
+            if !current.iter().any(|c| same_note(c, note)) {
+                self.control.send(EngineCommand::RemoveClipNote {
+                    track: lane as u8,
+                    clip: id,
+                    pitch: note.pitch,
+                    start_beats: note.start_beats,
+                });
+            }
+        }
         for note in &current {
             if !mirror.iter().any(|m| same_note(m, note)) {
                 self.control.send(EngineCommand::AddClipNote {
@@ -844,18 +1109,121 @@ impl StudioApp {
                 });
             }
         }
+        self.clip_notes.insert(id, current.clone());
+        self.clip_notes_mirror.insert(id, current);
+    }
+
+    // Translate session-view intents into launcher commands and grid state
+    fn handle_session_intents(&mut self, intents: &[CommandIntent]) {
+        for intent in intents {
+            let cmd = intent.command.as_str();
+            if let Some(rest) = cmd.strip_prefix("session_launch_scene:") {
+                if let Ok(scene) = rest.parse::<usize>() {
+                    for track in 0..NUM_TRACKS {
+                        if self.slot_filled(track, scene) {
+                            self.launch_slot(track, scene);
+                        }
+                    }
+                }
+            } else if let Some(rest) = cmd.strip_prefix("session_launch:") {
+                if let Some((track, scene)) = parse_track_scene(rest) {
+                    self.launch_slot(track, scene);
+                }
+            } else if let Some(rest) = cmd.strip_prefix("session_create:") {
+                if let Some((track, scene)) = parse_track_scene(rest) {
+                    self.create_slot(track, scene);
+                }
+            } else if cmd == "session_stop_all" {
+                for track in 0..NUM_TRACKS {
+                    self.control.send(EngineCommand::StopSlot { track: track as u8 });
+                }
+                for slot in &mut self.session.session_grid.slots {
+                    slot.playing = false;
+                    slot.queued = false;
+                }
+            }
+        }
+    }
+
+    // Whether a session grid slot holds a clip
+    fn slot_filled(&self, track: usize, scene: usize) -> bool {
+        self.session.session_grid.slot(track, scene).map(|s| s.filled).unwrap_or(false)
+    }
+
+    // Register a freshly created session slot with the engine and edit it
+    fn create_slot(&mut self, track: usize, scene: usize) {
+        self.control.send(EngineCommand::CreateSessionSlot {
+            track: track as u8,
+            scene: scene as u8,
+            len_beats: SESSION_CLIP_LEN,
+        });
+        self.session_notes.entry((track as u8, scene as u8)).or_default();
+        let grid = &mut self.session.session_grid;
+        grid.selected = Some(grid.index(track, scene));
+    }
+
+    // Launch one slot immediately: it becomes the track's sole playing slot
+    fn launch_slot(&mut self, track: usize, scene: usize) {
+        if !self.slot_filled(track, scene) {
+            return;
+        }
+        self.control.send(EngineCommand::LaunchSlot {
+            track: track as u8,
+            scene: scene as u8,
+        });
+        let grid = &mut self.session.session_grid;
+        for sc in 0..grid.scenes {
+            if let Some(slot) = grid.slot_mut(track, sc) {
+                slot.playing = sc == scene;
+                slot.queued = false;
+            }
+        }
+    }
+
+    // Bind the piano roll to the selected session slot and diff its note edits
+    fn sync_session_notes(&mut self) {
+        let grid = &self.session.session_grid;
+        let sel = grid.selected.filter(|_| grid.tracks > 0).map(|i| {
+            ((i % grid.tracks) as u8, (i / grid.tracks) as u8)
+        });
+        let Some(key) = sel else {
+            return;
+        };
+        if self.session_edit != Some(key) {
+            // Show the newly selected slot's notes
+            self.session.piano.notes = self.session_notes.get(&key).cloned().unwrap_or_default();
+            self.session.piano.length_beats = SESSION_CLIP_LEN;
+            self.session_edit = Some(key);
+            return;
+        }
+
+        let (track, scene) = key;
+        let current = self.session.piano.notes.clone();
+        let mirror = self.session_notes_mirror.get(&key).cloned().unwrap_or_default();
         for note in &mirror {
             if !current.iter().any(|c| same_note(c, note)) {
-                self.control.send(EngineCommand::RemoveClipNote {
-                    track: lane as u8,
-                    clip: id,
+                self.control.send(EngineCommand::RemoveSessionNote {
+                    track,
+                    scene,
                     pitch: note.pitch,
                     start_beats: note.start_beats,
                 });
             }
         }
-        self.clip_notes.insert(id, current.clone());
-        self.clip_notes_mirror.insert(id, current);
+        for note in &current {
+            if !mirror.iter().any(|m| same_note(m, note)) {
+                self.control.send(EngineCommand::AddSessionNote {
+                    track,
+                    scene,
+                    pitch: note.pitch,
+                    start_beats: note.start_beats,
+                    len_beats: note.len_beats,
+                    velocity: note.velocity,
+                });
+            }
+        }
+        self.session_notes.insert(key, current.clone());
+        self.session_notes_mirror.insert(key, current);
     }
 
     // Push step-grid edits to the engine: a wholesale clear becomes one
@@ -868,7 +1236,8 @@ impl StudioApp {
             };
             let mirror = self.step_mirror[track].clone();
             if current.is_empty() && !mirror.is_empty() {
-                self.control.send(EngineCommand::ClearPattern { track: track as u8 });
+                self.control
+                    .send(EngineCommand::ClearPattern { track: track as u8 });
             } else {
                 for row in 0..current.rows {
                     for step in 0..current.steps {
@@ -888,14 +1257,120 @@ impl StudioApp {
         }
     }
 
+    // Ableton-style global shortcuts. Command combos (Cmd/Ctrl) fire even while a
+    // text field has focus; bare keys are suppressed while typing. Keys are
+    // consumed here so widgets (and egui's Tab focus) don't also act on them.
+    fn handle_shortcuts(&mut self, ctx: &egui::Context) {
+        use egui::{Key, Modifiers};
+        let typing = ctx.egui_wants_keyboard_input();
+        let (mut save, mut load, mut toggle_loop) = (false, false, false);
+        let (mut toggle_mixer, mut toggle_browser) = (false, false);
+        let (mut toggle_main, mut toggle_detail) = (false, false);
+        let (mut play_stop, mut record) = (false, false);
+
+        ctx.input_mut(|i| {
+            // Command combos work regardless of focus
+            save |= i.consume_key(Modifiers::COMMAND, Key::S);
+            load |= i.consume_key(Modifiers::COMMAND, Key::O);
+            toggle_loop |= i.consume_key(Modifiers::COMMAND, Key::L);
+            toggle_mixer |= i.consume_key(Modifiers::COMMAND | Modifiers::ALT, Key::M);
+            toggle_browser |= i.consume_key(Modifiers::COMMAND | Modifiers::ALT, Key::B);
+            if typing {
+                return;
+            }
+            // Bare keys: Shift+Tab before Tab so the modified combo wins
+            if i.consume_key(Modifiers::SHIFT, Key::Tab) {
+                toggle_detail = true;
+            } else if i.consume_key(Modifiers::NONE, Key::Tab) {
+                toggle_main = true;
+            }
+            play_stop |= i.consume_key(Modifiers::NONE, Key::Space);
+            record |= i.consume_key(Modifiers::NONE, Key::F9);
+        });
+
+        if play_stop {
+            // Space toggles play/stop, the universal transport binding
+            if self.session.transport.playing {
+                self.apply_transport(TransportAction::Stop);
+            } else {
+                self.apply_transport(TransportAction::Play);
+            }
+        }
+        if record {
+            self.apply_transport(TransportAction::ToggleRecord);
+        }
+        if toggle_main {
+            self.state.toggle_main_view();
+        }
+        if toggle_detail {
+            self.state.toggle_detail_view();
+        }
+        if toggle_mixer {
+            self.state.toggle_mixer();
+        }
+        if toggle_browser {
+            self.state.toggle_browser();
+        }
+        if toggle_loop {
+            self.session.transport.loop_enabled = !self.session.transport.loop_enabled;
+        }
+        if save {
+            self.do_save();
+        }
+        if load {
+            self.do_load();
+        }
+    }
+
+    // Serialize the current session to disk, reporting the result in the status line
+    fn do_save(&mut self) {
+        let snapshot = self.to_session();
+        self.status = match session::save(&snapshot) {
+            Ok(path) => format!("Saved {}", path.display()),
+            Err(err) => format!("Save failed: {err}"),
+        };
+    }
+
+    // Load a session from disk, falling back to the current state on failure
+    fn do_load(&mut self) {
+        let fallback = self.to_session();
+        match session::load(&fallback) {
+            Ok(loaded) => {
+                self.apply_session(loaded);
+                self.status = "Loaded session".to_string();
+            }
+            Err(err) => self.status = format!("Load failed: {err}"),
+        }
+    }
+
+    // Apply a discrete transport button press to the engine and the mirror
+    fn apply_transport(&mut self, action: TransportAction) {
+        match action {
+            TransportAction::Play => {
+                self.session.transport.playing = true;
+                self.mirror.playing = true;
+                self.control.send(EngineCommand::Play);
+            }
+            TransportAction::Stop => {
+                self.session.transport.playing = false;
+                self.mirror.playing = false;
+                self.session.transport.position_beats = 0.0;
+                self.control.send(EngineCommand::Stop);
+            }
+            TransportAction::Pause => {
+                self.session.transport.playing = false;
+                self.mirror.playing = false;
+                self.control.send(EngineCommand::Pause);
+            }
+            TransportAction::ToggleRecord => {
+                self.session.transport.recording = !self.session.transport.recording;
+            }
+        }
+    }
+
     // Emit an EngineCommand for every mirror value a view changed this frame
     fn emit_engine_diff(&mut self) {
-        // Transport
-        let playing = self.session.transport.playing;
-        if playing != self.mirror.playing {
-            self.control.send(EngineCommand::SetPlaying(playing));
-            self.mirror.playing = playing;
-        }
+        // Transport (play/stop/pause are handled discretely in apply_transport)
         let bpm = self.session.transport.bpm;
         if bpm != self.mirror.bpm {
             self.control.send(EngineCommand::SetBpm(bpm));
@@ -965,13 +1440,19 @@ impl StudioApp {
         if let Some(slot) = self.session.rack.slots.get(SLOT_FILTER) {
             if let Some(cutoff) = slot.params.get(FILTER_CUTOFF).map(|p| p.value) {
                 if cutoff != self.mirror.cutoff_hz[track] {
-                    self.control.send(EngineCommand::SetCutoff { track: t, hz: cutoff });
+                    self.control.send(EngineCommand::SetCutoff {
+                        track: t,
+                        hz: cutoff,
+                    });
                     self.mirror.cutoff_hz[track] = cutoff;
                 }
             }
             if let Some(reso) = slot.params.get(FILTER_RESO).map(|p| p.value) {
                 if reso != self.mirror.resonance[track] {
-                    self.control.send(EngineCommand::SetResonance { track: t, resonance: reso });
+                    self.control.send(EngineCommand::SetResonance {
+                        track: t,
+                        resonance: reso,
+                    });
                     self.mirror.resonance[track] = reso;
                 }
             }
@@ -986,19 +1467,26 @@ impl StudioApp {
             }
             if let Some(time) = slot.params.get(DELAY_TIME).map(|p| p.value) {
                 if time != self.mirror.delay_time[track] {
-                    self.control.send(EngineCommand::SetDelayTime { track: t, seconds: time });
+                    self.control.send(EngineCommand::SetDelayTime {
+                        track: t,
+                        seconds: time,
+                    });
                     self.mirror.delay_time[track] = time;
                 }
             }
             if let Some(fbk) = slot.params.get(DELAY_FEEDBACK).map(|p| p.value) {
                 if fbk != self.mirror.delay_feedback[track] {
-                    self.control.send(EngineCommand::SetDelayFeedback { track: t, feedback: fbk });
+                    self.control.send(EngineCommand::SetDelayFeedback {
+                        track: t,
+                        feedback: fbk,
+                    });
                     self.mirror.delay_feedback[track] = fbk;
                 }
             }
             if let Some(mix) = slot.params.get(DELAY_MIX).map(|p| p.value) {
                 if mix != self.mirror.delay_mix[track] {
-                    self.control.send(EngineCommand::SetDelayMix { track: t, mix });
+                    self.control
+                        .send(EngineCommand::SetDelayMix { track: t, mix });
                     self.mirror.delay_mix[track] = mix;
                 }
             }
@@ -1011,24 +1499,97 @@ impl StudioApp {
             }
             if let Some(mix) = slot.params.get(REVERB_MIX).map(|p| p.value) {
                 if mix != self.mirror.reverb_mix[track] {
-                    self.control.send(EngineCommand::SetReverbMix { track: t, mix });
+                    self.control
+                        .send(EngineCommand::SetReverbMix { track: t, mix });
                     self.mirror.reverb_mix[track] = mix;
                 }
             }
         }
 
-        // Oscillator shape (sine/saw blend) and osc B pitch offset
+        // Oscillator: shape blend, coarse/fine pitch per osc, and FM index
         if let Some(slot) = self.session.rack.slots.get(SLOT_OSC) {
             if let Some(shape) = slot.params.get(OSC_SHAPE).map(|p| p.value) {
                 if shape != self.mirror.osc_mix[track] {
-                    self.control.send(EngineCommand::SetOscMix { track: t, mix: shape });
+                    self.control.send(EngineCommand::SetOscMix {
+                        track: t,
+                        mix: shape,
+                    });
                     self.mirror.osc_mix[track] = shape;
+                }
+            }
+            if let Some(semis) = slot.params.get(OSC_A_COARSE).map(|p| p.value) {
+                if semis != self.mirror.osc_a_semis[track] {
+                    self.control
+                        .send(EngineCommand::SetOscACoarse { track: t, semis });
+                    self.mirror.osc_a_semis[track] = semis;
+                }
+            }
+            if let Some(cents) = slot.params.get(OSC_A_FINE).map(|p| p.value) {
+                if cents != self.mirror.osc_a_cents[track] {
+                    self.control
+                        .send(EngineCommand::SetOscAFine { track: t, cents });
+                    self.mirror.osc_a_cents[track] = cents;
                 }
             }
             if let Some(semis) = slot.params.get(OSC_B_SEMIS).map(|p| p.value) {
                 if semis != self.mirror.osc_b_semis[track] {
-                    self.control.send(EngineCommand::SetOscBSemis { track: t, semis });
+                    self.control
+                        .send(EngineCommand::SetOscBSemis { track: t, semis });
                     self.mirror.osc_b_semis[track] = semis;
+                }
+            }
+            if let Some(cents) = slot.params.get(OSC_B_FINE).map(|p| p.value) {
+                if cents != self.mirror.osc_b_cents[track] {
+                    self.control
+                        .send(EngineCommand::SetOscBFine { track: t, cents });
+                    self.mirror.osc_b_cents[track] = cents;
+                }
+            }
+            if let Some(amount) = slot.params.get(OSC_FM).map(|p| p.value) {
+                if amount != self.mirror.fm_amount[track] {
+                    self.control
+                        .send(EngineCommand::SetFmAmount { track: t, amount });
+                    self.mirror.fm_amount[track] = amount;
+                }
+            }
+            if let Some(voices) = slot
+                .params
+                .get(OSC_VOICES)
+                .map(|p| p.value.round() as usize)
+            {
+                if voices != self.mirror.polyphony[track] {
+                    self.control
+                        .send(EngineCommand::SetPolyphony { track: t, voices });
+                    self.mirror.polyphony[track] = voices;
+                }
+            }
+        }
+
+        // LFO: one free-running source routed to a single synth destination
+        if let Some(slot) = self.session.rack.slots.get(SLOT_LFO) {
+            if let Some(hz) = slot.params.get(LFO_RATE).map(|p| p.value) {
+                if hz != self.mirror.lfo_rate_hz[track] {
+                    self.control
+                        .send(EngineCommand::SetLfoRate { track: t, hz });
+                    self.mirror.lfo_rate_hz[track] = hz;
+                }
+            }
+            if let Some(depth) = slot.params.get(LFO_DEPTH).map(|p| p.value) {
+                if depth != self.mirror.lfo_depth[track] {
+                    self.control
+                        .send(EngineCommand::SetLfoDepth { track: t, depth });
+                    self.mirror.lfo_depth[track] = depth;
+                }
+            }
+            if let Some(dest) = slot
+                .params
+                .get(LFO_DEST)
+                .map(|p| lfo_dest_from_knob(p.value))
+            {
+                if dest != self.mirror.lfo_dest[track] {
+                    self.control
+                        .send(EngineCommand::SetLfoDest { track: t, dest });
+                    self.mirror.lfo_dest[track] = dest;
                 }
             }
         }
@@ -1046,7 +1607,13 @@ impl StudioApp {
                 self.mirror.amp_env[track] = env;
             }
         }
-        if let Some(env) = self.session.rack.slots.get(SLOT_FILTER_ENV).and_then(env_of) {
+        if let Some(env) = self
+            .session
+            .rack
+            .slots
+            .get(SLOT_FILTER_ENV)
+            .and_then(env_of)
+        {
             if env != self.mirror.filter_env[track] {
                 self.control.send(EngineCommand::SetFilterEnv {
                     track: t,
@@ -1056,6 +1623,30 @@ impl StudioApp {
                     release: env[ENV_RELEASE],
                 });
                 self.mirror.filter_env[track] = env;
+            }
+        }
+
+        // Character effects: bypass + params diffed generically per FX_SLOTS
+        for (fx_idx, &(slot_idx, fx_kind, nparams)) in FX_SLOTS.iter().enumerate() {
+            if let Some(slot) = self.session.rack.slots.get(slot_idx) {
+                let on = !slot.bypassed;
+                if on != self.mirror.fx_on[track][fx_idx] {
+                    self.control.send(EngineCommand::SetFxOn { track: t, fx: fx_kind, on });
+                    self.mirror.fx_on[track][fx_idx] = on;
+                }
+                for p in 0..nparams {
+                    if let Some(v) = slot.params.get(p).map(|p| p.value) {
+                        if v != self.mirror.fx_param[track][fx_idx][p] {
+                            self.control.send(EngineCommand::SetFxParam {
+                                track: t,
+                                fx: fx_kind,
+                                param: p as u8,
+                                value: v,
+                            });
+                            self.mirror.fx_param[track][fx_idx][p] = v;
+                        }
+                    }
+                }
             }
         }
 
@@ -1075,57 +1666,66 @@ impl eframe::App for StudioApp {
         // Open/close the recorder before any notes are captured this frame
         self.sync_recording();
         self.handle_computer_keys(&ctx);
+        // Global Ableton-style shortcuts; consume keys before widgets see them
+        self.handle_shortcuts(&ctx);
         self.sync_monitor();
 
-        // Playable keyboard pinned to the very bottom, below the monitor strip
-        egui::Panel::bottom("geist_keyboard")
-            .resizable(false)
-            .show_inside(ui, |ui| {
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new("Play Z S X D C V G B H N J M ,  ·  notes go to the selected mixer track")
-                        .small()
-                        .color(theme::TEXT_MUTED),
-                );
-                let events = Keyboard::new(&mut self.kb_held)
-                    .base_midi(KEYBOARD_BASE_MIDI)
-                    .keys(KEYBOARD_KEYS)
-                    .show(ui);
-                for ev in events {
-                    self.note_event(ev);
-                }
-                if !self.status.is_empty() {
-                    ui.label(egui::RichText::new(&self.status).small().color(theme::TEXT_MUTED));
-                }
-            });
+        // Playable keyboard pinned to the very bottom; it toggles with the clip
+        // editor (the "MIDI controls" half of the bottom detail bar)
+        if self.state.detail_view() == DetailView::Clip {
+            egui::Panel::bottom("geist_keyboard")
+                .resizable(false)
+                .show_inside(ui, |ui| {
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new("Play Z S X D C V G B H N J M ,  ·  notes go to the selected mixer track")
+                            .small()
+                            .color(theme::TEXT_MUTED),
+                    );
+                    let events = Keyboard::new(&mut self.kb_held)
+                        .base_midi(KEYBOARD_BASE_MIDI)
+                        .keys(KEYBOARD_KEYS)
+                        .show(ui);
+                    for ev in events {
+                        self.note_event(ev);
+                    }
+                    if !self.status.is_empty() {
+                        ui.label(egui::RichText::new(&self.status).small().color(theme::TEXT_MUTED));
+                    }
+                });
+        }
 
-        // The studio shell: transport + lens tabs, lens content, monitor strip
+        // The studio shell: transport + layout, central editor, detail, monitor
         let response = draw_studio(ui, &mut self.state, &mut self.session);
+
+        // Discrete transport actions (Play/Stop/Pause are not bool-diffable)
+        if let Some(action) = response.transport {
+            self.apply_transport(action);
+        }
+        // Session-launcher actions emitted by the session grid this frame
+        self.handle_session_intents(&response.intents);
 
         // Reflect any view edits to the engine, then keep meters animating
         self.emit_engine_diff();
         self.sync_rack();
         self.sync_timeline();
-        self.sync_clip_notes();
+        // The piano roll edits the selected session slot in Session view, else the
+        // selected timeline clip. Reset the other binding so it reloads on return.
+        if self.state.main_view() == MainView::Session {
+            self.piano_clip = None;
+            self.sync_session_notes();
+        } else {
+            self.session_edit = None;
+            self.sync_clip_notes();
+        }
         self.sync_steps();
 
         // Session persistence, after the syncs so the snapshot is current
         if response.save_requested {
-            let snapshot = self.to_session();
-            self.status = match session::save(&snapshot) {
-                Ok(path) => format!("Saved {}", path.display()),
-                Err(err) => format!("Save failed: {err}"),
-            };
+            self.do_save();
         }
         if response.load_requested {
-            let fallback = self.to_session();
-            match session::load(&fallback) {
-                Ok(loaded) => {
-                    self.apply_session(loaded);
-                    self.status = "Loaded session".to_string();
-                }
-                Err(err) => self.status = format!("Load failed: {err}"),
-            }
+            self.do_load();
         }
 
         ctx.request_repaint();
@@ -1156,7 +1756,34 @@ fn initial_session() -> SessionModel {
         "Oscillator",
         vec![
             ParamSpec::new("Shape", DEFAULT_OSC_MIX, 0.0, 1.0),
-            ParamSpec::new("B Semi", DEFAULT_OSC_B_SEMIS, -OSC_B_SEMIS_RANGE, OSC_B_SEMIS_RANGE),
+            ParamSpec::new(
+                "A Coarse",
+                DEFAULT_OSC_A_SEMIS,
+                -OSC_B_SEMIS_RANGE,
+                OSC_B_SEMIS_RANGE,
+            ),
+            ParamSpec::new(
+                "A Fine",
+                DEFAULT_OSC_A_CENTS,
+                -OSC_CENTS_RANGE,
+                OSC_CENTS_RANGE,
+            )
+            .unit("c"),
+            ParamSpec::new(
+                "B Coarse",
+                DEFAULT_OSC_B_SEMIS,
+                -OSC_B_SEMIS_RANGE,
+                OSC_B_SEMIS_RANGE,
+            ),
+            ParamSpec::new(
+                "B Fine",
+                DEFAULT_OSC_B_CENTS,
+                -OSC_CENTS_RANGE,
+                OSC_CENTS_RANGE,
+            )
+            .unit("c"),
+            ParamSpec::new("FM", DEFAULT_FM_AMOUNT, 0.0, FM_AMOUNT_MAX),
+            ParamSpec::new("Voices", DEFAULT_VOICES as f32, 1.0, VOICES_MAX),
         ],
     );
     let filter = EffectSlot::new(
@@ -1166,6 +1793,16 @@ fn initial_session() -> SessionModel {
                 .unit("Hz")
                 .taper(Taper::Logarithmic),
             ParamSpec::new("Reso", DEFAULT_RESONANCE, 0.5, 6.0),
+        ],
+    );
+    let lfo = EffectSlot::new(
+        "LFO",
+        vec![
+            ParamSpec::new("Rate", DEFAULT_LFO_RATE_HZ, 0.01, LFO_RATE_MAX)
+                .unit("Hz")
+                .taper(Taper::Logarithmic),
+            ParamSpec::new("Depth", DEFAULT_LFO_DEPTH, 0.0, LFO_DEPTH_MAX),
+            ParamSpec::new("Dest", lfo_dest_to_knob(DEFAULT_LFO_DEST), 0.0, 2.0),
         ],
     );
     let amp_env = EffectSlot::new("Amp Env", env_params(DEFAULT_AMP_ENV));
@@ -1186,12 +1823,56 @@ fn initial_session() -> SessionModel {
         vec![ParamSpec::new("Mix", DEFAULT_REVERB_MIX, 0.0, 1.0)],
     );
     reverb.bypassed = true;
+    // Character effects, bypassed by default; params seeded from FX_DEFAULTS
+    let mut distortion = EffectSlot::new(
+        "Distortion",
+        vec![
+            ParamSpec::new("Drive", FX_DEFAULTS[0][0], 0.5, 24.0),
+            ParamSpec::new("Tone", FX_DEFAULTS[0][1], 0.0, 1.0),
+            ParamSpec::new("Mix", FX_DEFAULTS[0][2], 0.0, 1.0),
+        ],
+    );
+    distortion.bypassed = true;
+    let mut phaser = EffectSlot::new(
+        "Phaser",
+        vec![
+            ParamSpec::new("Rate", FX_DEFAULTS[1][0], 0.01, 10.0).unit("Hz"),
+            ParamSpec::new("Depth", FX_DEFAULTS[1][1], 0.0, 1.0),
+            ParamSpec::new("Fbk", FX_DEFAULTS[1][2], 0.0, 0.95),
+            ParamSpec::new("Mix", FX_DEFAULTS[1][3], 0.0, 1.0),
+        ],
+    );
+    phaser.bypassed = true;
+    let mut flanger = EffectSlot::new(
+        "Flanger",
+        vec![
+            ParamSpec::new("Rate", FX_DEFAULTS[2][0], 0.01, 10.0).unit("Hz"),
+            ParamSpec::new("Depth", FX_DEFAULTS[2][1], 0.0, 9.0).unit("ms"),
+            ParamSpec::new("Fbk", FX_DEFAULTS[2][2], -0.95, 0.95),
+            ParamSpec::new("Mix", FX_DEFAULTS[2][3], 0.0, 1.0),
+        ],
+    );
+    flanger.bypassed = true;
+    let mut chorus = EffectSlot::new(
+        "Chorus",
+        vec![
+            ParamSpec::new("Rate", FX_DEFAULTS[3][0], 0.01, 8.0).unit("Hz"),
+            ParamSpec::new("Depth", FX_DEFAULTS[3][1], 0.0, 10.0).unit("ms"),
+            ParamSpec::new("Mix", FX_DEFAULTS[3][2], 0.0, 1.0),
+        ],
+    );
+    chorus.bypassed = true;
     session.rack.push(oscillator);
+    session.rack.push(lfo);
     session.rack.push(filter);
     session.rack.push(amp_env);
     session.rack.push(filter_env);
     session.rack.push(delay);
     session.rack.push(reverb);
+    session.rack.push(distortion);
+    session.rack.push(phaser);
+    session.rack.push(flanger);
+    session.rack.push(chorus);
     session.rack.selected = Some(SLOT_OSC);
 
     // Step sequencer: mirror the engine's seeded per-track grids
@@ -1207,12 +1888,17 @@ fn initial_session() -> SessionModel {
     session.piano.length_beats = 16.0;
     session.timeline = TimelineModel {
         lanes: (0..NUM_TRACKS)
-            .map(|track| Lane { name: format!("Track {}", track + 1) })
+            .map(|track| Lane {
+                name: format!("Track {}", track + 1),
+            })
             .collect(),
         clips: Vec::new(),
         length_beats: 32.0,
         selected: None,
     };
+
+    // Session clip-launch grid: one column per track, eight empty scenes
+    session.session_grid = SessionGrid::new(NUM_TRACKS, 8);
 
     session.browser = browser_catalog();
     session
@@ -1232,22 +1918,37 @@ fn engine_step_pattern(track: usize) -> StepPattern {
 
 // A representative node-graph view of the fixed engine chain
 fn engine_graph() -> GraphModel {
-    let audio_in = |name: &str| Port { name: name.into(), kind: SignalKind::Audio };
-    let audio_out = || Port { name: "Out".into(), kind: SignalKind::Audio };
+    let audio_in = |name: &str| Port {
+        name: name.into(),
+        kind: SignalKind::Audio,
+    };
+    let audio_out = || Port {
+        name: "Out".into(),
+        kind: SignalKind::Audio,
+    };
     GraphModel {
         nodes: vec![
             GraphNode {
                 id: 1,
                 name: "Synth".into(),
                 pos: (40.0, 70.0),
-                inputs: vec![Port { name: "Pitch".into(), kind: SignalKind::Note }],
+                inputs: vec![Port {
+                    name: "Pitch".into(),
+                    kind: SignalKind::Note,
+                }],
                 outputs: vec![audio_out()],
             },
             GraphNode {
                 id: 2,
                 name: "Filter".into(),
                 pos: (220.0, 70.0),
-                inputs: vec![audio_in("In"), Port { name: "Cutoff".into(), kind: SignalKind::Cv }],
+                inputs: vec![
+                    audio_in("In"),
+                    Port {
+                        name: "Cutoff".into(),
+                        kind: SignalKind::Cv,
+                    },
+                ],
                 outputs: vec![audio_out()],
             },
             GraphNode {
@@ -1272,12 +1973,7 @@ fn engine_graph() -> GraphModel {
                 outputs: Vec::new(),
             },
         ],
-        cables: vec![
-            cable(1, 2),
-            cable(2, 3),
-            cable(3, 4),
-            cable(4, 5),
-        ],
+        cables: vec![cable(1, 2), cable(2, 3), cable(3, 4), cable(4, 5)],
     }
 }
 
@@ -1316,10 +2012,13 @@ fn append_workflow_templates(browser: &mut BrowserModel, templates: &[TemplateRe
 // Convert one workflow template into a searchable browser item
 fn template_browser_item(template: &TemplateRef) -> BrowserItem {
     let mut intent = CommandIntent::new("instantiate_template");
-    intent.args.insert("name".to_string(), template.name.clone());
     intent
         .args
-        .insert("kind".to_string(), template_kind_name(template.kind).to_string());
+        .insert("name".to_string(), template.name.clone());
+    intent.args.insert(
+        "kind".to_string(),
+        template_kind_name(template.kind).to_string(),
+    );
     intent.args.extend(template.args.clone());
     BrowserItem::new(
         template.name.clone(),
@@ -1361,16 +2060,46 @@ fn template_kind_name(kind: TemplateKind) -> &'static str {
 
 // Two piano-roll notes are the same slot when pitch and start beat coincide
 fn same_note(a: &Note, b: &Note) -> bool {
-    a.pitch == b.pitch && (a.start_beats - b.start_beats).abs() < 1e-3
+    a.pitch == b.pitch
+        && (a.start_beats - b.start_beats).abs() < 1e-3
+        && (a.len_beats - b.len_beats).abs() < 1e-3
+}
+
+// Parse a "track:scene" intent suffix into indices
+fn parse_track_scene(s: &str) -> Option<(usize, usize)> {
+    let (t, sc) = s.split_once(':')?;
+    Some((t.parse().ok()?, sc.parse().ok()?))
+}
+
+fn lfo_dest_to_knob(dest: LfoDestination) -> f32 {
+    match dest {
+        LfoDestination::Cutoff => 0.0,
+        LfoDestination::Pitch => 1.0,
+        LfoDestination::Fm => 2.0,
+    }
+}
+
+fn lfo_dest_from_knob(value: f32) -> LfoDestination {
+    match value.round() as i32 {
+        1 => LfoDestination::Pitch,
+        2 => LfoDestination::Fm,
+        _ => LfoDestination::Cutoff,
+    }
 }
 
 // Build the four ParamSpecs for an envelope slot from [a, d, s, r]
 fn env_params(env: [f32; 4]) -> Vec<ParamSpec> {
     vec![
-        ParamSpec::new("A", env[ENV_ATTACK], 0.001, ENV_TIME_MAX).unit("s").taper(Taper::Logarithmic),
-        ParamSpec::new("D", env[ENV_DECAY], 0.001, ENV_TIME_MAX).unit("s").taper(Taper::Logarithmic),
+        ParamSpec::new("A", env[ENV_ATTACK], 0.001, ENV_TIME_MAX)
+            .unit("s")
+            .taper(Taper::Logarithmic),
+        ParamSpec::new("D", env[ENV_DECAY], 0.001, ENV_TIME_MAX)
+            .unit("s")
+            .taper(Taper::Logarithmic),
         ParamSpec::new("S", env[ENV_SUSTAIN], 0.0, 1.0),
-        ParamSpec::new("R", env[ENV_RELEASE], 0.001, ENV_TIME_MAX).unit("s").taper(Taper::Logarithmic),
+        ParamSpec::new("R", env[ENV_RELEASE], 0.001, ENV_TIME_MAX)
+            .unit("s")
+            .taper(Taper::Logarithmic),
     ]
 }
 
@@ -1380,8 +2109,34 @@ fn set_rack_from_track(rack: &mut RackModel, state: &TrackSession) {
         if let Some(p) = slot.params.get_mut(OSC_SHAPE) {
             p.value = state.osc_mix;
         }
+        if let Some(p) = slot.params.get_mut(OSC_A_COARSE) {
+            p.value = state.osc_a_semis;
+        }
+        if let Some(p) = slot.params.get_mut(OSC_A_FINE) {
+            p.value = state.osc_a_cents;
+        }
         if let Some(p) = slot.params.get_mut(OSC_B_SEMIS) {
             p.value = state.osc_b_semis;
+        }
+        if let Some(p) = slot.params.get_mut(OSC_B_FINE) {
+            p.value = state.osc_b_cents;
+        }
+        if let Some(p) = slot.params.get_mut(OSC_FM) {
+            p.value = state.fm_amount;
+        }
+        if let Some(p) = slot.params.get_mut(OSC_VOICES) {
+            p.value = state.polyphony as f32;
+        }
+    }
+    if let Some(slot) = rack.slots.get_mut(SLOT_LFO) {
+        if let Some(p) = slot.params.get_mut(LFO_RATE) {
+            p.value = state.lfo_rate_hz;
+        }
+        if let Some(p) = slot.params.get_mut(LFO_DEPTH) {
+            p.value = state.lfo_depth;
+        }
+        if let Some(p) = slot.params.get_mut(LFO_DEST) {
+            p.value = lfo_dest_to_knob(state.lfo_dest);
         }
     }
     if let Some(slot) = rack.slots.get_mut(SLOT_FILTER) {
@@ -1414,6 +2169,17 @@ fn set_rack_from_track(rack: &mut RackModel, state: &TrackSession) {
         slot.bypassed = !state.reverb_on;
         if let Some(p) = slot.params.get_mut(REVERB_MIX) {
             p.value = state.reverb_mix;
+        }
+    }
+    // Character effects: bypass + params from the saved per-effect arrays
+    for (fx_idx, &(slot_idx, _, nparams)) in FX_SLOTS.iter().enumerate() {
+        if let Some(slot) = rack.slots.get_mut(slot_idx) {
+            slot.bypassed = !state.fx_on[fx_idx];
+            for p in 0..nparams {
+                if let Some(param) = slot.params.get_mut(p) {
+                    param.value = state.fx_param[fx_idx][p];
+                }
+            }
         }
     }
 }
@@ -1493,10 +2259,30 @@ mod tests {
         assert_eq!(filter.params[FILTER_CUTOFF].value, mirror.cutoff_hz[0]);
         assert_eq!(filter.params[FILTER_RESO].value, mirror.resonance[0]);
         assert_eq!(!session.rack.slots[SLOT_DELAY].bypassed, mirror.delay_on[0]);
-        assert_eq!(!session.rack.slots[SLOT_REVERB].bypassed, mirror.reverb_on[0]);
-        assert_eq!(session.rack.slots[SLOT_REVERB].params[REVERB_MIX].value, mirror.reverb_mix[0]);
-        assert_eq!(env_of(&session.rack.slots[SLOT_AMP_ENV]), Some(mirror.amp_env[0]));
-        assert_eq!(env_of(&session.rack.slots[SLOT_FILTER_ENV]), Some(mirror.filter_env[0]));
+        assert_eq!(
+            !session.rack.slots[SLOT_REVERB].bypassed,
+            mirror.reverb_on[0]
+        );
+        assert_eq!(
+            session.rack.slots[SLOT_REVERB].params[REVERB_MIX].value,
+            mirror.reverb_mix[0]
+        );
+        assert_eq!(
+            env_of(&session.rack.slots[SLOT_AMP_ENV]),
+            Some(mirror.amp_env[0])
+        );
+        assert_eq!(
+            env_of(&session.rack.slots[SLOT_FILTER_ENV]),
+            Some(mirror.filter_env[0])
+        );
+        let lfo = &session.rack.slots[SLOT_LFO];
+        assert_eq!(lfo.name, "LFO");
+        assert_eq!(lfo.params[LFO_RATE].value, mirror.lfo_rate_hz[0]);
+        assert_eq!(lfo.params[LFO_DEPTH].value, mirror.lfo_depth[0]);
+        assert_eq!(
+            lfo_dest_from_knob(lfo.params[LFO_DEST].value),
+            mirror.lfo_dest[0]
+        );
         let delay = &session.rack.slots[SLOT_DELAY];
         assert_eq!(delay.params[DELAY_TIME].value, mirror.delay_time[0]);
         assert_eq!(delay.params[DELAY_FEEDBACK].value, mirror.delay_feedback[0]);
@@ -1519,8 +2305,14 @@ mod tests {
         // The engine seeds the mid track with the riff; the rest start empty
         let session = initial_session();
         assert_eq!(session.step_seq.tracks.len(), NUM_TRACKS);
-        assert!(!session.step_seq.tracks[1].is_empty(), "track 1 carries the riff");
-        assert!(session.step_seq.tracks[0].is_empty(), "track 0 starts empty");
+        assert!(
+            !session.step_seq.tracks[1].is_empty(),
+            "track 1 carries the riff"
+        );
+        assert!(
+            session.step_seq.tracks[0].is_empty(),
+            "track 0 starts empty"
+        );
     }
 
     #[test]

@@ -96,6 +96,16 @@ impl UnisonOsc {
         }
         sum * self.level_comp
     }
+
+    // Render one sample with each voice's read phase offset by `pm` cycles
+    #[inline]
+    pub fn render_pm(&mut self, table: &Wavetable, pm: f32) -> f32 {
+        let mut sum = 0.0;
+        for voice in &mut self.voices[..self.unison] {
+            sum += voice.next_sample_pm(table, pm);
+        }
+        sum * self.level_comp
+    }
 }
 
 impl Default for UnisonOsc {
@@ -115,7 +125,12 @@ pub struct OscStack {
     note: f32,
     a_semitones: f32,
     b_semitones: f32,
+    // Fine tuning in cents, on top of the semitone (coarse) offsets
+    a_cents: f32,
+    b_cents: f32,
     mix: f32,
+    // 2-operator FM: oscillator A phase-modulates B by this index (0 = off)
+    fm_amount: f32,
 }
 
 impl OscStack {
@@ -130,7 +145,10 @@ impl OscStack {
             note: 69.0,
             a_semitones: 0.0,
             b_semitones: 0.0,
+            a_cents: 0.0,
+            b_cents: 0.0,
             mix: 0.5,
+            fm_amount: 0.0,
         }
     }
 
@@ -150,6 +168,23 @@ impl OscStack {
     pub fn set_osc_b_semitones(&mut self, semitones: f32) {
         self.b_semitones = semitones;
         self.retune();
+    }
+
+    // Fine tuning of oscillator A in cents
+    pub fn set_osc_a_cents(&mut self, cents: f32) {
+        self.a_cents = cents;
+        self.retune();
+    }
+
+    // Fine tuning of oscillator B in cents
+    pub fn set_osc_b_cents(&mut self, cents: f32) {
+        self.b_cents = cents;
+        self.retune();
+    }
+
+    // 2-operator FM index: oscillator A phase-modulates B (0 = off)
+    pub fn set_fm_amount(&mut self, amount: f32) {
+        self.fm_amount = amount.max(0.0);
     }
 
     // Configure oscillator A unison voices and detune spread
@@ -177,19 +212,24 @@ impl OscStack {
         self.osc_b.reset();
     }
 
-    // Recompute both oscillator frequencies from the note and offsets
+    // Recompute both oscillator frequencies from the note, coarse, and fine offsets
     fn retune(&mut self) {
-        let freq_a = midi_to_hz(self.note + self.a_semitones);
-        let freq_b = midi_to_hz(self.note + self.b_semitones);
+        let freq_a = midi_to_hz(self.note + self.a_semitones) * cents_to_ratio(self.a_cents);
+        let freq_b = midi_to_hz(self.note + self.b_semitones) * cents_to_ratio(self.b_cents);
         self.osc_a.set_frequency(freq_a, self.sample_rate);
         self.osc_b.set_frequency(freq_b, self.sample_rate);
     }
 
-    // Render one blended sample
+    // Render one blended sample. When FM is engaged, oscillator A phase-modulates
+    // oscillator B before the A/B blend; otherwise both run independently.
     #[inline]
     pub fn render(&mut self) -> f32 {
         let a = self.osc_a.render(&self.table_a);
-        let b = self.osc_b.render(&self.table_b);
+        let b = if self.fm_amount > 0.0 {
+            self.osc_b.render_pm(&self.table_b, a * self.fm_amount)
+        } else {
+            self.osc_b.render(&self.table_b)
+        };
         lerp(a, b, self.mix)
     }
 }
@@ -292,6 +332,50 @@ mod tests {
             }
         }
         assert!(differ, "A and B oscillators were indistinguishable");
+    }
+
+    #[test]
+    fn fine_tune_raises_frequency() {
+        let mut base = OscStack::new(SAMPLE_RATE);
+        base.set_mix(0.0); // oscillator A only
+        base.set_note(69.0); // A4 = 440 Hz
+        let mut sharp = OscStack::new(SAMPLE_RATE);
+        sharp.set_mix(0.0);
+        sharp.set_note(69.0);
+        sharp.set_osc_a_cents(1200.0); // +1 octave -> 880 Hz
+
+        let mut a = vec![0.0f32; SAMPLE_RATE as usize];
+        let mut b = vec![0.0f32; SAMPLE_RATE as usize];
+        for s in &mut a {
+            *s = base.render();
+        }
+        for s in &mut b {
+            *s = sharp.render();
+        }
+        assert!(
+            rising_crossings(&b) > rising_crossings(&a) + 300,
+            "fine tune did not raise pitch"
+        );
+    }
+
+    #[test]
+    fn fm_changes_the_output() {
+        // The carrier (osc B) alone vs. the same carrier modulated by osc A
+        let mut clean = OscStack::new(SAMPLE_RATE);
+        clean.set_mix(1.0);
+        clean.set_note(60.0);
+        let mut fm = OscStack::new(SAMPLE_RATE);
+        fm.set_mix(1.0);
+        fm.set_note(60.0);
+        fm.set_fm_amount(2.0);
+
+        let mut differ = false;
+        for _ in 0..2_048 {
+            if (clean.render() - fm.render()).abs() > 1e-3 {
+                differ = true;
+            }
+        }
+        assert!(differ, "FM had no effect on the output");
     }
 
     #[test]

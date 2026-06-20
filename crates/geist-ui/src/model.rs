@@ -431,6 +431,63 @@ pub enum ArrangeTab {
     Timeline,
 }
 
+// One cell in the session clip-launch grid: empty, or holding a named clip.
+// `playing`/`queued` mirror the engine's launch state (wired by the launcher).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SessionSlot {
+    pub filled: bool,
+    pub name: String,
+    pub playing: bool,
+    pub queued: bool,
+}
+
+// The session clip-launch grid: `scenes` rows by `tracks` columns of slots,
+// stored scene-major. Mirrors Ableton's session view.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SessionGrid {
+    pub tracks: usize,
+    pub scenes: usize,
+    pub slots: Vec<SessionSlot>,
+    // Selected slot index (scene * tracks + track), if any
+    pub selected: Option<usize>,
+}
+
+impl SessionGrid {
+    // Build an empty grid of `tracks` columns by `scenes` rows
+    pub fn new(tracks: usize, scenes: usize) -> Self {
+        Self {
+            tracks,
+            scenes,
+            slots: vec![SessionSlot::default(); tracks * scenes],
+            selected: None,
+        }
+    }
+
+    // Flat slot index for (track, scene)
+    pub fn index(&self, track: usize, scene: usize) -> usize {
+        scene * self.tracks + track
+    }
+
+    // Slot at (track, scene), if both are in range
+    pub fn slot(&self, track: usize, scene: usize) -> Option<&SessionSlot> {
+        if track < self.tracks && scene < self.scenes {
+            self.slots.get(self.index(track, scene))
+        } else {
+            None
+        }
+    }
+
+    // Mutable slot at (track, scene), if both are in range
+    pub fn slot_mut(&mut self, track: usize, scene: usize) -> Option<&mut SessionSlot> {
+        if track < self.tracks && scene < self.scenes {
+            let i = self.index(track, scene);
+            self.slots.get_mut(i)
+        } else {
+            None
+        }
+    }
+}
+
 // The complete renderer-facing session: every view reads from one of these
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SessionModel {
@@ -442,6 +499,7 @@ pub struct SessionModel {
     pub step_seq: StepSequencerModel,
     pub arrange_tab: ArrangeTab,
     pub timeline: TimelineModel,
+    pub session_grid: SessionGrid,
     pub scope: ScopeFrame,
     pub spectrum: SpectrumFrame,
     pub browser: BrowserModel,
@@ -560,6 +618,15 @@ impl SessionModel {
             selected: None,
         };
 
+        // A small session grid with a few filled launch slots
+        let mut session_grid = SessionGrid::new(3, 4);
+        for (track, scene, name) in [(0usize, 0usize, "Beat"), (1, 0, "Bass"), (2, 1, "Hook")] {
+            if let Some(slot) = session_grid.slot_mut(track, scene) {
+                slot.filled = true;
+                slot.name = name.into();
+            }
+        }
+
         Self {
             transport: Transport::default(),
             mixer,
@@ -569,6 +636,7 @@ impl SessionModel {
             step_seq,
             arrange_tab: ArrangeTab::default(),
             timeline,
+            session_grid,
             scope: ScopeFrame::default(),
             spectrum: SpectrumFrame::default(),
             browser,

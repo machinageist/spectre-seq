@@ -49,12 +49,28 @@ pub fn draw(ui: &mut egui::Ui, rack: &mut RackModel, intents: &mut Vec<CommandIn
                     ui.label(RichText::new("⠿").color(theme::TEXT_MUTED));
 
                     let selected = rack.selected == Some(index);
-                    if ui
-                        .selectable_label(selected, RichText::new(&rack.slots[index].name).strong())
-                        .clicked()
-                    {
+                    let name_resp =
+                        ui.selectable_label(selected, RichText::new(&rack.slots[index].name).strong());
+                    if name_resp.clicked() {
                         rack.selected = Some(index);
                     }
+                    // Right-click the device header: bypass, reorder, or remove
+                    name_resp.context_menu(|ui| {
+                        let bypassed = rack.slots[index].bypassed;
+                        if ui.button(if bypassed { "Un-bypass" } else { "Bypass" }).clicked() {
+                            rack.slots[index].bypassed = !bypassed;
+                            intents.push(CommandIntent::new("toggle_bypass"));
+                        }
+                        if ui.add_enabled(index > 0, egui::Button::new("Move up")).clicked() {
+                            edit = Some(RackEdit::Move(index, index - 1));
+                        }
+                        if ui.add_enabled(index + 1 < len, egui::Button::new("Move down")).clicked() {
+                            edit = Some(RackEdit::Move(index, index + 1));
+                        }
+                        if ui.button("Remove").clicked() {
+                            edit = Some(RackEdit::Remove(index));
+                        }
+                    });
 
                     if rack.slots[index].bypassed {
                         ui.label(RichText::new("bypassed").small().color(theme::TEXT_MUTED));

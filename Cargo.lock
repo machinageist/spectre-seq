@@ -1536,6 +1536,7 @@ dependencies = [
  "geist-audio-backend",
  "geist-config",
  "geist-core",
+ "geist-dsp",
  "geist-fx",
  "geist-graph",
  "geist-project",

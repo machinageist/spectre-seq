@@ -91,6 +91,44 @@ impl SynthNode {
             voice.osc_mut().set_osc_b_semitones(semitones);
         }
     }
+
+    // Set oscillator A's coarse pitch offset in semitones on every voice
+    pub fn set_osc_a_semitones(&mut self, semitones: f32) {
+        for voice in self.pool.voices_mut() {
+            voice.osc_mut().set_osc_a_semitones(semitones);
+        }
+    }
+
+    // Set oscillator A's fine tuning in cents on every voice
+    pub fn set_osc_a_cents(&mut self, cents: f32) {
+        for voice in self.pool.voices_mut() {
+            voice.osc_mut().set_osc_a_cents(cents);
+        }
+    }
+
+    // Set oscillator B's fine tuning in cents on every voice
+    pub fn set_osc_b_cents(&mut self, cents: f32) {
+        for voice in self.pool.voices_mut() {
+            voice.osc_mut().set_osc_b_cents(cents);
+        }
+    }
+
+    // Set the 2-operator FM index (oscillator A modulates B) on every voice
+    pub fn set_fm_amount(&mut self, amount: f32) {
+        for voice in self.pool.voices_mut() {
+            voice.osc_mut().set_fm_amount(amount);
+        }
+    }
+
+    // Cap the number of simultaneously sounding voices (within the allocated pool)
+    pub fn set_polyphony(&mut self, voices: usize) {
+        self.pool.set_active_voices(voices);
+    }
+
+    // Current stream sample rate used by block-level modulation sources
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
 }
 
 impl Default for SynthNode {
@@ -325,7 +363,11 @@ mod tests {
             render(&mut sine, &[]);
             render(&mut saw, &[]);
         }
-        assert_ne!(render(&mut sine, &[]), render(&mut saw, &[]), "osc mix had no effect");
+        assert_ne!(
+            render(&mut sine, &[]),
+            render(&mut saw, &[]),
+            "osc mix had no effect"
+        );
     }
 
     #[test]
@@ -345,7 +387,11 @@ mod tests {
             render(&mut base, &[]);
             render(&mut shifted, &[]);
         }
-        assert_ne!(render(&mut base, &[]), render(&mut shifted, &[]), "osc B detune had no effect");
+        assert_ne!(
+            render(&mut base, &[]),
+            render(&mut shifted, &[]),
+            "osc B detune had no effect"
+        );
     }
 
     #[test]

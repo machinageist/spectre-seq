@@ -18,6 +18,7 @@ use geist_project::prelude::{
     ProjectError, ProjectFile, TrackEntry,
 };
 
+use crate::control::LfoDestination;
 use crate::engine::{NUM_TRACKS, SEQ_ROWS, SEQ_STEPS, TRACK_BASE_MIDI};
 
 // Studio session slot filename, distinct from the classic patch slot
@@ -44,6 +45,22 @@ const PARAM_TRACK_OSC_B_SEMIS_BASE: u32 = 390;
 // Four ids per track: base + track*4 + i
 const PARAM_TRACK_AMP_ENV_BASE: u32 = 400;
 const PARAM_TRACK_FILTER_ENV_BASE: u32 = 420;
+// Oscillator A coarse, A/B fine tuning, and FM index (clear of the env ranges)
+const PARAM_TRACK_OSC_A_SEMIS_BASE: u32 = 440;
+const PARAM_TRACK_OSC_A_CENTS_BASE: u32 = 450;
+const PARAM_TRACK_OSC_B_CENTS_BASE: u32 = 460;
+const PARAM_TRACK_FM_BASE: u32 = 470;
+const PARAM_TRACK_VOICES_BASE: u32 = 480;
+// Character effects: 4 fx per track. On flags at base + track*4 + fx; params at
+// base + track*16 + fx*4 + param. Kept clear of the LFO bases (490/500/510).
+const PARAM_TRACK_FX_ON_BASE: u32 = 600;
+const PARAM_TRACK_FX_PARAM_BASE: u32 = 620;
+// Number of character effects and params each, mirrored from the UI FX_SLOTS
+const FX_COUNT: usize = 4;
+const FX_PARAMS: usize = 4;
+const PARAM_TRACK_LFO_RATE_BASE: u32 = 490;
+const PARAM_TRACK_LFO_DEPTH_BASE: u32 = 500;
+const PARAM_TRACK_LFO_DEST_BASE: u32 = 510;
 
 // Reserved clip id for a track's step grid, kept clear of arrangement clip ids
 const STEP_CLIP_ID: u64 = u64::MAX;
@@ -86,9 +103,20 @@ pub struct TrackSession {
     pub delay_mix: f32,
     pub reverb_on: bool,
     pub reverb_mix: f32,
-    // Oscillator A/B blend and osc B pitch offset
+    // Oscillator A/B blend, coarse/fine pitch per osc, FM index, and voices
     pub osc_mix: f32,
     pub osc_b_semis: f32,
+    pub osc_a_semis: f32,
+    pub osc_a_cents: f32,
+    pub osc_b_cents: f32,
+    pub fm_amount: f32,
+    pub polyphony: usize,
+    pub lfo_rate_hz: f32,
+    pub lfo_depth: f32,
+    pub lfo_dest: LfoDestination,
+    // Character effects (distortion/phaser/flanger/chorus): bypass + params
+    pub fx_on: [bool; FX_COUNT],
+    pub fx_param: [[f32; FX_PARAMS]; FX_COUNT],
     // Amp/filter ADSR macros [attack, decay, sustain, release]
     pub amp_env: [f32; 4],
     pub filter_env: [f32; 4],
@@ -114,26 +142,118 @@ impl StudioSession {
         project.meta.tempo_bpm = self.bpm as f64;
 
         // Macros node: master gain plus a full per-track patch and fx block
-        let mut params = vec![ParamValue { id: PARAM_GAIN, value: self.gain }];
+        let mut params = vec![ParamValue {
+            id: PARAM_GAIN,
+            value: self.gain,
+        }];
         for (track, state) in self.tracks.iter().enumerate() {
             let t = track as u32;
-            params.push(ParamValue { id: PARAM_TRACK_LEVEL_BASE + t, value: state.level });
-            params.push(ParamValue { id: PARAM_TRACK_PAN_BASE + t, value: state.pan });
-            params.push(ParamValue { id: PARAM_TRACK_CUTOFF_BASE + t, value: state.cutoff_hz });
-            params.push(ParamValue { id: PARAM_TRACK_RESONANCE_BASE + t, value: state.resonance });
-            params.push(ParamValue { id: PARAM_TRACK_DELAY_BASE + t, value: bool_to_f32(state.delay_on) });
-            params.push(ParamValue { id: PARAM_TRACK_DELAY_TIME_BASE + t, value: state.delay_time });
-            params.push(ParamValue { id: PARAM_TRACK_DELAY_FEEDBACK_BASE + t, value: state.delay_feedback });
-            params.push(ParamValue { id: PARAM_TRACK_DELAY_MIX_BASE + t, value: state.delay_mix });
-            params.push(ParamValue { id: PARAM_TRACK_REVERB_BASE + t, value: bool_to_f32(state.reverb_on) });
-            params.push(ParamValue { id: PARAM_TRACK_REVERB_MIX_BASE + t, value: state.reverb_mix });
-            params.push(ParamValue { id: PARAM_TRACK_OSC_MIX_BASE + t, value: state.osc_mix });
-            params.push(ParamValue { id: PARAM_TRACK_OSC_B_SEMIS_BASE + t, value: state.osc_b_semis });
+            params.push(ParamValue {
+                id: PARAM_TRACK_LEVEL_BASE + t,
+                value: state.level,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_PAN_BASE + t,
+                value: state.pan,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_CUTOFF_BASE + t,
+                value: state.cutoff_hz,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_RESONANCE_BASE + t,
+                value: state.resonance,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_DELAY_BASE + t,
+                value: bool_to_f32(state.delay_on),
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_DELAY_TIME_BASE + t,
+                value: state.delay_time,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_DELAY_FEEDBACK_BASE + t,
+                value: state.delay_feedback,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_DELAY_MIX_BASE + t,
+                value: state.delay_mix,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_REVERB_BASE + t,
+                value: bool_to_f32(state.reverb_on),
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_REVERB_MIX_BASE + t,
+                value: state.reverb_mix,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_OSC_MIX_BASE + t,
+                value: state.osc_mix,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_OSC_B_SEMIS_BASE + t,
+                value: state.osc_b_semis,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_OSC_A_SEMIS_BASE + t,
+                value: state.osc_a_semis,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_OSC_A_CENTS_BASE + t,
+                value: state.osc_a_cents,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_OSC_B_CENTS_BASE + t,
+                value: state.osc_b_cents,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_FM_BASE + t,
+                value: state.fm_amount,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_VOICES_BASE + t,
+                value: state.polyphony as f32,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_LFO_RATE_BASE + t,
+                value: state.lfo_rate_hz,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_LFO_DEPTH_BASE + t,
+                value: state.lfo_depth,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_LFO_DEST_BASE + t,
+                value: lfo_dest_to_f32(state.lfo_dest),
+            });
+            for fx in 0..FX_COUNT {
+                params.push(ParamValue {
+                    id: PARAM_TRACK_FX_ON_BASE + t * FX_COUNT as u32 + fx as u32,
+                    value: bool_to_f32(state.fx_on[fx]),
+                });
+                for p in 0..FX_PARAMS {
+                    params.push(ParamValue {
+                        id: PARAM_TRACK_FX_PARAM_BASE
+                            + t * (FX_COUNT * FX_PARAMS) as u32
+                            + (fx * FX_PARAMS) as u32
+                            + p as u32,
+                        value: state.fx_param[fx][p],
+                    });
+                }
+            }
             for (i, &value) in state.amp_env.iter().enumerate() {
-                params.push(ParamValue { id: PARAM_TRACK_AMP_ENV_BASE + t * 4 + i as u32, value });
+                params.push(ParamValue {
+                    id: PARAM_TRACK_AMP_ENV_BASE + t * 4 + i as u32,
+                    value,
+                });
             }
             for (i, &value) in state.filter_env.iter().enumerate() {
-                params.push(ParamValue { id: PARAM_TRACK_FILTER_ENV_BASE + t * 4 + i as u32, value });
+                params.push(ParamValue {
+                    id: PARAM_TRACK_FILTER_ENV_BASE + t * 4 + i as u32,
+                    value,
+                });
             }
         }
         project.graph.nodes.push(NodeEntry {
@@ -220,19 +340,87 @@ impl StudioSession {
             state.soloed = entry.soloed;
             if let Some(node) = macros {
                 let t = index as u32;
-                let read = |base: u32| node.params.iter().find(|p| p.id == base + t).map(|p| p.value);
-                if let Some(v) = read(PARAM_TRACK_LEVEL_BASE) { state.level = v; }
-                if let Some(v) = read(PARAM_TRACK_PAN_BASE) { state.pan = v; }
-                if let Some(v) = read(PARAM_TRACK_CUTOFF_BASE) { state.cutoff_hz = v; }
-                if let Some(v) = read(PARAM_TRACK_RESONANCE_BASE) { state.resonance = v; }
-                if let Some(v) = read(PARAM_TRACK_DELAY_BASE) { state.delay_on = v >= 0.5; }
-                if let Some(v) = read(PARAM_TRACK_DELAY_TIME_BASE) { state.delay_time = v; }
-                if let Some(v) = read(PARAM_TRACK_DELAY_FEEDBACK_BASE) { state.delay_feedback = v; }
-                if let Some(v) = read(PARAM_TRACK_DELAY_MIX_BASE) { state.delay_mix = v; }
-                if let Some(v) = read(PARAM_TRACK_REVERB_BASE) { state.reverb_on = v >= 0.5; }
-                if let Some(v) = read(PARAM_TRACK_REVERB_MIX_BASE) { state.reverb_mix = v; }
-                if let Some(v) = read(PARAM_TRACK_OSC_MIX_BASE) { state.osc_mix = v; }
-                if let Some(v) = read(PARAM_TRACK_OSC_B_SEMIS_BASE) { state.osc_b_semis = v; }
+                let read = |base: u32| {
+                    node.params
+                        .iter()
+                        .find(|p| p.id == base + t)
+                        .map(|p| p.value)
+                };
+                if let Some(v) = read(PARAM_TRACK_LEVEL_BASE) {
+                    state.level = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_PAN_BASE) {
+                    state.pan = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_CUTOFF_BASE) {
+                    state.cutoff_hz = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_RESONANCE_BASE) {
+                    state.resonance = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_DELAY_BASE) {
+                    state.delay_on = v >= 0.5;
+                }
+                if let Some(v) = read(PARAM_TRACK_DELAY_TIME_BASE) {
+                    state.delay_time = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_DELAY_FEEDBACK_BASE) {
+                    state.delay_feedback = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_DELAY_MIX_BASE) {
+                    state.delay_mix = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_REVERB_BASE) {
+                    state.reverb_on = v >= 0.5;
+                }
+                if let Some(v) = read(PARAM_TRACK_REVERB_MIX_BASE) {
+                    state.reverb_mix = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_OSC_MIX_BASE) {
+                    state.osc_mix = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_OSC_B_SEMIS_BASE) {
+                    state.osc_b_semis = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_OSC_A_SEMIS_BASE) {
+                    state.osc_a_semis = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_OSC_A_CENTS_BASE) {
+                    state.osc_a_cents = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_OSC_B_CENTS_BASE) {
+                    state.osc_b_cents = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_FM_BASE) {
+                    state.fm_amount = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_VOICES_BASE) {
+                    state.polyphony = v.round().max(1.0) as usize;
+                }
+                if let Some(v) = read(PARAM_TRACK_LFO_RATE_BASE) {
+                    state.lfo_rate_hz = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_LFO_DEPTH_BASE) {
+                    state.lfo_depth = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_LFO_DEST_BASE) {
+                    state.lfo_dest = lfo_dest_from_f32(v);
+                }
+                for fx in 0..FX_COUNT {
+                    let on_id = PARAM_TRACK_FX_ON_BASE + t * FX_COUNT as u32 + fx as u32;
+                    if let Some(param) = node.params.iter().find(|p| p.id == on_id) {
+                        state.fx_on[fx] = param.value >= 0.5;
+                    }
+                    for p in 0..FX_PARAMS {
+                        let id = PARAM_TRACK_FX_PARAM_BASE
+                            + t * (FX_COUNT * FX_PARAMS) as u32
+                            + (fx * FX_PARAMS) as u32
+                            + p as u32;
+                        if let Some(param) = node.params.iter().find(|p2| p2.id == id) {
+                            state.fx_param[fx][p] = param.value;
+                        }
+                    }
+                }
                 for i in 0..4u32 {
                     let amp_id = PARAM_TRACK_AMP_ENV_BASE + t * 4 + i;
                     if let Some(param) = node.params.iter().find(|p| p.id == amp_id) {
@@ -314,6 +502,22 @@ fn bool_to_f32(flag: bool) -> f32 {
     }
 }
 
+fn lfo_dest_to_f32(dest: LfoDestination) -> f32 {
+    match dest {
+        LfoDestination::Cutoff => 0.0,
+        LfoDestination::Pitch => 1.0,
+        LfoDestination::Fm => 2.0,
+    }
+}
+
+fn lfo_dest_from_f32(value: f32) -> LfoDestination {
+    match value.round() as i32 {
+        1 => LfoDestination::Pitch,
+        2 => LfoDestination::Fm,
+        _ => LfoDestination::Cutoff,
+    }
+}
+
 // Path to the studio session slot, in the home directory when available
 pub fn session_path() -> PathBuf {
     let dir = std::env::var_os("HOME")
@@ -338,10 +542,7 @@ pub fn save_to(session: &StudioSession, path: &Path) -> Result<(), ProjectError>
 }
 
 // Read a session from an explicit path, falling back to `defaults` per field
-pub fn load_from(
-    defaults: &StudioSession,
-    path: &Path,
-) -> Result<StudioSession, ProjectError> {
+pub fn load_from(defaults: &StudioSession, path: &Path) -> Result<StudioSession, ProjectError> {
     let project = load_from_path(path)?;
     Ok(StudioSession::from_project(&project, defaults))
 }
@@ -361,6 +562,7 @@ pub fn load(defaults: &StudioSession) -> Result<StudioSession, ProjectError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::DEFAULT_VOICES;
 
     fn track_defaults() -> TrackSession {
         TrackSession {
@@ -378,6 +580,16 @@ mod tests {
             reverb_mix: 0.3,
             osc_mix: 0.5,
             osc_b_semis: 0.0,
+            osc_a_semis: 0.0,
+            osc_a_cents: 0.0,
+            osc_b_cents: 0.0,
+            fm_amount: 0.0,
+            polyphony: DEFAULT_VOICES,
+            lfo_rate_hz: 2.0,
+            lfo_depth: 0.0,
+            lfo_dest: LfoDestination::Cutoff,
+            fx_on: [false; FX_COUNT],
+            fx_param: [[0.0; FX_PARAMS]; FX_COUNT],
             amp_env: [0.005, 0.1, 0.8, 0.3],
             filter_env: [0.01, 0.2, 0.3, 0.3],
             gates: Vec::new(),
@@ -414,6 +626,18 @@ mod tests {
         s.tracks[1].reverb_mix = 0.6;
         s.tracks[1].osc_mix = 0.8;
         s.tracks[1].osc_b_semis = -12.0;
+        s.tracks[1].osc_a_semis = 7.0;
+        s.tracks[1].osc_a_cents = -15.0;
+        s.tracks[1].osc_b_cents = 22.0;
+        s.tracks[1].fm_amount = 1.5;
+        s.tracks[1].polyphony = 6;
+        s.tracks[1].lfo_rate_hz = 5.5;
+        s.tracks[1].lfo_depth = 0.75;
+        s.tracks[1].lfo_dest = LfoDestination::Fm;
+        // Distortion on with custom params; chorus on, others off
+        s.tracks[1].fx_on = [true, false, false, true];
+        s.tracks[1].fx_param[0] = [6.0, 0.4, 0.8, 0.0];
+        s.tracks[1].fx_param[3] = [1.2, 5.0, 0.6, 0.0];
         s.tracks[1].filter_env = [0.05, 0.4, 0.2, 0.8];
         s.tracks[1].gates = vec![(0, 0), (2, 4), (5, 12)];
         // Velocity 1.0 maps cleanly through the 0..127 MIDI range
@@ -423,15 +647,30 @@ mod tests {
                 start_beats: 0.0,
                 len_beats: 8.0,
                 notes: vec![
-                    NoteSession { pitch: 60, start_beats: 0.0, len_beats: 1.0, velocity: 1.0 },
-                    NoteSession { pitch: 67, start_beats: 2.5, len_beats: 0.5, velocity: 1.0 },
+                    NoteSession {
+                        pitch: 60,
+                        start_beats: 0.0,
+                        len_beats: 1.0,
+                        velocity: 1.0,
+                    },
+                    NoteSession {
+                        pitch: 67,
+                        start_beats: 2.5,
+                        len_beats: 0.5,
+                        velocity: 1.0,
+                    },
                 ],
             },
             ClipSession {
                 id: 2,
                 start_beats: 16.0,
                 len_beats: 4.0,
-                notes: vec![NoteSession { pitch: 72, start_beats: 1.0, len_beats: 2.0, velocity: 1.0 }],
+                notes: vec![NoteSession {
+                    pitch: 72,
+                    start_beats: 1.0,
+                    len_beats: 2.0,
+                    velocity: 1.0,
+                }],
             },
         ];
         s

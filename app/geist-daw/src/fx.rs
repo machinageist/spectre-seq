@@ -1,26 +1,42 @@
 // =============================================================================
 // File: app/geist-daw/src/fx.rs
 // Layer: application binary
-// Purpose: Post-synth effects chain (delay -> reverb) over channel-major buffers
-// Status: Implemented; toggleable delay and reverb with a ping-pong scratch.
-// Notes: Each effect mirrors input to output then processes in place, so the
-//        chain feeds one effect's output into the next through a single scratch
-//        buffer sized once on the app thread. process() never allocates.
+// Purpose: Post-synth effects chain over channel-major buffers
+// Status: Implemented; distortion/phaser/flanger/chorus character effects then
+//         delay and reverb, each independently bypassable.
+// Notes: The character effects are per-sample geist-dsp units held one instance
+//        per channel (to keep per-channel state); delay/reverb are stereo
+//        AudioNodes run through a single scratch buffer. process() never
+//        allocates; effects are sized once on the app thread.
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
 use geist_core::config::AudioConfig;
 use geist_core::context::ProcessContext;
 use geist_core::transport::TransportSnapshot;
+use geist_dsp::prelude::{Chorus, Distortion, DistortionMode, Flanger, Phaser};
 use geist_fx::prelude::{DelayNode, ReverbNode};
 use geist_graph::node::AudioNode;
 
+use crate::control::FxKind;
+
 // Ordered effects applied after the synth, each independently bypassable
 pub struct FxChain {
+    // Per-sample character effects, one instance per channel
+    distortion: Vec<Distortion>,
+    phaser: Vec<Phaser>,
+    flanger: Vec<Flanger>,
+    chorus: Vec<Chorus>,
+    distortion_on: bool,
+    phaser_on: bool,
+    flanger_on: bool,
+    chorus_on: bool,
+    // Stereo time-based effects
     delay: DelayNode,
     reverb: ReverbNode,
     delay_on: bool,
     reverb_on: bool,
+    channels: usize,
     sample_rate_hz: u32,
     // Ping-pong buffer the size of one channel-major block
     scratch: Vec<f32>,
@@ -29,20 +45,98 @@ pub struct FxChain {
 impl FxChain {
     // Build a bypassed chain sized for the stream block
     pub fn new(channels: usize, block_frames: usize, sample_rate_hz: u32) -> Self {
+        let sr = sample_rate_hz as f32;
         Self {
+            distortion: vec![Distortion::new(DistortionMode::Soft); channels],
+            phaser: vec![Phaser::new(sr); channels],
+            flanger: vec![Flanger::new(sr); channels],
+            chorus: vec![Chorus::new(sr); channels],
+            distortion_on: false,
+            phaser_on: false,
+            flanger_on: false,
+            chorus_on: false,
             delay: DelayNode::new(),
             reverb: ReverbNode::new(),
             delay_on: false,
             reverb_on: false,
+            channels,
             sample_rate_hz,
             scratch: vec![0.0; channels * block_frames],
         }
     }
 
-    // Rebuild both effects for the stream's rate and block size
+    // Rebuild the effects for the stream's rate and block size
     pub fn prepare(&mut self, config: &AudioConfig) {
+        let sr = config.sample_rate_hz as f32;
+        self.sample_rate_hz = config.sample_rate_hz;
+        for d in &mut self.distortion {
+            d.reset();
+        }
+        for p in &mut self.phaser {
+            *p = Phaser::new(sr);
+        }
+        for f in &mut self.flanger {
+            *f = Flanger::new(sr);
+        }
+        for c in &mut self.chorus {
+            *c = Chorus::new(sr);
+        }
         self.delay.prepare(config);
         self.reverb.prepare(config);
+    }
+
+    // Toggle one character effect
+    pub fn set_fx_on(&mut self, fx: FxKind, on: bool) {
+        match fx {
+            FxKind::Distortion => self.distortion_on = on,
+            FxKind::Phaser => self.phaser_on = on,
+            FxKind::Flanger => self.flanger_on = on,
+            FxKind::Chorus => self.chorus_on = on,
+        }
+    }
+
+    // Set one parameter (by index) of a character effect, on every channel
+    pub fn set_fx_param(&mut self, fx: FxKind, param: u8, value: f32) {
+        match fx {
+            FxKind::Distortion => {
+                for d in &mut self.distortion {
+                    match param {
+                        0 => d.set_drive(value),
+                        1 => d.set_tone(value),
+                        _ => d.set_mix(value),
+                    }
+                }
+            }
+            FxKind::Phaser => {
+                for p in &mut self.phaser {
+                    match param {
+                        0 => p.set_rate(value),
+                        1 => p.set_depth(value),
+                        2 => p.set_feedback(value),
+                        _ => p.set_mix(value),
+                    }
+                }
+            }
+            FxKind::Flanger => {
+                for f in &mut self.flanger {
+                    match param {
+                        0 => f.set_rate(value),
+                        1 => f.set_depth_ms(value),
+                        2 => f.set_feedback(value),
+                        _ => f.set_mix(value),
+                    }
+                }
+            }
+            FxKind::Chorus => {
+                for c in &mut self.chorus {
+                    match param {
+                        0 => c.set_rate(value),
+                        1 => c.set_depth_ms(value),
+                        _ => c.set_mix(value),
+                    }
+                }
+            }
+        }
     }
 
     // Toggle the delay
@@ -76,21 +170,29 @@ impl FxChain {
         self.reverb.set_mix(mix);
     }
 
-    // Apply the enabled effects in order, in place on channel-major `output`
+    // Apply the enabled effects in order, in place on channel-major `output`:
+    // character effects (per channel) first, then the stereo time effects.
     pub fn process(&mut self, output: &mut [f32], frames: usize) {
-        let FxChain {
-            delay,
-            reverb,
-            delay_on,
-            reverb_on,
-            sample_rate_hz,
-            scratch,
-        } = self;
-        if *delay_on {
-            apply(delay, output, scratch, frames, *sample_rate_hz);
+        for ch in 0..self.channels {
+            let lane = &mut output[ch * frames..ch * frames + frames];
+            if self.distortion_on {
+                self.distortion[ch].process(lane);
+            }
+            if self.phaser_on {
+                self.phaser[ch].process(lane);
+            }
+            if self.flanger_on {
+                self.flanger[ch].process(lane);
+            }
+            if self.chorus_on {
+                self.chorus[ch].process(lane);
+            }
         }
-        if *reverb_on {
-            apply(reverb, output, scratch, frames, *sample_rate_hz);
+        if self.delay_on {
+            apply(&mut self.delay, output, &mut self.scratch, frames, self.sample_rate_hz);
+        }
+        if self.reverb_on {
+            apply(&mut self.reverb, output, &mut self.scratch, frames, self.sample_rate_hz);
         }
     }
 }

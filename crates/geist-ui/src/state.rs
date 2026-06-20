@@ -5,6 +5,24 @@
 
 use geist_config::schema::{LayoutConfig, LensId, WorkflowProfile};
 
+// The central editor shown in the studio layout (Ableton-style toggle)
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MainView {
+    #[default]
+    Arrangement,
+    Session,
+    Graph,
+    Modulation,
+}
+
+// The bottom detail bar contents: clip/piano-roll editor or device chain
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DetailView {
+    #[default]
+    Clip,
+    Device,
+}
+
 // Renderer-facing UI state snapshot
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UIState {
@@ -12,6 +30,11 @@ pub struct UIState {
     active_lens: LensId,
     selected_object: Option<SelectedObject>,
     command_palette_open: bool,
+    // Studio layout toggles (Ableton-style shell)
+    main_view: MainView,
+    detail_view: DetailView,
+    browser_visible: bool,
+    mixer_visible: bool,
 }
 
 // UI-only selection anchor used to choose contextual actions
@@ -56,6 +79,10 @@ impl UIState {
             active_lens,
             selected_object: None,
             command_palette_open: false,
+            main_view: MainView::default(),
+            detail_view: DetailView::default(),
+            browser_visible: true,
+            mixer_visible: false,
         }
     }
 
@@ -108,6 +135,56 @@ impl UIState {
 
     pub fn set_command_palette_open(&mut self, open: bool) {
         self.command_palette_open = open;
+    }
+
+    // --- Studio layout toggles ---
+
+    pub fn main_view(&self) -> MainView {
+        self.main_view
+    }
+
+    pub fn set_main_view(&mut self, view: MainView) {
+        self.main_view = view;
+    }
+
+    // Tab cycles the primary editor between Arrangement and Session
+    pub fn toggle_main_view(&mut self) {
+        self.main_view = match self.main_view {
+            MainView::Session => MainView::Arrangement,
+            _ => MainView::Session,
+        };
+    }
+
+    pub fn detail_view(&self) -> DetailView {
+        self.detail_view
+    }
+
+    pub fn set_detail_view(&mut self, view: DetailView) {
+        self.detail_view = view;
+    }
+
+    // Shift+Tab toggles the bottom detail between clip editor and device chain
+    pub fn toggle_detail_view(&mut self) {
+        self.detail_view = match self.detail_view {
+            DetailView::Clip => DetailView::Device,
+            DetailView::Device => DetailView::Clip,
+        };
+    }
+
+    pub fn browser_visible(&self) -> bool {
+        self.browser_visible
+    }
+
+    pub fn toggle_browser(&mut self) {
+        self.browser_visible = !self.browser_visible;
+    }
+
+    pub fn mixer_visible(&self) -> bool {
+        self.mixer_visible
+    }
+
+    pub fn toggle_mixer(&mut self) {
+        self.mixer_visible = !self.mixer_visible;
     }
 }
 

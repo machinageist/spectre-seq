@@ -5,7 +5,7 @@
 //        keyboard gutter and beat grid; click empty cells to add a one-beat note,
 //        click a note to remove it. Notes live in the model; edits emit intents.
 
-use egui::{pos2, vec2, Align2, FontId, Rect, Sense, Stroke, StrokeKind};
+use egui::{pos2, vec2, Align2, FontId, Pos2, Rect, Sense, Stroke, StrokeKind};
 use geist_config::commands::CommandIntent;
 
 use crate::model::{Note, PianoRollModel};
@@ -40,7 +40,7 @@ pub fn draw(
     let content = vec2(KEY_W + roll.length_beats * PX_PER_BEAT, rows * ROW_H);
 
     egui::ScrollArea::both().show(ui, |ui| {
-        let (rect, resp) = ui.allocate_exact_size(content, Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(content, Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         let grid_left = rect.left() + KEY_W;
         let beat_x = |beat: f32| grid_left + beat * PX_PER_BEAT;
@@ -114,31 +114,127 @@ pub fn draw(
             }
         }
 
-        // Click to toggle a note at the pointed cell
-        if resp.clicked() {
+        // --- Mouse editing ---
+        // Pointer -> grid coordinates (float beat, MIDI pitch)
+        let pointer_beat = |x: f32| ((x - grid_left) / PX_PER_BEAT).max(0.0);
+        let pointer_pitch = |y: f32| LOW_PITCH as i32 + ((rect.bottom() - y) / ROW_H).floor() as i32;
+        let in_range = |pitch: i32| (LOW_PITCH as i32..HIGH_PITCH as i32).contains(&pitch);
+        let edit_id = ui.id().with("pr_edit");
+
+        // Right-click a note to delete it
+        if resp.secondary_clicked() {
             if let Some(p) = resp.interact_pointer_pos() {
-                if p.x > grid_left {
-                    let beat = ((p.x - grid_left) / PX_PER_BEAT).floor().max(0.0);
-                    let row = ((rect.bottom() - p.y) / ROW_H).floor() as i32;
-                    let pitch = LOW_PITCH as i32 + row;
-                    if (LOW_PITCH as i32..HIGH_PITCH as i32).contains(&pitch) {
-                        let pitch = pitch as u8;
-                        if roll.remove_at(pitch, beat) {
-                            intents.push(CommandIntent::new("remove_note"));
-                        } else {
-                            roll.add(Note {
-                                pitch,
-                                start_beats: beat,
-                                len_beats: 1.0,
-                                velocity: 0.9,
-                            });
-                            intents.push(CommandIntent::new("add_note"));
+                if let Some((i, _)) = hit_note(roll, p, rect, grid_left) {
+                    roll.notes.remove(i);
+                    intents.push(CommandIntent::new("remove_note"));
+                }
+            }
+        }
+
+        // Begin a drag: resize the right edge, move the body, or draw on empty
+        if resp.drag_started() {
+            if let Some(p) = resp.interact_pointer_pos() {
+                let edit = match hit_note(roll, p, rect, grid_left) {
+                    Some((i, true)) => Some(PrEdit::Resize { index: i }),
+                    Some((i, false)) => Some(PrEdit::Move {
+                        index: i,
+                        grab_beat: pointer_beat(p.x) - roll.notes[i].start_beats,
+                    }),
+                    None if p.x > grid_left && in_range(pointer_pitch(p.y)) => {
+                        roll.add(Note {
+                            pitch: pointer_pitch(p.y) as u8,
+                            start_beats: pointer_beat(p.x).floor(),
+                            len_beats: 1.0,
+                            velocity: 0.9,
+                        });
+                        Some(PrEdit::Create { index: roll.notes.len() - 1 })
+                    }
+                    _ => None,
+                };
+                if let Some(edit) = edit {
+                    ui.data_mut(|d| d.insert_temp(edit_id, edit));
+                }
+            }
+        }
+
+        // Continue a drag
+        if resp.dragged() {
+            if let (Some(edit), Some(p)) =
+                (ui.data(|d| d.get_temp::<PrEdit>(edit_id)), resp.interact_pointer_pos())
+            {
+                match edit {
+                    PrEdit::Resize { index } | PrEdit::Create { index } => {
+                        if let Some(n) = roll.notes.get_mut(index) {
+                            n.len_beats = (pointer_beat(p.x) - n.start_beats).max(0.25);
+                        }
+                    }
+                    PrEdit::Move { index, grab_beat } => {
+                        let pitch = pointer_pitch(p.y);
+                        if let Some(n) = roll.notes.get_mut(index) {
+                            n.start_beats = (pointer_beat(p.x) - grab_beat).max(0.0);
+                            if in_range(pitch) {
+                                n.pitch = pitch as u8;
+                            }
                         }
                     }
                 }
             }
         }
+
+        // Commit a drag: snap to the beat grid, then clear the edit state
+        if resp.drag_stopped() {
+            if let Some(edit) = ui.data(|d| d.get_temp::<PrEdit>(edit_id)) {
+                let index = match edit {
+                    PrEdit::Resize { index } | PrEdit::Create { index } | PrEdit::Move { index, .. } => index,
+                };
+                if let Some(n) = roll.notes.get_mut(index) {
+                    n.len_beats = n.len_beats.round().max(1.0);
+                    n.start_beats = n.start_beats.round().max(0.0);
+                }
+                ui.data_mut(|d| d.remove::<PrEdit>(edit_id));
+                intents.push(CommandIntent::new("edit_note"));
+            }
+        }
+
+        // A plain click on an empty cell adds a one-beat note (quick entry)
+        if resp.clicked() {
+            if let Some(p) = resp.interact_pointer_pos() {
+                if p.x > grid_left
+                    && in_range(pointer_pitch(p.y))
+                    && hit_note(roll, p, rect, grid_left).is_none()
+                {
+                    roll.add(Note {
+                        pitch: pointer_pitch(p.y) as u8,
+                        start_beats: pointer_beat(p.x).floor(),
+                        len_beats: 1.0,
+                        velocity: 0.9,
+                    });
+                    intents.push(CommandIntent::new("add_note"));
+                }
+            }
+        }
     });
+}
+
+// One in-progress piano-roll mouse edit, stashed in egui temp data across frames
+#[derive(Clone, Copy)]
+enum PrEdit {
+    Move { index: usize, grab_beat: f32 },
+    Resize { index: usize },
+    Create { index: usize },
+}
+
+// Note under a point, with whether the point is on its right-edge resize handle
+fn hit_note(roll: &PianoRollModel, p: Pos2, rect: Rect, grid_left: f32) -> Option<(usize, bool)> {
+    for (i, n) in roll.notes.iter().enumerate() {
+        let y = rect.bottom() - (n.pitch - LOW_PITCH + 1) as f32 * ROW_H;
+        let left = grid_left + n.start_beats * PX_PER_BEAT;
+        let nr = Rect::from_min_size(pos2(left, y + 1.0), vec2((n.len_beats * PX_PER_BEAT).max(2.0), ROW_H - 2.0));
+        if nr.contains(p) {
+            return Some((i, p.x >= nr.right() - 6.0));
+        }
+    }
+    None
 }
 
 // Whether a MIDI pitch class is a black key

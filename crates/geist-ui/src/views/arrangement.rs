@@ -175,6 +175,24 @@ pub fn draw(
                 let snapped = timeline.clips[index].start_beats.round().max(0.0);
                 timeline.clips[index].start_beats = snapped;
             }
+
+            // Right-click menu: rename inline, duplicate after itself, or delete
+            body.context_menu(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Name");
+                    ui.text_edit_singleline(&mut timeline.clips[index].name);
+                });
+                if ui.button("Duplicate").clicked() {
+                    let mut dup = timeline.clips[index].clone();
+                    dup.id = 0;
+                    dup.start_beats = clip.start_beats + clip.len_beats.max(1.0);
+                    timeline.clips.push(dup);
+                }
+                if ui.button("Delete").clicked() {
+                    remove = Some(index);
+                }
+            });
+
             if selected && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
                 remove = Some(index);
             }

@@ -8,19 +8,29 @@
 
 use egui::{pos2, vec2, RichText, Sense, Stroke};
 use geist_config::commands::CommandIntent;
-use geist_config::schema::LensId;
 
-use crate::model::{ScopeFrame, SessionModel, SpectrumFrame};
-use crate::state::UIState;
+use crate::model::{ArrangeTab, ScopeFrame, SessionModel, SpectrumFrame};
+use crate::state::{DetailView, MainView, UIState};
 use crate::theme;
 use crate::views;
 use crate::widgets::Meter;
+
+// A discrete transport action a transport button issued this frame. Stop and
+// Pause both leave playback halted, so they can't be inferred from a bool diff.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransportAction {
+    Play,
+    Stop,
+    Pause,
+    ToggleRecord,
+}
 
 // What one studio frame produced for the app layer to act on
 #[derive(Clone, Debug, Default)]
 pub struct StudioResponse {
     pub intents: Vec<CommandIntent>,
-    pub lens_changed: bool,
+    // A transport button pressed this frame, if any
+    pub transport: Option<TransportAction>,
     // The user clicked Save or Load this frame; the app owns the file I/O
     pub save_requested: bool,
     pub load_requested: bool,
@@ -34,11 +44,37 @@ pub fn draw_studio(
 ) -> StudioResponse {
     let mut out = StudioResponse::default();
 
+    // Top: transport + view toggles. Bottoms (outer->inner): monitor, detail.
+    // The app shows the playable keyboard as an even-outer bottom panel.
     egui::Panel::top("geist_transport")
         .show_inside(ui, |ui| transport_bar(ui, state, session, &mut out));
     egui::Panel::bottom("geist_monitor")
         .resizable(false)
         .show_inside(ui, |ui| monitor_strip(ui, session));
+    egui::Panel::bottom("geist_detail")
+        .resizable(true)
+        .default_size(210.0)
+        .show_inside(ui, |ui| detail_panel(ui, state, session, &mut out.intents));
+
+    // Left: browser bar (toggleable). Right: mixer (toggleable).
+    if state.browser_visible() {
+        egui::Panel::left("geist_browser")
+            .resizable(true)
+            .default_size(190.0)
+            .show_inside(ui, |ui| {
+                ui.add_space(2.0);
+                ui.label(RichText::new("Browser").small().color(theme::TEXT_MUTED));
+                views::browser::draw(ui, &mut session.browser, &mut out.intents);
+            });
+    }
+    if state.mixer_visible() {
+        egui::Panel::right("geist_mixer")
+            .resizable(true)
+            .default_size(380.0)
+            .show_inside(ui, |ui| views::mixer::draw(ui, &mut session.mixer, &mut out.intents));
+    }
+
+    // Center: the primary editor (arrangement / session / graph / modulation)
     egui::CentralPanel::default().show_inside(ui, |ui| central(ui, state, session, &mut out.intents));
 
     out
@@ -51,22 +87,26 @@ fn transport_bar(
     session: &mut SessionModel,
     out: &mut StudioResponse,
 ) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.heading(RichText::new("GEIST").color(theme::ACCENT));
         ui.separator();
 
-        let play_label = if session.transport.playing { "⏸" } else { "▶" };
-        if ui.button(play_label).clicked() {
-            session.transport.playing = !session.transport.playing;
-            out.intents.push(CommandIntent::new("toggle_play"));
-        }
-        // Record arm: lit red while recording; the app captures armed-track notes
+        // Play / Stop / Pause / Record. Play lights while rolling; Record lights red.
+        let playing = session.transport.playing;
         let rec = session.transport.recording;
-        let rec_label = RichText::new("⏺").color(if rec { theme::ACCENT } else { theme::TEXT_MUTED });
-        if ui.add(egui::Button::new(rec_label).fill(if rec { theme::ACCENT.linear_multiply(0.18) } else { theme::PANEL_RAISED })).clicked() {
-            session.transport.recording = !session.transport.recording;
-            out.intents.push(CommandIntent::new("toggle_record"));
+        if ui.add(transport_button("▶", playing)).clicked() {
+            out.transport = Some(TransportAction::Play);
         }
+        if ui.add(transport_button("⏹", false)).clicked() {
+            out.transport = Some(TransportAction::Stop);
+        }
+        if ui.add(transport_button("⏸", !playing && session.transport.position_beats > 0.0)).clicked() {
+            out.transport = Some(TransportAction::Pause);
+        }
+        if ui.add(transport_button("⏺", rec)).clicked() {
+            out.transport = Some(TransportAction::ToggleRecord);
+        }
+
         if ui
             .add(
                 egui::DragValue::new(&mut session.transport.bpm)
@@ -87,6 +127,36 @@ fn transport_bar(
 
         ui.separator();
 
+        // Center editor selector (Tab toggles Arrangement/Session via shortcuts)
+        let mut main = state.main_view();
+        ui.selectable_value(&mut main, MainView::Arrangement, "Arrange");
+        ui.selectable_value(&mut main, MainView::Session, "Session");
+        ui.selectable_value(&mut main, MainView::Graph, "Graph");
+        ui.selectable_value(&mut main, MainView::Modulation, "Mod");
+        if main != state.main_view() {
+            state.set_main_view(main);
+        }
+
+        ui.separator();
+
+        // Panel toggles: browser bar, mixer, and the bottom detail contents
+        let mut browser = state.browser_visible();
+        if ui.toggle_value(&mut browser, "Browser").changed() {
+            state.toggle_browser();
+        }
+        let mut mixer = state.mixer_visible();
+        if ui.toggle_value(&mut mixer, "Mixer").changed() {
+            state.toggle_mixer();
+        }
+        let mut detail = state.detail_view();
+        ui.selectable_value(&mut detail, DetailView::Clip, "Clip");
+        ui.selectable_value(&mut detail, DetailView::Device, "Device");
+        if detail != state.detail_view() {
+            state.set_detail_view(detail);
+        }
+
+        ui.separator();
+
         // Session persistence; the app performs the actual file I/O
         if ui.button("Save").clicked() {
             out.save_requested = true;
@@ -94,19 +164,14 @@ fn transport_bar(
         if ui.button("Load").clicked() {
             out.load_requested = true;
         }
-
-        ui.separator();
-
-        // Lens switcher; collect first so switch_lens can borrow state mutably
-        let visible = state.visible_lenses().to_vec();
-        let active = state.active_lens();
-        for lens in visible {
-            if ui.selectable_label(lens == active, lens_label(lens)).clicked() && lens != active {
-                let _ = state.switch_lens(lens);
-                out.lens_changed = true;
-            }
-        }
     });
+}
+
+// A transport button, tinted with the accent when `lit`
+fn transport_button(glyph: &str, lit: bool) -> egui::Button<'static> {
+    let text = RichText::new(glyph).color(if lit { theme::ACCENT } else { theme::TEXT });
+    let fill = if lit { theme::ACCENT.linear_multiply(0.18) } else { theme::PANEL_RAISED };
+    egui::Button::new(text).fill(fill)
 }
 
 // Bottom strip: oscilloscope, spectrum, and the master meter
@@ -186,52 +251,46 @@ fn spectrum(ui: &mut egui::Ui, frame: &SpectrumFrame) {
     }
 }
 
-// Dispatch the central area to the active lens's view
+// Dispatch the central area to the selected primary editor
 fn central(
     ui: &mut egui::Ui,
     state: &UIState,
     session: &mut SessionModel,
     intents: &mut Vec<CommandIntent>,
 ) {
-    match state.active_lens() {
-        LensId::Mix => views::mixer::draw(ui, &mut session.mixer, intents),
-        LensId::Shape => views::plugin_rack::draw(ui, &mut session.rack, intents),
-        LensId::Build => views::node_graph::draw(ui, &mut session.graph, intents),
-        LensId::Browser => views::browser::draw(ui, &mut session.browser, intents),
-        LensId::Modulation => views::modulation::draw(ui, &session.graph),
-        LensId::Arrange => {
-            // One musical editor at a time: piano roll, step sequencer, or timeline
-            use crate::model::ArrangeTab;
+    match state.main_view() {
+        MainView::Arrangement => {
+            views::arrangement::draw(ui, &mut session.timeline, &session.transport, intents)
+        }
+        MainView::Session => views::session::draw(ui, &mut session.session_grid, intents),
+        MainView::Graph => views::node_graph::draw(ui, &mut session.graph, intents),
+        MainView::Modulation => views::modulation::draw(ui, &session.graph),
+    }
+}
+
+// Bottom detail: the clip editor (piano roll / step sequencer) or the device chain
+fn detail_panel(
+    ui: &mut egui::Ui,
+    state: &UIState,
+    session: &mut SessionModel,
+    intents: &mut Vec<CommandIntent>,
+) {
+    match state.detail_view() {
+        DetailView::Device => views::plugin_rack::draw(ui, &mut session.rack, intents),
+        DetailView::Clip => {
+            // Clip sub-tab: piano roll or step sequencer (timeline lives in center)
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut session.arrange_tab, ArrangeTab::PianoRoll, "Piano Roll");
-                ui.selectable_value(&mut session.arrange_tab, ArrangeTab::StepSequencer, "Step Sequencer");
-                ui.selectable_value(&mut session.arrange_tab, ArrangeTab::Timeline, "Timeline");
+                ui.selectable_value(&mut session.arrange_tab, ArrangeTab::StepSequencer, "Step Seq");
             });
             ui.separator();
             let playhead = Some(session.transport.position_beats as f32);
             match session.arrange_tab {
-                ArrangeTab::PianoRoll => {
-                    views::piano_roll::draw(ui, &mut session.piano, playhead, intents)
-                }
                 ArrangeTab::StepSequencer => {
                     views::step_sequencer::draw(ui, &mut session.step_seq, playhead, intents)
                 }
-                ArrangeTab::Timeline => {
-                    views::arrangement::draw(ui, &mut session.timeline, &session.transport, intents)
-                }
+                _ => views::piano_roll::draw(ui, &mut session.piano, playhead, intents),
             }
         }
-    }
-}
-
-// Display name for a lens tab
-fn lens_label(lens: LensId) -> &'static str {
-    match lens {
-        LensId::Arrange => "Arrange",
-        LensId::Build => "Build",
-        LensId::Shape => "Shape",
-        LensId::Mix => "Mix",
-        LensId::Browser => "Browser",
-        LensId::Modulation => "Modulation",
     }
 }

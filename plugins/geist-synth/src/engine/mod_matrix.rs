@@ -43,10 +43,21 @@ impl ModRoute {
     }
 }
 
+// Small fixed route count for realtime-safe per-block resolution
+const MAX_MOD_ROUTES: usize = 8;
+
 // Resolves a list of routes from source values into destination accumulators
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ModMatrix {
-    routes: Vec<ModRoute>,
+    routes: [Option<ModRoute>; MAX_MOD_ROUTES],
+}
+
+impl Default for ModMatrix {
+    fn default() -> Self {
+        Self {
+            routes: [None; MAX_MOD_ROUTES],
+        }
+    }
 }
 
 impl ModMatrix {
@@ -55,19 +66,21 @@ impl ModMatrix {
         Self::default()
     }
 
-    // Append a route
+    // Append a route if a fixed slot is available
     pub fn add_route(&mut self, route: ModRoute) {
-        self.routes.push(route);
+        if let Some(slot) = self.routes.iter_mut().find(|slot| slot.is_none()) {
+            *slot = Some(route);
+        }
     }
 
     // Number of routes
     pub fn route_count(&self) -> usize {
-        self.routes.len()
+        self.routes.iter().filter(|route| route.is_some()).count()
     }
 
     // Remove every route
     pub fn clear(&mut self) {
-        self.routes.clear();
+        self.routes = [None; MAX_MOD_ROUTES];
     }
 
     // Sum all routes from `sources` into `dests`, overwriting `dests`
@@ -76,7 +89,7 @@ impl ModMatrix {
         for d in dests.iter_mut() {
             *d = 0.0;
         }
-        for route in &self.routes {
+        for route in self.routes.iter().flatten() {
             if route.source >= sources.len() || route.dest >= dests.len() {
                 continue;
             }

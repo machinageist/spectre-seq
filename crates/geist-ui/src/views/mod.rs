@@ -10,6 +10,7 @@ pub mod modulation;
 pub mod node_graph;
 pub mod piano_roll;
 pub mod plugin_rack;
+pub mod session;
 pub mod step_sequencer;
 
 use crate::renderer::{PanelPlacement, RenderFrame};
