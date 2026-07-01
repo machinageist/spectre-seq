@@ -6,7 +6,7 @@ Status: Accepted 2026-06-11. Supersedes the original CLAP-first intent.
 Contract: State current architecture, not aspiration. Record tradeoffs.
 -->
 
-# ADR 001 — VST3 over CLAP for the plugin host
+# ADR 001 — VST3-only external plugin host
 
 - Status: **Accepted** (2026-06-11)
 - Supersedes: the original `INITIAL_PLAN.md` Phase 4 intent (CLAP-first hosting)
@@ -33,12 +33,16 @@ Two facts changed the calculus:
 
 - The plugin host targets **VST3 only**. CLAP and LV2 are dropped from the active plan;
   `geist-clap-host` and `geist-lv2-host` remain as shelved scaffolds, not built.
+- This ADR covers third-party hosted plugin support only. First-party Geist synths,
+  effects, MIDI tools, modulators, and utility nodes are internal DAW devices, not
+  VST/CLAP/AU/LV2/standalone plugin binaries.
 - The host is built in a new crate **`geist-vst-host`** that **wraps the raw `vst3`
   COM bindings in a safe Rust API** — mirroring the original "wrap `clap-sys`"
   philosophy. The realtime hot path stays first-party IP rather than delegated to a
   higher-level hosting crate.
-- Each loaded plugin instance is a `VstPluginNode` implementing the existing
-  `geist-graph::AudioNode`, slotting into the process graph like any other node.
+- Each loaded plugin instance adapts into the internal graph/device surface, slotting
+  into the process graph like any other prepared device node without leaking VST3 COM
+  types into native device crates.
 
 ## Consequences
 
@@ -54,6 +58,9 @@ Two facts changed the calculus:
   are compile-checked here and validated against real `.vst3` binaries on a dev box.
 - The project format already stores opaque plugin state blobs (ADR 003), so VST3
   `IComponent` get/setState fits the existing persistence model unchanged.
+- Documentation and UI language must keep "plugin" reserved for externally hosted
+  VSTs. Native Geist devices use device-chain/rack language to avoid architecture
+  collisions with first-party plugin-export assumptions.
 
 ## Alternatives considered
 

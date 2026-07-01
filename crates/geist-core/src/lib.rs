@@ -9,23 +9,27 @@
 // Shared core primitives; Phase 0 is complete with all modules implemented
 pub mod config;
 pub mod context;
+pub mod devices;
 pub mod errors;
 pub mod events;
 pub mod ids;
 pub mod params;
 pub mod port;
 pub mod signal;
+pub mod time;
 pub mod transport;
 
 // Narrow prelude of stable public types for downstream crates
 pub mod prelude {
     pub use crate::config::AudioConfig;
     pub use crate::context::ProcessContext;
+    pub use crate::devices::{DeviceDescriptor, DeviceKind, DeviceState};
     pub use crate::errors::{GeistError, GeistResult};
     pub use crate::events::{MidiEvent, NoteEvent, NoteEventKind, ParameterChange, TransportEvent};
-    pub use crate::ids::{ClipId, NodeId, ParamId, PortId, ProjectId, TrackId};
+    pub use crate::ids::{ClipId, DeviceId, NodeId, ParamId, PortId, ProjectId, TrackId};
     pub use crate::params::{ParamInfo, ParamRange};
     pub use crate::port::{can_connect, PortDescriptor, PortDirection, PortType};
     pub use crate::signal::SignalRate;
+    pub use crate::time::{BarBeat, BeatTime, PpqTick, SampleTime, Seconds};
     pub use crate::transport::{AtomicTransport, TransportSnapshot, TransportState};
 }

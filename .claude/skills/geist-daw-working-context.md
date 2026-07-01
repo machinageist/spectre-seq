@@ -58,8 +58,8 @@ Notes: Non-obvious context, design decisions
 2. `geist-graph` process graph and atomic graph swap.
 3. `geist-audio-backend` callback boundary.
 4. `geist-dsp` primitives and benchmarks.
-5. CLAP host, then LV2 host.
-6. First-party plugins: synth, fx, modular utilities.
+5. VST3 host boundary for third-party plugins only.
+6. First-party internal devices: synth, fx, modular utilities.
 7. Timeline, automation, modulation.
 8. UI shell and views.
 9. Project persistence and autosave.
@@ -71,7 +71,7 @@ Notes: Non-obvious context, design decisions
 - Graph, topology, process list, channels: load `geist-graph-engine` and `geist-realtime-rust`.
 - Audio backends and callbacks: load `geist-audio-backend` and `geist-realtime-rust`.
 - DSP, synth, fx, modular utilities: load `geist-dsp-and-plugins` and `geist-realtime-rust`.
-- CLAP/LV2 hosting: load `geist-plugin-hosting` and `geist-realtime-rust`.
+- VST3 hosting boundary: load `geist-plugin-hosting` and `geist-realtime-rust`.
 - Timeline, automation, persistence: load `geist-project-timeline`.
 - UI work: load `geist-ui-workflow`.
 - Any review: load `geist-validation-gates` plus the domain skill.

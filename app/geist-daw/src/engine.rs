@@ -20,7 +20,7 @@ use geist_graph::node::AudioNode;
 use geist_synth::prelude::{ModMatrix, ModRoute, SynthNode};
 use geist_timeline::prelude::Transport;
 
-use crate::control::{EngineCommand, EngineSink, LfoDestination};
+use crate::control::{EngineCommand, EngineSink, LfoDestination, SCENE_NONE};
 use crate::fx::FxChain;
 
 // Most audio assets (recorded buffers) the engine holds at once. The store is
@@ -204,6 +204,8 @@ pub const DEFAULT_AMP_ENV: [f32; 4] = [0.005, 0.1, 0.8, 0.3];
 pub const DEFAULT_FILTER_ENV: [f32; 4] = [0.01, 0.2, 0.3, 0.3];
 // Startup transport tempo
 pub const DEFAULT_BPM: f64 = 120.0;
+// Startup session launch quantization in beats (one 4/4 bar)
+pub const DEFAULT_LAUNCH_QUANT: f64 = 4.0;
 
 fn lfo_dest_index(dest: LfoDestination) -> usize {
     match dest {
@@ -501,6 +503,10 @@ impl SessionSlot {
 pub struct SessionClips {
     slots: Vec<SessionSlot>,
     playing: Option<usize>,
+    // Slot launched but not yet started; swapped in at the next quant boundary
+    queued: Option<usize>,
+    // Last advanced beat, for detecting quantization-boundary crossings
+    last_beat: f64,
 }
 
 impl SessionClips {
@@ -509,7 +515,14 @@ impl SessionClips {
         Self {
             slots: (0..MAX_SCENES).map(|_| SessionSlot::new()).collect(),
             playing: None,
+            queued: None,
+            last_beat: -1.0,
         }
+    }
+
+    // Scene currently playing, for UI readback
+    fn playing_scene(&self) -> Option<usize> {
+        self.playing
     }
 
     // Mark a slot filled (created in the view), keeping its notes
@@ -520,27 +533,30 @@ impl SessionClips {
         }
     }
 
-    // Launch a filled slot immediately, releasing the previously playing one
-    fn launch(&mut self, scene: usize, out: &mut Vec<NoteEvent>) {
+    // Queue a filled slot to launch at the next quantization boundary
+    fn launch(&mut self, scene: usize) {
         if self.slots.get(scene).map(|s| s.filled).unwrap_or(false) {
-            if let Some(p) = self.playing {
-                if p != scene {
-                    self.slots[p].release(out);
-                }
-            }
-            self.playing = Some(scene);
+            self.queued = Some(scene);
         }
     }
 
-    // Stop the playing slot
+    // Stop the playing slot and cancel any pending launch
     fn stop(&mut self, out: &mut Vec<NoteEvent>) {
+        self.queued = None;
         if let Some(p) = self.playing.take() {
             self.slots[p].release(out);
         }
     }
 
     // Add a timed note (relative to the slot start) to a slot
-    fn add_note(&mut self, scene: usize, pitch: u8, start_beats: f32, len_beats: f32, velocity: f32) {
+    fn add_note(
+        &mut self,
+        scene: usize,
+        pitch: u8,
+        start_beats: f32,
+        len_beats: f32,
+        velocity: f32,
+    ) {
         if let Some(slot) = self.slots.get_mut(scene) {
             if slot.notes.len() < MAX_CLIP_NOTES {
                 slot.filled = true;
@@ -558,9 +574,11 @@ impl SessionClips {
     // Remove the matching note (pitch + start) from a slot
     fn remove_note(&mut self, scene: usize, pitch: u8, start_beats: f32, out: &mut Vec<NoteEvent>) {
         if let Some(slot) = self.slots.get_mut(scene) {
-            if let Some(i) = slot.notes.iter().position(|n| {
-                n.pitch == pitch && (n.start_beats - start_beats).abs() < START_EPS
-            }) {
+            if let Some(i) = slot
+                .notes
+                .iter()
+                .position(|n| n.pitch == pitch && (n.start_beats - start_beats).abs() < START_EPS)
+            {
                 if slot.notes[i].sounding {
                     push_capped(out, NoteEvent::off(0, 0, pitch));
                 }
@@ -569,8 +587,24 @@ impl SessionClips {
         }
     }
 
-    // Advance the playing slot, looping its notes over the slot length
-    fn advance(&mut self, beat: f64, out: &mut Vec<NoteEvent>) {
+    // Apply a queued launch at the next quant boundary, then advance the playing
+    // slot, looping its notes over the slot length. `quant` <= 0 launches at once.
+    fn advance(&mut self, beat: f64, quant: f64, out: &mut Vec<NoteEvent>) {
+        if let Some(scene) = self.queued {
+            let crossed =
+                quant <= 0.0 || (beat / quant).floor() != (self.last_beat / quant).floor();
+            if crossed {
+                if let Some(p) = self.playing {
+                    if p != scene {
+                        self.slots[p].release(out);
+                    }
+                }
+                self.playing = Some(scene);
+                self.queued = None;
+            }
+        }
+        self.last_beat = beat;
+
         let Some(p) = self.playing else {
             return;
         };
@@ -757,6 +791,8 @@ pub struct SynthProcessor {
     scratch: Vec<f32>,
     // Recorded audio buffers, indexed by slot; pre-sized to avoid audio-thread alloc
     audio_assets: Vec<Option<StoredAsset>>,
+    // Session launch quantization in beats (0 = launch immediately)
+    launch_quant: f64,
 }
 
 impl SynthProcessor {
@@ -785,6 +821,7 @@ impl SynthProcessor {
             track_events,
             scratch: vec![0.0; block_len],
             audio_assets: (0..MAX_AUDIO_ASSETS).map(|_| None).collect(),
+            launch_quant: DEFAULT_LAUNCH_QUANT,
         }
     }
 }
@@ -807,6 +844,7 @@ impl BlockProcessor for SynthProcessor {
             track_events,
             scratch,
             audio_assets,
+            launch_quant,
         } = self;
 
         for events in track_events.iter_mut() {
@@ -881,6 +919,20 @@ impl BlockProcessor for SynthProcessor {
                 }
                 EngineCommand::SetBpm(bpm) => {
                     transport.tempo_map_mut().set_tempo(0.0, bpm as f64);
+                }
+                EngineCommand::SetLoop {
+                    enabled,
+                    start_beats,
+                    end_beats,
+                } => {
+                    if enabled && end_beats > start_beats {
+                        let start =
+                            transport.tempo_map().beats_to_samples(start_beats as f64) as u64;
+                        let end = transport.tempo_map().beats_to_samples(end_beats as f64) as u64;
+                        transport.set_loop(start, end);
+                    } else {
+                        transport.clear_loop();
+                    }
                 }
                 EngineCommand::SetCutoff { track, hz } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
@@ -983,45 +1035,82 @@ impl BlockProcessor for SynthProcessor {
                         t.patch.lfo_dest = dest;
                     }
                 }
-                EngineCommand::SetFxOn { track, fx, on } => {
+                EngineCommand::SetFxChain { track, len, slots } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
-                        t.fx.set_fx_on(fx, on);
+                        t.fx.set_character_chain(&slots[..usize::from(len).min(slots.len())]);
                     }
                 }
-                EngineCommand::SetFxParam { track, fx, param, value } => {
+                EngineCommand::SetFxOn {
+                    track,
+                    fx,
+                    instance,
+                    on,
+                } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
-                        t.fx.set_fx_param(fx, param, value);
+                        t.fx.set_fx_on(fx, instance, on);
                     }
                 }
-                EngineCommand::CreateSessionSlot { track, scene, len_beats } => {
+                EngineCommand::SetFxParam {
+                    track,
+                    fx,
+                    instance,
+                    param,
+                    value,
+                } => {
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.fx.set_fx_param(fx, instance, param, value);
+                    }
+                }
+                EngineCommand::CreateSessionSlot {
+                    track,
+                    scene,
+                    len_beats,
+                } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
                         t.session.create(scene as usize, len_beats);
                     }
                 }
                 EngineCommand::LaunchSlot { track, scene } => {
-                    if let (Some(t), Some(events)) =
-                        (tracks.get_mut(track as usize), track_events.get_mut(track as usize))
-                    {
-                        t.session.launch(scene as usize, events);
+                    if let Some(t) = tracks.get_mut(track as usize) {
+                        t.session.launch(scene as usize);
                     }
                 }
+                EngineCommand::SetLaunchQuant { beats } => {
+                    *launch_quant = (beats as f64).max(0.0);
+                }
                 EngineCommand::StopSlot { track } => {
-                    if let (Some(t), Some(events)) =
-                        (tracks.get_mut(track as usize), track_events.get_mut(track as usize))
-                    {
+                    if let (Some(t), Some(events)) = (
+                        tracks.get_mut(track as usize),
+                        track_events.get_mut(track as usize),
+                    ) {
                         t.session.stop(events);
                     }
                 }
-                EngineCommand::AddSessionNote { track, scene, pitch, start_beats, len_beats, velocity } => {
+                EngineCommand::AddSessionNote {
+                    track,
+                    scene,
+                    pitch,
+                    start_beats,
+                    len_beats,
+                    velocity,
+                } => {
                     if let Some(t) = tracks.get_mut(track as usize) {
-                        t.session.add_note(scene as usize, pitch, start_beats, len_beats, velocity);
+                        t.session
+                            .add_note(scene as usize, pitch, start_beats, len_beats, velocity);
                     }
                 }
-                EngineCommand::RemoveSessionNote { track, scene, pitch, start_beats } => {
-                    if let (Some(t), Some(events)) =
-                        (tracks.get_mut(track as usize), track_events.get_mut(track as usize))
-                    {
-                        t.session.remove_note(scene as usize, pitch, start_beats, events);
+                EngineCommand::RemoveSessionNote {
+                    track,
+                    scene,
+                    pitch,
+                    start_beats,
+                } => {
+                    if let (Some(t), Some(events)) = (
+                        tracks.get_mut(track as usize),
+                        track_events.get_mut(track as usize),
+                    ) {
+                        t.session
+                            .remove_note(scene as usize, pitch, start_beats, events);
                     }
                 }
                 EngineCommand::SetAmpEnv {
@@ -1178,7 +1267,7 @@ impl BlockProcessor for SynthProcessor {
             if rolling {
                 track.sequencer.advance_to_beat(beat, events);
                 track.arrangement.advance(beat, events);
-                track.session.advance(beat, events);
+                track.session.advance(beat, *launch_quant, events);
             }
             track.apply_patch(frames);
 
@@ -1228,6 +1317,15 @@ impl BlockProcessor for SynthProcessor {
             }
             if let Some(meter) = sink.track_meters.get(index) {
                 meter.store(track_peak);
+            }
+            // Publish which session scene is playing for the UI grid
+            if let Some(slot) = sink.session_scene.get(index) {
+                let scene = track
+                    .session
+                    .playing_scene()
+                    .map(|s| s as u8)
+                    .unwrap_or(SCENE_NONE);
+                slot.store(scene, std::sync::atomic::Ordering::Relaxed);
             }
         }
 
@@ -1447,6 +1545,28 @@ mod tests {
     }
 
     #[test]
+    fn set_loop_wraps_the_playhead() {
+        let (mut control, mut proc, len) = processor(false);
+        let mut output = vec![0.0f32; len];
+        control.send(EngineCommand::Play);
+        control.send(EngineCommand::SetLoop {
+            enabled: true,
+            start_beats: 0.0,
+            end_beats: 1.0,
+        });
+        // 1 beat @120 BPM = 24000 samples (~94 blocks of 256 frames); 200 blocks
+        // would reach ~2.1 beats unlooped, so the loop must fold the playhead back.
+        for _ in 0..200 {
+            proc.process_block(&[], &mut output, 2, len / 2);
+        }
+        let pos = control.position_beats();
+        assert!(
+            (0.0..1.0).contains(&pos),
+            "loop did not wrap the playhead: beat = {pos}"
+        );
+    }
+
+    #[test]
     fn note_on_command_drives_the_synth_and_meter() {
         let (mut control, mut proc, len) = processor(false);
         let mut output = vec![0.0f32; len];
@@ -1544,33 +1664,64 @@ mod tests {
         s.add_note(0, 60, 0.0, 1.0, 1.0);
         let mut out = Vec::with_capacity(MAX_BLOCK_EVENTS);
 
-        // Nothing plays until a slot is launched
-        s.advance(0.0, &mut out);
+        // Nothing plays until a slot is launched (quant 0 = immediate launch)
+        s.advance(0.0, 0.0, &mut out);
         assert!(out.is_empty(), "unlaunched session made sound");
 
         // Launch: the note triggers at the loop origin
-        s.launch(0, &mut out);
+        s.launch(0);
         out.clear();
-        s.advance(0.0, &mut out);
-        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 60));
+        s.advance(0.0, 0.0, &mut out);
+        assert!(out
+            .iter()
+            .any(|e| e.kind == NoteEventKind::On && e.key == 60));
 
         // Past the note's end (but inside the 2-beat loop) it releases
         out.clear();
-        s.advance(1.5, &mut out);
-        assert!(out.iter().any(|e| e.kind == NoteEventKind::Off && e.key == 60));
+        s.advance(1.5, 0.0, &mut out);
+        assert!(out
+            .iter()
+            .any(|e| e.kind == NoteEventKind::Off && e.key == 60));
 
         // It retriggers when the loop wraps back to the origin
         out.clear();
-        s.advance(2.0, &mut out);
-        assert!(out.iter().any(|e| e.kind == NoteEventKind::On && e.key == 60));
+        s.advance(2.0, 0.0, &mut out);
+        assert!(out
+            .iter()
+            .any(|e| e.kind == NoteEventKind::On && e.key == 60));
 
         // Stop releases the sounding note and silences further advances
         out.clear();
         s.stop(&mut out);
-        assert!(out.iter().any(|e| e.kind == NoteEventKind::Off && e.key == 60));
+        assert!(out
+            .iter()
+            .any(|e| e.kind == NoteEventKind::Off && e.key == 60));
         out.clear();
-        s.advance(2.0, &mut out);
+        s.advance(2.0, 0.0, &mut out);
         assert!(out.is_empty(), "stopped session still played");
+    }
+
+    #[test]
+    fn session_launch_quantizes_to_the_next_boundary() {
+        let mut s = SessionClips::new();
+        s.create(0, 4.0);
+        s.add_note(0, 60, 0.0, 1.0, 1.0);
+        let mut out = Vec::with_capacity(MAX_BLOCK_EVENTS);
+
+        // Roll past the first bar boundary so a launch must wait for the next one
+        s.advance(1.0, 4.0, &mut out);
+        out.clear();
+        s.launch(0); // queued, not yet playing
+
+        // Still within bar 0 -> nothing starts
+        s.advance(2.0, 4.0, &mut out);
+        assert!(out.is_empty(), "clip started before the quant boundary");
+
+        // Crossing into bar 1 (beat 4) launches it
+        s.advance(4.0, 4.0, &mut out);
+        assert!(out
+            .iter()
+            .any(|e| e.kind == NoteEventKind::On && e.key == 60));
     }
 
     #[test]

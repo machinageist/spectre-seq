@@ -18,12 +18,12 @@ geist-core = { path = "../../crates/geist-core" }
 geist-graph = { path = "../../crates/geist-graph" }
 # cpal backend, block bridge, stream config
 geist-audio-backend = { path = "../../crates/geist-audio-backend" }
-# Flagship synth exposed as an AudioNode
-geist-synth = { path = "../../plugins/geist-synth" }
+# Flagship internal synth exposed as an AudioNode
+geist-synth = { path = "../../crates/geist-synth" }
 # Shared DSP primitives for app-level modulation sources
 geist-dsp = { path = "../../crates/geist-dsp" }
-# Effects nodes for the post-synth device chain
-geist-fx = { path = "../../plugins/geist-fx" }
+# Internal effects nodes for the post-synth device chain
+geist-fx = { path = "../../crates/geist-fx" }
 # Transport and tempo for the DAW playhead
 geist-timeline = { path = "../../crates/geist-timeline" }
 # Project file format for saving and loading the session patch

@@ -18,9 +18,9 @@ use geist_config::templates::{TemplateKind, TemplateRef};
 use std::collections::HashMap;
 
 use geist_ui::model::{
-    BrowserItem, BrowserModel, ChannelStrip, Clip, EffectSlot, GraphModel, GraphNode, Lane, Note,
-    ParamSpec, Port, RackModel, SessionGrid, SessionModel, StepPattern, StepSequencerModel,
-    TimelineModel,
+    BrowserItem, BrowserModel, ChannelStrip, Clip, EffectKind, EffectSlot, GraphModel, GraphNode,
+    Lane, Note, ParamSpec, Port, RackModel, SessionGrid, SessionModel, StepPattern,
+    StepSequencerModel, TimelineModel,
 };
 use geist_ui::shell::{draw_studio, TransportAction};
 use geist_ui::state::{DetailView, MainView, UIState};
@@ -29,15 +29,21 @@ use geist_ui::widgets::{KeyEvent, Keyboard, Taper};
 
 use std::sync::Arc;
 
-use crate::control::{AudioAsset, EngineCommand, EngineControl, FxKind, LfoDestination};
+use crate::control::{
+    AudioAsset, EngineCommand, EngineControl, FxKind, FxSlot, LfoDestination, FX_CHAIN_MAX,
+};
 use crate::engine::{
     default_grid_for, Engine, DEFAULT_AMP_ENV, DEFAULT_FILTER_ENV, DEFAULT_FM_AMOUNT,
-    DEFAULT_LFO_DEPTH, DEFAULT_LFO_DEST, DEFAULT_LFO_RATE_HZ, DEFAULT_OSC_A_CENTS,
-    DEFAULT_OSC_A_SEMIS, DEFAULT_OSC_B_CENTS, DEFAULT_OSC_B_SEMIS, DEFAULT_OSC_MIX, DEFAULT_VOICES,
-    MAX_AUDIO_ASSETS, NUM_TRACKS, SEQ_ROWS, SEQ_STEPS, TRACK_BASE_MIDI,
+    DEFAULT_LAUNCH_QUANT, DEFAULT_LFO_DEPTH, DEFAULT_LFO_DEST, DEFAULT_LFO_RATE_HZ,
+    DEFAULT_OSC_A_CENTS, DEFAULT_OSC_A_SEMIS, DEFAULT_OSC_B_CENTS, DEFAULT_OSC_B_SEMIS,
+    DEFAULT_OSC_MIX, DEFAULT_VOICES, MAX_AUDIO_ASSETS, NUM_TRACKS, SEQ_ROWS, SEQ_STEPS,
+    TRACK_BASE_MIDI,
 };
+use crate::history::{EditHistory, EditSnapshot};
 use crate::recorder::AudioRecorder;
-use crate::session::{self, ClipSession, NoteSession, StudioSession, TrackSession};
+use crate::session::{
+    self, ClipSession, FxSession, NoteSession, SessionSlotSession, StudioSession, TrackSession,
+};
 
 // On-screen keyboard spans two octaves from C3
 const KEYBOARD_BASE_MIDI: u8 = 48;
@@ -65,26 +71,15 @@ const SLOT_AMP_ENV: usize = 3;
 const SLOT_FILTER_ENV: usize = 4;
 const SLOT_DELAY: usize = 5;
 const SLOT_REVERB: usize = 6;
-// Character/modulation effect slots and their FxKind + param count
-const SLOT_DISTORTION: usize = 7;
-const SLOT_PHASER: usize = 8;
-const SLOT_FLANGER: usize = 9;
-const SLOT_CHORUS: usize = 10;
-// (slot index, FxKind, param count) driving the generic character-effect diff;
-// the array index is the per-track mirror index for each effect
-const FX_SLOTS: [(usize, FxKind, usize); 4] = [
-    (SLOT_DISTORTION, FxKind::Distortion, 3),
-    (SLOT_PHASER, FxKind::Phaser, 4),
-    (SLOT_FLANGER, FxKind::Flanger, 4),
-    (SLOT_CHORUS, FxKind::Chorus, 3),
-];
-// Default params per FX_SLOTS index; unused trailing slots stay 0. These match
+// Default params per EffectKind index; unused trailing slots stay 0. These match
 // the EffectSlot ParamSpecs so the frame-one mirror diff is silent.
-const FX_DEFAULTS: [[f32; 4]; 4] = [
-    [2.0, 0.7, 1.0, 0.0], // Distortion: drive, tone, mix
-    [0.5, 1.0, 0.5, 0.5], // Phaser: rate, depth, feedback, mix
-    [0.3, 2.0, 0.5, 0.5], // Flanger: rate, depth(ms), feedback, mix
-    [0.8, 4.0, 0.5, 0.0], // Chorus: rate, depth(ms), mix
+const FX_DEFAULTS: [[f32; 4]; 6] = [
+    [2.0, 0.7, 1.0, 0.0],    // Distortion: drive, tone, mix
+    [0.5, 1.0, 0.5, 0.5],    // Phaser: rate, depth, feedback, mix
+    [0.3, 2.0, 0.5, 0.5],    // Flanger: rate, depth(ms), feedback, mix
+    [0.8, 4.0, 0.5, 0.0],    // Chorus: rate, depth(ms), mix
+    [1000.0, 0.0, 1.0, 0.0], // EQ: freq(Hz), gain(dB), q
+    [2.0, 1.0, 0.5, 0.0],    // Saturator: drive, output, mix
 ];
 // Oscillator slot parameter order
 const OSC_SHAPE: usize = 0;
@@ -157,6 +152,9 @@ struct EngineMirror {
     playing: bool,
     bpm: f32,
     gain: f32,
+    loop_enabled: bool,
+    loop_start_beats: f64,
+    loop_end_beats: f64,
     cutoff_hz: [f32; NUM_TRACKS],
     resonance: [f32; NUM_TRACKS],
     delay_on: [bool; NUM_TRACKS],
@@ -183,9 +181,13 @@ struct EngineMirror {
     track_pan: [f32; NUM_TRACKS],
     track_muted: [bool; NUM_TRACKS],
     track_soloed: [bool; NUM_TRACKS],
-    // Character effects: per track, per FX_SLOTS index — bypass + up to 4 params
-    fx_on: [[bool; 4]; NUM_TRACKS],
-    fx_param: [[[f32; 4]; 4]; NUM_TRACKS],
+    // Character effects: per track, per EffectKind index (6 kinds) — bypass + up to 4 params
+    fx_on: [[bool; 6]; NUM_TRACKS],
+    fx_param: [[[f32; 4]; 6]; NUM_TRACKS],
+    fx_chain_len: [u8; NUM_TRACKS],
+    fx_chain_slots: [[FxSlot; FX_CHAIN_MAX]; NUM_TRACKS],
+    // Session launch quantization in beats
+    launch_quant: f32,
 }
 
 impl EngineMirror {
@@ -195,6 +197,10 @@ impl EngineMirror {
             playing: false,
             bpm: DEFAULT_BPM,
             gain: DEFAULT_GAIN,
+            // Match Transport::default so the frame-one loop diff is silent
+            loop_enabled: false,
+            loop_start_beats: 0.0,
+            loop_end_beats: 16.0,
             cutoff_hz: [DEFAULT_CUTOFF_HZ; NUM_TRACKS],
             resonance: [DEFAULT_RESONANCE; NUM_TRACKS],
             delay_on: [false; NUM_TRACKS],
@@ -220,8 +226,11 @@ impl EngineMirror {
             track_muted: [false; NUM_TRACKS],
             track_soloed: [false; NUM_TRACKS],
             // All character effects start bypassed at their default params
-            fx_on: [[false; 4]; NUM_TRACKS],
+            fx_on: [[false; 6]; NUM_TRACKS],
             fx_param: [FX_DEFAULTS; NUM_TRACKS],
+            fx_chain_len: [4; NUM_TRACKS],
+            fx_chain_slots: [default_character_chain(); NUM_TRACKS],
+            launch_quant: DEFAULT_LAUNCH_QUANT as f32,
         }
     }
 }
@@ -319,6 +328,9 @@ pub struct StudioApp {
     recorder: Option<MidiRecorder>,
     // The (track, clip id) recording is capturing into, set at record start
     record_target: Option<(usize, u64)>,
+    // The (track, scene) session slot recording is capturing into, when recording
+    // in Session view; mutually exclusive with record_target
+    session_record_target: Option<(u8, u8)>,
     // Input capture recorder, present only when an input device opened
     audio_recorder: Option<AudioRecorder>,
     // Beat where the current recording began (audio clip placement)
@@ -332,6 +344,8 @@ pub struct StudioApp {
     computer_held: [bool; COMPUTER_KEYS.len()],
     // Last save/load result shown under the keyboard
     status: String,
+    // Snapshot-based undo/redo of the editable surface
+    history: EditHistory,
 }
 
 impl StudioApp {
@@ -366,6 +380,7 @@ impl StudioApp {
             next_clip_id: 1,
             recorder: None,
             record_target: None,
+            session_record_target: None,
             audio_recorder,
             record_start_beat: 0.0,
             next_asset_slot: 0,
@@ -373,6 +388,7 @@ impl StudioApp {
             kb_held: vec![false; KEYBOARD_KEYS],
             computer_held: [false; COMPUTER_KEYS.len()],
             status: String::new(),
+            history: EditHistory::new(),
         }
     }
 
@@ -415,6 +431,38 @@ impl StudioApp {
                             .unwrap_or_default(),
                     })
                     .collect();
+                // Session-launcher slots this track has created, with their notes
+                let session_slots = (0..self.session.session_grid.scenes)
+                    .filter_map(|scene| {
+                        let filled = self
+                            .session
+                            .session_grid
+                            .slot(track, scene)
+                            .map(|s| s.filled)
+                            .unwrap_or(false);
+                        if !filled {
+                            return None;
+                        }
+                        let notes = self
+                            .session_notes
+                            .get(&(track as u8, scene as u8))
+                            .map(|ns| {
+                                ns.iter()
+                                    .map(|n| NoteSession {
+                                        pitch: n.pitch,
+                                        start_beats: n.start_beats,
+                                        len_beats: n.len_beats,
+                                        velocity: n.velocity,
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        Some(SessionSlotSession {
+                            scene: scene as u8,
+                            notes,
+                        })
+                    })
+                    .collect();
                 TrackSession {
                     level: self.mirror.track_level[track],
                     pan: self.mirror.track_pan[track],
@@ -438,18 +486,21 @@ impl StudioApp {
                     lfo_rate_hz: self.mirror.lfo_rate_hz[track],
                     lfo_depth: self.mirror.lfo_depth[track],
                     lfo_dest: self.mirror.lfo_dest[track],
-                    fx_on: self.mirror.fx_on[track],
-                    fx_param: self.mirror.fx_param[track],
+                    fx_chain: fx_chain_session(&self.track_racks[track]),
                     amp_env: self.mirror.amp_env[track],
                     filter_env: self.mirror.filter_env[track],
                     gates,
                     clips,
+                    session_slots,
                 }
             })
             .collect();
         StudioSession {
             bpm: self.mirror.bpm,
             gain: self.mirror.gain,
+            loop_enabled: self.session.transport.loop_enabled,
+            loop_start_beats: self.session.transport.loop_start_beats as f32,
+            loop_end_beats: self.session.transport.loop_end_beats as f32,
             tracks,
         }
     }
@@ -460,8 +511,19 @@ impl StudioApp {
         // Transport tempo and master gain are the only global macros
         self.control.send(EngineCommand::SetBpm(loaded.bpm));
         self.control.send(EngineCommand::SetGain(loaded.gain));
+        self.control.send(EngineCommand::SetLoop {
+            enabled: loaded.loop_enabled,
+            start_beats: loaded.loop_start_beats,
+            end_beats: loaded.loop_end_beats,
+        });
         self.mirror.bpm = loaded.bpm;
         self.mirror.gain = loaded.gain;
+        self.mirror.loop_enabled = loaded.loop_enabled;
+        self.mirror.loop_start_beats = loaded.loop_start_beats as f64;
+        self.mirror.loop_end_beats = loaded.loop_end_beats as f64;
+        self.session.transport.loop_enabled = loaded.loop_enabled;
+        self.session.transport.loop_start_beats = loaded.loop_start_beats as f64;
+        self.session.transport.loop_end_beats = loaded.loop_end_beats as f64;
         self.session.transport.bpm = loaded.bpm;
         if let Some(master) = self.session.mixer.channels.get_mut(NUM_TRACKS) {
             master.level = loaded.gain;
@@ -571,24 +633,36 @@ impl StudioApp {
                 track: t,
                 dest: state.lfo_dest,
             });
-            // Character effects: bypass + every param, then mirror them
-            for (fx_idx, &(_, fx_kind, nparams)) in FX_SLOTS.iter().enumerate() {
+            // Character effects: authoritative duplicate-capable chain state.
+            let mut slots = [FxSlot::empty(); FX_CHAIN_MAX];
+            for (index, fx) in state.fx_chain.iter().take(FX_CHAIN_MAX).enumerate() {
+                slots[index] = FxSlot {
+                    kind: fx.kind,
+                    instance: fx.instance,
+                };
                 self.control.send(EngineCommand::SetFxOn {
                     track: t,
-                    fx: fx_kind,
-                    on: state.fx_on[fx_idx],
+                    fx: fx.kind,
+                    instance: fx.instance,
+                    on: fx.on,
                 });
-                for p in 0..nparams {
+                for (p, value) in fx.params.iter().enumerate() {
                     self.control.send(EngineCommand::SetFxParam {
                         track: t,
-                        fx: fx_kind,
+                        fx: fx.kind,
+                        instance: fx.instance,
                         param: p as u8,
-                        value: state.fx_param[fx_idx][p],
+                        value: *value,
                     });
                 }
             }
-            self.mirror.fx_on[track] = state.fx_on;
-            self.mirror.fx_param[track] = state.fx_param;
+            self.control.send(EngineCommand::SetFxChain {
+                track: t,
+                len: state.fx_chain.len().min(FX_CHAIN_MAX) as u8,
+                slots,
+            });
+            self.mirror.fx_chain_len[track] = state.fx_chain.len().min(FX_CHAIN_MAX) as u8;
+            self.mirror.fx_chain_slots[track] = slots;
             self.control.send(EngineCommand::SetAmpEnv {
                 track: t,
                 attack: state.amp_env[ENV_ATTACK],
@@ -705,6 +779,71 @@ impl StudioApp {
         self.piano_clip = None;
         self.session.piano.notes.clear();
 
+        // Tear down the engine's session slots (stop playback + drop tracked
+        // notes), reset the studio-side launcher, then rebuild from the load
+        for track in 0..NUM_TRACKS {
+            self.control
+                .send(EngineCommand::StopSlot { track: track as u8 });
+        }
+        for (&(track, scene), notes) in &self.session_notes {
+            for note in notes {
+                self.control.send(EngineCommand::RemoveSessionNote {
+                    track,
+                    scene,
+                    pitch: note.pitch,
+                    start_beats: note.start_beats,
+                });
+            }
+        }
+        for slot in &mut self.session.session_grid.slots {
+            *slot = Default::default();
+        }
+        self.session.session_grid.selected = None;
+        self.session_notes.clear();
+        self.session_notes_mirror.clear();
+        self.session_edit = None;
+        for (track, state) in loaded.tracks.iter().enumerate().take(NUM_TRACKS) {
+            let t = track as u8;
+            for slot in &state.session_slots {
+                let scene = slot.scene as usize;
+                if scene >= self.session.session_grid.scenes {
+                    continue;
+                }
+                self.control.send(EngineCommand::CreateSessionSlot {
+                    track: t,
+                    scene: slot.scene,
+                    len_beats: SESSION_CLIP_LEN,
+                });
+                let notes: Vec<Note> = slot
+                    .notes
+                    .iter()
+                    .map(|n| Note {
+                        pitch: n.pitch,
+                        start_beats: n.start_beats,
+                        len_beats: n.len_beats,
+                        velocity: n.velocity,
+                    })
+                    .collect();
+                for note in &notes {
+                    self.control.send(EngineCommand::AddSessionNote {
+                        track: t,
+                        scene: slot.scene,
+                        pitch: note.pitch,
+                        start_beats: note.start_beats,
+                        len_beats: note.len_beats,
+                        velocity: note.velocity,
+                    });
+                }
+                if let Some(grid_slot) = self.session.session_grid.slot_mut(track, scene) {
+                    grid_slot.filled = true;
+                    grid_slot.name = format!("Clip {}", scene + 1);
+                }
+                let key = (t, slot.scene);
+                self.session_notes.insert(key, notes.clone());
+                self.session_notes_mirror.insert(key, notes);
+            }
+        }
+
         // Bind the visible rack to the selected track
         let shown = self.session.mixer.selected.min(NUM_TRACKS - 1);
         self.session.rack = self.track_racks[shown].clone();
@@ -730,8 +869,11 @@ impl StudioApp {
         };
         self.control.send(command);
 
-        // Capture into the record clip if this is the armed, recording track
-        if self.record_target.map(|(rt, _)| rt) == Some(track) {
+        // Capture into the active record target (arrangement clip or session slot)
+        // when this is the armed, recording track.
+        let arr_capture = self.record_target.map(|(rt, _)| rt) == Some(track);
+        let session_capture = self.session_record_target.map(|(rt, _)| rt as usize) == Some(track);
+        if arr_capture || session_capture {
             let abs = self.control.position_beats() as f32;
             if ev.down {
                 if let Some(rec) = self.recorder.as_mut() {
@@ -742,7 +884,11 @@ impl StudioApp {
                 .as_mut()
                 .and_then(|rec| rec.note_off(ev.midi, abs))
             {
-                self.commit_recorded(track, note);
+                if let Some((strk, scene)) = self.session_record_target {
+                    self.commit_recorded_session(strk, scene, note);
+                } else {
+                    self.commit_recorded(track, note);
+                }
             }
         }
     }
@@ -767,7 +913,24 @@ impl StudioApp {
                 .get(track)
                 .map(|c| c.armed)
                 .unwrap_or(false);
-            if armed {
+            if self.state.main_view() == MainView::Session {
+                // Session view: an armed track records into its selected slot
+                // instead of laying down a new arrangement clip.
+                self.record_target = None;
+                self.session_record_target = None;
+                if armed {
+                    if let Some((rt, scene)) = self.session_record_slot() {
+                        if !self.slot_filled(rt, scene) {
+                            self.create_slot(rt, scene);
+                        }
+                        if let Some(slot) = self.session.session_grid.slot_mut(rt, scene) {
+                            slot.filled = true;
+                            slot.name = format!("Clip {}", scene + 1);
+                        }
+                        self.session_record_target = Some((rt as u8, scene as u8));
+                    }
+                }
+            } else if armed {
                 let id = self.next_clip_id;
                 self.next_clip_id += 1;
                 self.control.send(EngineCommand::AddClip {
@@ -801,12 +964,17 @@ impl StudioApp {
                 .map(|rec| rec.finalize(abs))
                 .unwrap_or_default();
             let target = self.record_target;
-            if let Some((track, _)) = target {
+            if let Some((strk, scene)) = self.session_record_target {
+                for note in finished {
+                    self.commit_recorded_session(strk, scene, note);
+                }
+            } else if let Some((track, _)) = target {
                 for note in finished {
                     self.commit_recorded(track, note);
                 }
             }
             // Finish audio capture and place it as an audio clip on the armed track
+            // (arrangement recording only; session slots are MIDI)
             if let Some(ar) = self.audio_recorder.as_mut() {
                 let audio = ar.stop();
                 if let Some((track, _)) = target {
@@ -815,6 +983,7 @@ impl StudioApp {
             }
             self.recorder = None;
             self.record_target = None;
+            self.session_record_target = None;
         }
     }
 
@@ -920,6 +1089,49 @@ impl StudioApp {
                     m.len_beats = note_end;
                 }
             }
+        }
+    }
+
+    // The selected session slot if it sits on the mixer-selected (played) track
+    fn session_record_slot(&self) -> Option<(usize, usize)> {
+        let track = self.session.mixer.selected.min(NUM_TRACKS - 1);
+        let grid = &self.session.session_grid;
+        if grid.tracks == 0 {
+            return None;
+        }
+        let sel = grid.selected?;
+        let (slot_track, scene) = (sel % grid.tracks, sel / grid.tracks);
+        (slot_track == track).then_some((track, scene))
+    }
+
+    // Fold a finalized recorded note into a session slot's loop phase, adding it
+    // to the engine slot and the studio-side note store (overdub, non-destructive)
+    fn commit_recorded_session(&mut self, track: u8, scene: u8, note: RecordedNote) {
+        let slot_pos = session_slot_pos(self.record_start_beat, note.start_beats, SESSION_CLIP_LEN);
+        let len = note.len_beats.min(SESSION_CLIP_LEN);
+        self.control.send(EngineCommand::AddSessionNote {
+            track,
+            scene,
+            pitch: note.pitch,
+            start_beats: slot_pos,
+            len_beats: len,
+            velocity: note.velocity,
+        });
+        let ui_note = Note {
+            pitch: note.pitch,
+            start_beats: slot_pos,
+            len_beats: len,
+            velocity: note.velocity,
+        };
+        let key = (track, scene);
+        self.session_notes.entry(key).or_default().push(ui_note);
+        self.session_notes_mirror
+            .entry(key)
+            .or_default()
+            .push(ui_note);
+        // Reflect into the piano roll if this slot is the one being edited
+        if self.session_edit == Some(key) {
+            self.session.piano.notes.push(ui_note);
         }
     }
 
@@ -1113,6 +1325,23 @@ impl StudioApp {
         self.clip_notes_mirror.insert(id, current);
     }
 
+    // Translate rack intents into visible character-FX slots
+    fn handle_rack_intents(&mut self, intents: &[CommandIntent]) {
+        for intent in intents {
+            let Some(name) = intent.command.strip_prefix("add_effect:") else {
+                continue;
+            };
+            let Some(kind) = effect_kind_from_name(name) else {
+                continue;
+            };
+            if let Some(instance) = self.session.rack.next_character_instance(kind) {
+                let slot = character_slot(kind, instance, None, true);
+                self.session.rack.push(slot);
+                self.session.rack.selected = Some(self.session.rack.slots.len() - 1);
+            }
+        }
+    }
+
     // Translate session-view intents into launcher commands and grid state
     fn handle_session_intents(&mut self, intents: &[CommandIntent]) {
         for intent in intents {
@@ -1135,7 +1364,8 @@ impl StudioApp {
                 }
             } else if cmd == "session_stop_all" {
                 for track in 0..NUM_TRACKS {
-                    self.control.send(EngineCommand::StopSlot { track: track as u8 });
+                    self.control
+                        .send(EngineCommand::StopSlot { track: track as u8 });
                 }
                 for slot in &mut self.session.session_grid.slots {
                     slot.playing = false;
@@ -1147,7 +1377,11 @@ impl StudioApp {
 
     // Whether a session grid slot holds a clip
     fn slot_filled(&self, track: usize, scene: usize) -> bool {
-        self.session.session_grid.slot(track, scene).map(|s| s.filled).unwrap_or(false)
+        self.session
+            .session_grid
+            .slot(track, scene)
+            .map(|s| s.filled)
+            .unwrap_or(false)
     }
 
     // Register a freshly created session slot with the engine and edit it
@@ -1157,12 +1391,15 @@ impl StudioApp {
             scene: scene as u8,
             len_beats: SESSION_CLIP_LEN,
         });
-        self.session_notes.entry((track as u8, scene as u8)).or_default();
+        self.session_notes
+            .entry((track as u8, scene as u8))
+            .or_default();
         let grid = &mut self.session.session_grid;
         grid.selected = Some(grid.index(track, scene));
     }
 
-    // Launch one slot immediately: it becomes the track's sole playing slot
+    // Queue one slot to launch; the engine readback flips it to playing at the
+    // next quant boundary. Only one slot per track can be queued.
     fn launch_slot(&mut self, track: usize, scene: usize) {
         if !self.slot_filled(track, scene) {
             return;
@@ -1174,8 +1411,25 @@ impl StudioApp {
         let grid = &mut self.session.session_grid;
         for sc in 0..grid.scenes {
             if let Some(slot) = grid.slot_mut(track, sc) {
-                slot.playing = sc == scene;
-                slot.queued = false;
+                slot.queued = sc == scene;
+            }
+        }
+    }
+
+    // Pull the engine's playing-scene readback into the grid (playing + queued)
+    fn sync_session_state(&mut self) {
+        let tracks = self.session.session_grid.tracks;
+        let scenes = self.session.session_grid.scenes;
+        for track in 0..tracks {
+            let playing = self.control.playing_scene(track);
+            for sc in 0..scenes {
+                if let Some(slot) = self.session.session_grid.slot_mut(track, sc) {
+                    let is_playing = playing == Some(sc);
+                    slot.playing = is_playing;
+                    if is_playing {
+                        slot.queued = false;
+                    }
+                }
             }
         }
     }
@@ -1183,9 +1437,10 @@ impl StudioApp {
     // Bind the piano roll to the selected session slot and diff its note edits
     fn sync_session_notes(&mut self) {
         let grid = &self.session.session_grid;
-        let sel = grid.selected.filter(|_| grid.tracks > 0).map(|i| {
-            ((i % grid.tracks) as u8, (i / grid.tracks) as u8)
-        });
+        let sel = grid
+            .selected
+            .filter(|_| grid.tracks > 0)
+            .map(|i| ((i % grid.tracks) as u8, (i / grid.tracks) as u8));
         let Some(key) = sel else {
             return;
         };
@@ -1199,7 +1454,11 @@ impl StudioApp {
 
         let (track, scene) = key;
         let current = self.session.piano.notes.clone();
-        let mirror = self.session_notes_mirror.get(&key).cloned().unwrap_or_default();
+        let mirror = self
+            .session_notes_mirror
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
         for note in &mirror {
             if !current.iter().any(|c| same_note(c, note)) {
                 self.control.send(EngineCommand::RemoveSessionNote {
@@ -1267,6 +1526,8 @@ impl StudioApp {
         let (mut toggle_mixer, mut toggle_browser) = (false, false);
         let (mut toggle_main, mut toggle_detail) = (false, false);
         let (mut play_stop, mut record) = (false, false);
+        let mut quantize = false;
+        let (mut undo, mut redo) = (false, false);
 
         ctx.input_mut(|i| {
             // Command combos work regardless of focus
@@ -1275,6 +1536,7 @@ impl StudioApp {
             toggle_loop |= i.consume_key(Modifiers::COMMAND, Key::L);
             toggle_mixer |= i.consume_key(Modifiers::COMMAND | Modifiers::ALT, Key::M);
             toggle_browser |= i.consume_key(Modifiers::COMMAND | Modifiers::ALT, Key::B);
+            quantize |= i.consume_key(Modifiers::COMMAND, Key::U);
             if typing {
                 return;
             }
@@ -1286,6 +1548,12 @@ impl StudioApp {
             }
             play_stop |= i.consume_key(Modifiers::NONE, Key::Space);
             record |= i.consume_key(Modifiers::NONE, Key::F9);
+            // Undo/redo: consume the Shift variant first so Cmd+Z doesn't catch it
+            if i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z) {
+                redo = true;
+            } else if i.consume_key(Modifiers::COMMAND, Key::Z) {
+                undo = true;
+            }
         });
 
         if play_stop {
@@ -1314,6 +1582,20 @@ impl StudioApp {
         if toggle_loop {
             self.session.transport.loop_enabled = !self.session.transport.loop_enabled;
         }
+        if quantize {
+            let grid = self.session.piano.grid_div;
+            geist_ui::model::quantize_notes(&mut self.session.piano.notes, grid);
+        }
+        if undo {
+            if let Some(snap) = self.history.undo(self.edit_snapshot()) {
+                self.apply_edit_snapshot(snap);
+            }
+        }
+        if redo {
+            if let Some(snap) = self.history.redo(self.edit_snapshot()) {
+                self.apply_edit_snapshot(snap);
+            }
+        }
         if save {
             self.do_save();
         }
@@ -1341,6 +1623,31 @@ impl StudioApp {
             }
             Err(err) => self.status = format!("Load failed: {err}"),
         }
+    }
+
+    // Clone the editable surface for the undo history
+    fn edit_snapshot(&self) -> EditSnapshot {
+        EditSnapshot {
+            timeline: self.session.timeline.clone(),
+            clip_notes: self.clip_notes.clone(),
+            session_grid: self.session.session_grid.clone(),
+            session_notes: self.session_notes.clone(),
+            rack: self.session.rack.clone(),
+            track_racks: self.track_racks.clone(),
+        }
+    }
+
+    // Restore an edit snapshot; the per-frame diffs resync the engine afterwards
+    fn apply_edit_snapshot(&mut self, snap: EditSnapshot) {
+        self.session.timeline = snap.timeline;
+        self.clip_notes = snap.clip_notes;
+        self.session.session_grid = snap.session_grid;
+        self.session_notes = snap.session_notes;
+        self.session.rack = snap.rack;
+        self.track_racks = snap.track_racks;
+        // Force the piano roll to rebind so it reflects the restored selection
+        self.piano_clip = None;
+        self.session_edit = None;
     }
 
     // Apply a discrete transport button press to the engine and the mirror
@@ -1375,6 +1682,32 @@ impl StudioApp {
         if bpm != self.mirror.bpm {
             self.control.send(EngineCommand::SetBpm(bpm));
             self.mirror.bpm = bpm;
+        }
+
+        // Arrangement loop region, dragged on the arrangement ruler
+        let loop_enabled = self.session.transport.loop_enabled;
+        let loop_start = self.session.transport.loop_start_beats;
+        let loop_end = self.session.transport.loop_end_beats;
+        if loop_enabled != self.mirror.loop_enabled
+            || loop_start != self.mirror.loop_start_beats
+            || loop_end != self.mirror.loop_end_beats
+        {
+            self.control.send(EngineCommand::SetLoop {
+                enabled: loop_enabled,
+                start_beats: loop_start as f32,
+                end_beats: loop_end as f32,
+            });
+            self.mirror.loop_enabled = loop_enabled;
+            self.mirror.loop_start_beats = loop_start;
+            self.mirror.loop_end_beats = loop_end;
+        }
+
+        // Session launch quantization
+        let lq = self.session.session_grid.launch_quant;
+        if lq != self.mirror.launch_quant {
+            self.control
+                .send(EngineCommand::SetLaunchQuant { beats: lq });
+            self.mirror.launch_quant = lq;
         }
 
         // Master gain lives on the trailing "Master" mixer strip
@@ -1626,25 +1959,59 @@ impl StudioApp {
             }
         }
 
-        // Character effects: bypass + params diffed generically per FX_SLOTS
-        for (fx_idx, &(slot_idx, fx_kind, nparams)) in FX_SLOTS.iter().enumerate() {
-            if let Some(slot) = self.session.rack.slots.get(slot_idx) {
-                let on = !slot.bypassed;
-                if on != self.mirror.fx_on[track][fx_idx] {
-                    self.control.send(EngineCommand::SetFxOn { track: t, fx: fx_kind, on });
+        // Character effects: ordered duplicate-capable chain plus per-instance params.
+        let (len, slots) = character_chain_of(&self.session.rack);
+        if len != self.mirror.fx_chain_len[track] || slots != self.mirror.fx_chain_slots[track] {
+            self.control.send(EngineCommand::SetFxChain {
+                track: t,
+                len,
+                slots,
+            });
+            self.mirror.fx_chain_len[track] = len;
+            self.mirror.fx_chain_slots[track] = slots;
+        }
+        for slot in self
+            .session
+            .rack
+            .slots
+            .iter()
+            .filter(|slot| slot.character.is_some())
+        {
+            let Some((kind, instance)) = slot.character else {
+                continue;
+            };
+            let fx_kind = fx_kind_from_effect_kind(kind);
+            let fx_idx = effect_kind_index(kind);
+            let on = !slot.bypassed;
+            let instance_zero = instance == 0;
+            if !instance_zero || on != self.mirror.fx_on[track][fx_idx] {
+                self.control.send(EngineCommand::SetFxOn {
+                    track: t,
+                    fx: fx_kind,
+                    instance,
+                    on,
+                });
+                if instance_zero {
                     self.mirror.fx_on[track][fx_idx] = on;
                 }
-                for p in 0..nparams {
-                    if let Some(v) = slot.params.get(p).map(|p| p.value) {
-                        if v != self.mirror.fx_param[track][fx_idx][p] {
-                            self.control.send(EngineCommand::SetFxParam {
-                                track: t,
-                                fx: fx_kind,
-                                param: p as u8,
-                                value: v,
-                            });
-                            self.mirror.fx_param[track][fx_idx][p] = v;
-                        }
+            }
+            for (p, param) in slot
+                .params
+                .iter()
+                .take(FX_DEFAULTS[fx_idx].len())
+                .enumerate()
+            {
+                let v = param.value;
+                if !instance_zero || v != self.mirror.fx_param[track][fx_idx][p] {
+                    self.control.send(EngineCommand::SetFxParam {
+                        track: t,
+                        fx: fx_kind,
+                        instance,
+                        param: p as u8,
+                        value: v,
+                    });
+                    if instance_zero {
+                        self.mirror.fx_param[track][fx_idx][p] = v;
                     }
                 }
             }
@@ -1659,6 +2026,11 @@ impl eframe::App for StudioApp {
     // eframe 0.34 hands a root Ui; the shell composes panels via show_inside
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // Record the baseline edit state once so the first undo has somewhere to go
+        if self.history.needs_seed() {
+            let snap = self.edit_snapshot();
+            self.history.seed(snap);
+        }
         // Drain captured input every frame so the ring never overflows
         if let Some(ar) = self.audio_recorder.as_mut() {
             ar.poll();
@@ -1669,6 +2041,8 @@ impl eframe::App for StudioApp {
         // Global Ableton-style shortcuts; consume keys before widgets see them
         self.handle_shortcuts(&ctx);
         self.sync_monitor();
+        // Reflect the engine's playing session scenes into the grid
+        self.sync_session_state();
 
         // Playable keyboard pinned to the very bottom; it toggles with the clip
         // editor (the "MIDI controls" half of the bottom detail bar)
@@ -1702,7 +2076,8 @@ impl eframe::App for StudioApp {
         if let Some(action) = response.transport {
             self.apply_transport(action);
         }
-        // Session-launcher actions emitted by the session grid this frame
+        // App-level actions emitted by rack/session views this frame
+        self.handle_rack_intents(&response.intents);
         self.handle_session_intents(&response.intents);
 
         // Reflect any view edits to the engine, then keep meters animating
@@ -1726,6 +2101,18 @@ impl eframe::App for StudioApp {
         }
         if response.load_requested {
             self.do_load();
+        }
+
+        // Commit an undo step at each gesture boundary (pointer release / delete),
+        // so a whole drag coalesces into one step. No-op when nothing changed.
+        let boundary = ctx.input(|i| {
+            i.pointer.any_released()
+                || i.key_pressed(egui::Key::Delete)
+                || i.key_pressed(egui::Key::Backspace)
+        });
+        if boundary {
+            let snap = self.edit_snapshot();
+            self.history.commit(snap);
         }
 
         ctx.request_repaint();
@@ -1824,44 +2211,10 @@ fn initial_session() -> SessionModel {
     );
     reverb.bypassed = true;
     // Character effects, bypassed by default; params seeded from FX_DEFAULTS
-    let mut distortion = EffectSlot::new(
-        "Distortion",
-        vec![
-            ParamSpec::new("Drive", FX_DEFAULTS[0][0], 0.5, 24.0),
-            ParamSpec::new("Tone", FX_DEFAULTS[0][1], 0.0, 1.0),
-            ParamSpec::new("Mix", FX_DEFAULTS[0][2], 0.0, 1.0),
-        ],
-    );
-    distortion.bypassed = true;
-    let mut phaser = EffectSlot::new(
-        "Phaser",
-        vec![
-            ParamSpec::new("Rate", FX_DEFAULTS[1][0], 0.01, 10.0).unit("Hz"),
-            ParamSpec::new("Depth", FX_DEFAULTS[1][1], 0.0, 1.0),
-            ParamSpec::new("Fbk", FX_DEFAULTS[1][2], 0.0, 0.95),
-            ParamSpec::new("Mix", FX_DEFAULTS[1][3], 0.0, 1.0),
-        ],
-    );
-    phaser.bypassed = true;
-    let mut flanger = EffectSlot::new(
-        "Flanger",
-        vec![
-            ParamSpec::new("Rate", FX_DEFAULTS[2][0], 0.01, 10.0).unit("Hz"),
-            ParamSpec::new("Depth", FX_DEFAULTS[2][1], 0.0, 9.0).unit("ms"),
-            ParamSpec::new("Fbk", FX_DEFAULTS[2][2], -0.95, 0.95),
-            ParamSpec::new("Mix", FX_DEFAULTS[2][3], 0.0, 1.0),
-        ],
-    );
-    flanger.bypassed = true;
-    let mut chorus = EffectSlot::new(
-        "Chorus",
-        vec![
-            ParamSpec::new("Rate", FX_DEFAULTS[3][0], 0.01, 8.0).unit("Hz"),
-            ParamSpec::new("Depth", FX_DEFAULTS[3][1], 0.0, 10.0).unit("ms"),
-            ParamSpec::new("Mix", FX_DEFAULTS[3][2], 0.0, 1.0),
-        ],
-    );
-    chorus.bypassed = true;
+    let distortion = character_slot(EffectKind::Distortion, 0, None, true);
+    let phaser = character_slot(EffectKind::Phaser, 0, None, true);
+    let flanger = character_slot(EffectKind::Flanger, 0, None, true);
+    let chorus = character_slot(EffectKind::Chorus, 0, None, true);
     session.rack.push(oscillator);
     session.rack.push(lfo);
     session.rack.push(filter);
@@ -1895,6 +2248,7 @@ fn initial_session() -> SessionModel {
         clips: Vec::new(),
         length_beats: 32.0,
         selected: None,
+        grid_div: 1.0,
     };
 
     // Session clip-launch grid: one column per track, eight empty scenes
@@ -2063,6 +2417,16 @@ fn same_note(a: &Note, b: &Note) -> bool {
     a.pitch == b.pitch
         && (a.start_beats - b.start_beats).abs() < 1e-3
         && (a.len_beats - b.len_beats).abs() < 1e-3
+        && (a.velocity - b.velocity).abs() < 1e-3
+}
+
+// Fold a recorded note's absolute beat (record start + clip-relative offset) into
+// its session slot's loop phase, so it plays back where it was performed
+fn session_slot_pos(record_start: f32, note_start_rel: f32, slot_len: f32) -> f32 {
+    if slot_len <= 0.0 {
+        return 0.0;
+    }
+    (record_start + note_start_rel).rem_euclid(slot_len)
 }
 
 // Parse a "track:scene" intent suffix into indices
@@ -2101,6 +2465,177 @@ fn env_params(env: [f32; 4]) -> Vec<ParamSpec> {
             .unit("s")
             .taper(Taper::Logarithmic),
     ]
+}
+
+fn effect_kind_from_name(name: &str) -> Option<EffectKind> {
+    match name {
+        "Distortion" => Some(EffectKind::Distortion),
+        "Phaser" => Some(EffectKind::Phaser),
+        "Flanger" => Some(EffectKind::Flanger),
+        "Chorus" => Some(EffectKind::Chorus),
+        "EQ" => Some(EffectKind::Eq),
+        "Saturator" => Some(EffectKind::Saturator),
+        _ => None,
+    }
+}
+
+fn fx_kind_from_effect_kind(kind: EffectKind) -> FxKind {
+    match kind {
+        EffectKind::Distortion => FxKind::Distortion,
+        EffectKind::Phaser => FxKind::Phaser,
+        EffectKind::Flanger => FxKind::Flanger,
+        EffectKind::Chorus => FxKind::Chorus,
+        EffectKind::Eq => FxKind::Eq,
+        EffectKind::Saturator => FxKind::Saturator,
+    }
+}
+
+fn effect_kind_name(kind: EffectKind) -> &'static str {
+    match kind {
+        EffectKind::Distortion => "Distortion",
+        EffectKind::Phaser => "Phaser",
+        EffectKind::Flanger => "Flanger",
+        EffectKind::Chorus => "Chorus",
+        EffectKind::Eq => "EQ",
+        EffectKind::Saturator => "Saturator",
+    }
+}
+
+fn character_slot(
+    kind: EffectKind,
+    instance: u8,
+    values: Option<[f32; 4]>,
+    bypassed: bool,
+) -> EffectSlot {
+    let values = values.unwrap_or_else(|| FX_DEFAULTS[effect_kind_index(kind)]);
+    let name = if instance == 0 {
+        effect_kind_name(kind).to_string()
+    } else {
+        format!("{} {}", effect_kind_name(kind), instance + 1)
+    };
+    let mut slot = match kind {
+        EffectKind::Distortion => EffectSlot::new(
+            name,
+            vec![
+                ParamSpec::new("Drive", values[0], 0.5, 24.0),
+                ParamSpec::new("Tone", values[1], 0.0, 1.0),
+                ParamSpec::new("Mix", values[2], 0.0, 1.0),
+            ],
+        ),
+        EffectKind::Phaser => EffectSlot::new(
+            name,
+            vec![
+                ParamSpec::new("Rate", values[0], 0.01, 10.0).unit("Hz"),
+                ParamSpec::new("Depth", values[1], 0.0, 1.0),
+                ParamSpec::new("Fbk", values[2], 0.0, 0.95),
+                ParamSpec::new("Mix", values[3], 0.0, 1.0),
+            ],
+        ),
+        EffectKind::Flanger => EffectSlot::new(
+            name,
+            vec![
+                ParamSpec::new("Rate", values[0], 0.01, 10.0).unit("Hz"),
+                ParamSpec::new("Depth", values[1], 0.0, 9.0).unit("ms"),
+                ParamSpec::new("Fbk", values[2], -0.95, 0.95),
+                ParamSpec::new("Mix", values[3], 0.0, 1.0),
+            ],
+        ),
+        EffectKind::Chorus => EffectSlot::new(
+            name,
+            vec![
+                ParamSpec::new("Rate", values[0], 0.01, 8.0).unit("Hz"),
+                ParamSpec::new("Depth", values[1], 0.0, 10.0).unit("ms"),
+                ParamSpec::new("Mix", values[2], 0.0, 1.0),
+            ],
+        ),
+        EffectKind::Eq => EffectSlot::new(
+            name,
+            vec![
+                ParamSpec::new("Freq", values[0], 20.0, 18_000.0)
+                    .unit("Hz")
+                    .taper(Taper::Logarithmic),
+                ParamSpec::new("Gain", values[1], -18.0, 18.0).unit("dB"),
+                ParamSpec::new("Q", values[2], 0.3, 8.0),
+            ],
+        ),
+        EffectKind::Saturator => EffectSlot::new(
+            name,
+            vec![
+                ParamSpec::new("Drive", values[0], 0.5, 24.0),
+                ParamSpec::new("Out", values[1], 0.0, 2.0),
+                ParamSpec::new("Mix", values[2], 0.0, 1.0),
+            ],
+        ),
+    };
+    slot.bypassed = bypassed;
+    slot.character(kind, instance)
+}
+
+fn effect_kind_index(kind: EffectKind) -> usize {
+    match kind {
+        EffectKind::Distortion => 0,
+        EffectKind::Phaser => 1,
+        EffectKind::Flanger => 2,
+        EffectKind::Chorus => 3,
+        EffectKind::Eq => 4,
+        EffectKind::Saturator => 5,
+    }
+}
+
+const fn default_character_chain() -> [FxSlot; FX_CHAIN_MAX] {
+    let mut slots = [FxSlot::empty(); FX_CHAIN_MAX];
+    slots[0] = FxSlot {
+        kind: FxKind::Distortion,
+        instance: 0,
+    };
+    slots[1] = FxSlot {
+        kind: FxKind::Phaser,
+        instance: 0,
+    };
+    slots[2] = FxSlot {
+        kind: FxKind::Flanger,
+        instance: 0,
+    };
+    slots[3] = FxSlot {
+        kind: FxKind::Chorus,
+        instance: 0,
+    };
+    slots
+}
+
+fn character_chain_of(rack: &RackModel) -> (u8, [FxSlot; FX_CHAIN_MAX]) {
+    let mut slots = [FxSlot::empty(); FX_CHAIN_MAX];
+    let mut len = 0usize;
+    for (kind, instance) in rack.slots.iter().filter_map(|slot| slot.character) {
+        if len >= FX_CHAIN_MAX {
+            break;
+        }
+        slots[len] = FxSlot {
+            kind: fx_kind_from_effect_kind(kind),
+            instance,
+        };
+        len += 1;
+    }
+    (len as u8, slots)
+}
+
+fn fx_chain_session(rack: &RackModel) -> Vec<FxSession> {
+    rack.slots
+        .iter()
+        .filter_map(|slot| {
+            let (kind, instance) = slot.character?;
+            let mut params = [0.0; 4];
+            for (index, param) in slot.params.iter().take(4).enumerate() {
+                params[index] = param.value;
+            }
+            Some(FxSession {
+                kind: fx_kind_from_effect_kind(kind),
+                instance,
+                on: !slot.bypassed,
+                params,
+            })
+        })
+        .collect()
 }
 
 // Write a loaded track's patch + fx into its rack slots so the Shape view matches
@@ -2171,16 +2706,18 @@ fn set_rack_from_track(rack: &mut RackModel, state: &TrackSession) {
             p.value = state.reverb_mix;
         }
     }
-    // Character effects: bypass + params from the saved per-effect arrays
-    for (fx_idx, &(slot_idx, _, nparams)) in FX_SLOTS.iter().enumerate() {
-        if let Some(slot) = rack.slots.get_mut(slot_idx) {
-            slot.bypassed = !state.fx_on[fx_idx];
-            for p in 0..nparams {
-                if let Some(param) = slot.params.get_mut(p) {
-                    param.value = state.fx_param[fx_idx][p];
-                }
-            }
-        }
+    // Character effects: rebuild ordered duplicate-capable slots from session state.
+    rack.slots.truncate(SLOT_REVERB + 1);
+    for fx in &state.fx_chain {
+        let kind = match fx.kind {
+            FxKind::Distortion => EffectKind::Distortion,
+            FxKind::Phaser => EffectKind::Phaser,
+            FxKind::Flanger => EffectKind::Flanger,
+            FxKind::Chorus => EffectKind::Chorus,
+            FxKind::Eq => EffectKind::Eq,
+            FxKind::Saturator => EffectKind::Saturator,
+        };
+        rack.push(character_slot(kind, fx.instance, Some(fx.params), !fx.on));
     }
 }
 
@@ -2339,6 +2876,30 @@ mod tests {
     }
 
     #[test]
+    fn character_chain_tracks_duplicate_reorder_and_remove() {
+        let mut rack = RackModel::default();
+        rack.push(character_slot(EffectKind::Distortion, 0, None, true));
+        rack.push(character_slot(EffectKind::Distortion, 1, None, false));
+        rack.push(character_slot(EffectKind::Chorus, 0, None, true));
+
+        rack.reorder(1, 0);
+        rack.remove(2);
+        let (len, slots) = character_chain_of(&rack);
+        let persisted = fx_chain_session(&rack);
+
+        assert_eq!(len, 2);
+        assert_eq!(slots[0].kind, FxKind::Distortion);
+        assert_eq!(slots[0].instance, 1);
+        assert_eq!(slots[1].kind, FxKind::Distortion);
+        assert_eq!(slots[1].instance, 0);
+        assert_eq!(persisted.len(), 2);
+        assert_eq!(persisted[0].instance, 1);
+        assert!(persisted[0].on);
+        assert_eq!(persisted[1].instance, 0);
+        assert!(!persisted[1].on);
+    }
+
+    #[test]
     fn recorder_captures_a_note_relative_to_the_clip_start() {
         // Record clip starts at beat 4; a note played from 5.0 to 6.5 lands at
         // local start 1.0 with length 1.5.
@@ -2403,5 +2964,18 @@ mod tests {
         }
         assert_eq!(bins.capacity(), cap, "spectrum buffer should be reused");
         assert_eq!(bins.len(), SPECTRUM_BINS);
+    }
+
+    #[test]
+    fn session_slot_pos_folds_into_the_loop_phase() {
+        // Recording began at beat 5; a note captured 2 beats in is at absolute
+        // beat 7, which folds to 7 mod 4 = 3 within a 4-beat slot.
+        assert_eq!(session_slot_pos(5.0, 2.0, 4.0), 3.0);
+        // The record-start offset also folds: beat 5 -> 1 within the slot.
+        assert_eq!(session_slot_pos(5.0, 0.0, 4.0), 1.0);
+        // A note right at a slot boundary lands at 0.
+        assert_eq!(session_slot_pos(4.0, 4.0, 4.0), 0.0);
+        // A zero/invalid slot length is safe.
+        assert_eq!(session_slot_pos(5.0, 2.0, 0.0), 0.0);
     }
 }

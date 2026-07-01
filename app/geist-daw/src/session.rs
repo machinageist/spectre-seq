@@ -18,7 +18,7 @@ use geist_project::prelude::{
     ProjectError, ProjectFile, TrackEntry,
 };
 
-use crate::control::LfoDestination;
+use crate::control::{FxKind, LfoDestination, FX_CHAIN_MAX};
 use crate::engine::{NUM_TRACKS, SEQ_ROWS, SEQ_STEPS, TRACK_BASE_MIDI};
 
 // Studio session slot filename, distinct from the classic patch slot
@@ -28,6 +28,10 @@ const MACROS_NODE_KIND: &str = "geist-macros";
 
 // Master gain param id on the macros node (the one remaining global macro)
 const PARAM_GAIN: u32 = 2;
+// Global arrangement loop region (macros-node params, not per-track)
+const PARAM_LOOP_ENABLED: u32 = 3;
+const PARAM_LOOP_START: u32 = 4;
+const PARAM_LOOP_END: u32 = 5;
 // Per-track param id bases on the macros node; each holds one value per track at
 // base + track, except envelopes which hold four values at base + track*4 + i.
 const PARAM_TRACK_LEVEL_BASE: u32 = 100;
@@ -51,19 +55,43 @@ const PARAM_TRACK_OSC_A_CENTS_BASE: u32 = 450;
 const PARAM_TRACK_OSC_B_CENTS_BASE: u32 = 460;
 const PARAM_TRACK_FM_BASE: u32 = 470;
 const PARAM_TRACK_VOICES_BASE: u32 = 480;
-// Character effects: 4 fx per track. On flags at base + track*4 + fx; params at
-// base + track*16 + fx*4 + param. Kept clear of the LFO bases (490/500/510).
+// Legacy character-FX params from the pre-chain format. Load-only.
 const PARAM_TRACK_FX_ON_BASE: u32 = 600;
 const PARAM_TRACK_FX_PARAM_BASE: u32 = 620;
-// Number of character effects and params each, mirrored from the UI FX_SLOTS
+const PARAM_TRACK_FX_CHAIN_KIND_BASE: u32 = 700;
+const PARAM_TRACK_FX_CHAIN_INSTANCE_BASE: u32 = 730;
+const PARAM_TRACK_FX_CHAIN_ON_BASE: u32 = 760;
+const PARAM_TRACK_FX_CHAIN_PARAM_BASE: u32 = 800;
 const FX_COUNT: usize = 4;
 const FX_PARAMS: usize = 4;
+const FX_DEFAULTS: [[f32; FX_PARAMS]; FX_COUNT] = [
+    [2.0, 0.7, 1.0, 0.0],
+    [0.5, 1.0, 0.5, 0.5],
+    [0.3, 2.0, 0.5, 0.5],
+    [0.8, 4.0, 0.5, 0.0],
+];
 const PARAM_TRACK_LFO_RATE_BASE: u32 = 490;
 const PARAM_TRACK_LFO_DEPTH_BASE: u32 = 500;
 const PARAM_TRACK_LFO_DEST_BASE: u32 = 510;
 
 // Reserved clip id for a track's step grid, kept clear of arrangement clip ids
 const STEP_CLIP_ID: u64 = u64::MAX;
+
+// Reserved clip-id block for session-launcher slots, just below STEP_CLIP_ID.
+// Scene s of a track encodes as SESSION_CLIP_ID_BASE + s.
+const SESSION_CLIP_ID_BASE: u64 = u64::MAX - crate::engine::MAX_SCENES as u64 - 1;
+// Fixed length of a session-launcher clip in beats (mirrors studio SESSION_CLIP_LEN)
+const SESSION_SLOT_LEN_BEATS: f32 = 4.0;
+
+// Scene index if `id` falls in the reserved session-slot block, else None
+fn session_scene_of(id: u64) -> Option<u8> {
+    let scenes = crate::engine::MAX_SCENES as u64;
+    if id >= SESSION_CLIP_ID_BASE && id < SESSION_CLIP_ID_BASE + scenes {
+        Some((id - SESSION_CLIP_ID_BASE) as u8)
+    } else {
+        None
+    }
+}
 
 // Tick grid: musical ticks per beat, and per step (sixteenths)
 const TICKS_PER_BEAT: u64 = 960;
@@ -85,6 +113,23 @@ pub struct ClipSession {
     pub start_beats: f32,
     pub len_beats: f32,
     pub notes: Vec<NoteSession>,
+}
+
+// One saved session-launcher slot: a scene index and its looping notes. Slot
+// length is the fixed SESSION_SLOT_LEN_BEATS, so it is not stored per slot.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SessionSlotSession {
+    pub scene: u8,
+    pub notes: Vec<NoteSession>,
+}
+
+// One ordered character-FX instance in a saved track chain
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FxSession {
+    pub kind: FxKind,
+    pub instance: u8,
+    pub on: bool,
+    pub params: [f32; FX_PARAMS],
 }
 
 // One track's persisted state: its full instrument patch, its effects chain,
@@ -114,9 +159,8 @@ pub struct TrackSession {
     pub lfo_rate_hz: f32,
     pub lfo_depth: f32,
     pub lfo_dest: LfoDestination,
-    // Character effects (distortion/phaser/flanger/chorus): bypass + params
-    pub fx_on: [bool; FX_COUNT],
-    pub fx_param: [[f32; FX_PARAMS]; FX_COUNT],
+    // Ordered duplicate-capable character effects; authoritative persisted FX state
+    pub fx_chain: Vec<FxSession>,
     // Amp/filter ADSR macros [attack, decay, sustain, release]
     pub amp_env: [f32; 4],
     pub filter_env: [f32; 4],
@@ -124,14 +168,19 @@ pub struct TrackSession {
     pub gates: Vec<(u8, u8)>,
     // Placed timeline clips on this track
     pub clips: Vec<ClipSession>,
+    // Session-launcher slots (scene + looping notes) for this track
+    pub session_slots: Vec<SessionSlotSession>,
 }
 
-// The whole studio session, independent of the on-disk encoding. Only the
-// transport tempo and master gain are global; everything else is per-track.
+// The whole studio session, independent of the on-disk encoding. The transport
+// tempo, master gain, and arrangement loop are global; everything else per-track.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StudioSession {
     pub bpm: f32,
     pub gain: f32,
+    pub loop_enabled: bool,
+    pub loop_start_beats: f32,
+    pub loop_end_beats: f32,
     pub tracks: Vec<TrackSession>,
 }
 
@@ -141,11 +190,26 @@ impl StudioSession {
         let mut project = ProjectFile::new("Geist Studio Session");
         project.meta.tempo_bpm = self.bpm as f64;
 
-        // Macros node: master gain plus a full per-track patch and fx block
-        let mut params = vec![ParamValue {
-            id: PARAM_GAIN,
-            value: self.gain,
-        }];
+        // Macros node: master gain, the global loop region, plus a full per-track
+        // patch and fx block
+        let mut params = vec![
+            ParamValue {
+                id: PARAM_GAIN,
+                value: self.gain,
+            },
+            ParamValue {
+                id: PARAM_LOOP_ENABLED,
+                value: if self.loop_enabled { 1.0 } else { 0.0 },
+            },
+            ParamValue {
+                id: PARAM_LOOP_START,
+                value: self.loop_start_beats,
+            },
+            ParamValue {
+                id: PARAM_LOOP_END,
+                value: self.loop_end_beats,
+            },
+        ];
         for (track, state) in self.tracks.iter().enumerate() {
             let t = track as u32;
             params.push(ParamValue {
@@ -228,18 +292,27 @@ impl StudioSession {
                 id: PARAM_TRACK_LFO_DEST_BASE + t,
                 value: lfo_dest_to_f32(state.lfo_dest),
             });
-            for fx in 0..FX_COUNT {
+            for (slot, fx) in state.fx_chain.iter().take(FX_CHAIN_MAX).enumerate() {
+                let s = slot as u32;
                 params.push(ParamValue {
-                    id: PARAM_TRACK_FX_ON_BASE + t * FX_COUNT as u32 + fx as u32,
-                    value: bool_to_f32(state.fx_on[fx]),
+                    id: PARAM_TRACK_FX_CHAIN_KIND_BASE + t * FX_CHAIN_MAX as u32 + s,
+                    value: fx_kind_to_f32(fx.kind),
+                });
+                params.push(ParamValue {
+                    id: PARAM_TRACK_FX_CHAIN_INSTANCE_BASE + t * FX_CHAIN_MAX as u32 + s,
+                    value: fx.instance as f32,
+                });
+                params.push(ParamValue {
+                    id: PARAM_TRACK_FX_CHAIN_ON_BASE + t * FX_CHAIN_MAX as u32 + s,
+                    value: bool_to_f32(fx.on),
                 });
                 for p in 0..FX_PARAMS {
                     params.push(ParamValue {
-                        id: PARAM_TRACK_FX_PARAM_BASE
-                            + t * (FX_COUNT * FX_PARAMS) as u32
-                            + (fx * FX_PARAMS) as u32
+                        id: PARAM_TRACK_FX_CHAIN_PARAM_BASE
+                            + t * (FX_CHAIN_MAX * FX_PARAMS) as u32
+                            + (slot * FX_PARAMS) as u32
                             + p as u32,
-                        value: state.fx_param[fx][p],
+                        value: fx.params[p],
                     });
                 }
             }
@@ -302,6 +375,29 @@ impl StudioSession {
                     kind: ClipKind::Midi { notes },
                 });
             }
+            // Session-launcher slots ride along as reserved-id MIDI clips
+            for slot in &state.session_slots {
+                if slot.scene as usize >= crate::engine::MAX_SCENES {
+                    continue;
+                }
+                let notes = slot
+                    .notes
+                    .iter()
+                    .map(|note| NoteEntry {
+                        pitch: note.pitch,
+                        velocity: vel_to_u8(note.velocity),
+                        start_ticks: beats_to_ticks(note.start_beats),
+                        length_ticks: beats_to_ticks(note.len_beats),
+                        channel: 0,
+                    })
+                    .collect();
+                clips.push(ClipEntry {
+                    id: SESSION_CLIP_ID_BASE + slot.scene as u64,
+                    start_ticks: 0,
+                    length_ticks: beats_to_ticks(SESSION_SLOT_LEN_BEATS),
+                    kind: ClipKind::Midi { notes },
+                });
+            }
             project.tracks.push(TrackEntry {
                 id: index as u64,
                 name: format!("Track {}", index + 1),
@@ -327,6 +423,15 @@ impl StudioSession {
             for param in &node.params {
                 if param.id == PARAM_GAIN {
                     session.gain = param.value;
+                }
+                if param.id == PARAM_LOOP_ENABLED {
+                    session.loop_enabled = param.value >= 0.5;
+                }
+                if param.id == PARAM_LOOP_START {
+                    session.loop_start_beats = param.value;
+                }
+                if param.id == PARAM_LOOP_END {
+                    session.loop_end_beats = param.value;
                 }
             }
         }
@@ -406,20 +511,74 @@ impl StudioSession {
                 if let Some(v) = read(PARAM_TRACK_LFO_DEST_BASE) {
                     state.lfo_dest = lfo_dest_from_f32(v);
                 }
+                let mut legacy_fx_on = [false; FX_COUNT];
+                let mut legacy_fx_param = FX_DEFAULTS;
+                let mut legacy_fx_seen = false;
                 for fx in 0..FX_COUNT {
                     let on_id = PARAM_TRACK_FX_ON_BASE + t * FX_COUNT as u32 + fx as u32;
                     if let Some(param) = node.params.iter().find(|p| p.id == on_id) {
-                        state.fx_on[fx] = param.value >= 0.5;
+                        legacy_fx_on[fx] = param.value >= 0.5;
+                        legacy_fx_seen = true;
                     }
-                    for p in 0..FX_PARAMS {
+                    for (p, value) in legacy_fx_param[fx].iter_mut().enumerate() {
                         let id = PARAM_TRACK_FX_PARAM_BASE
                             + t * (FX_COUNT * FX_PARAMS) as u32
                             + (fx * FX_PARAMS) as u32
                             + p as u32;
                         if let Some(param) = node.params.iter().find(|p2| p2.id == id) {
-                            state.fx_param[fx][p] = param.value;
+                            *value = param.value;
+                            legacy_fx_seen = true;
                         }
                     }
+                }
+                let mut chain = Vec::new();
+                for slot in 0..FX_CHAIN_MAX {
+                    let s = slot as u32;
+                    let kind_id = PARAM_TRACK_FX_CHAIN_KIND_BASE + t * FX_CHAIN_MAX as u32 + s;
+                    let Some(kind) = node
+                        .params
+                        .iter()
+                        .find(|p| p.id == kind_id)
+                        .map(|p| fx_kind_from_f32(p.value))
+                    else {
+                        continue;
+                    };
+                    let instance_id =
+                        PARAM_TRACK_FX_CHAIN_INSTANCE_BASE + t * FX_CHAIN_MAX as u32 + s;
+                    let on_id = PARAM_TRACK_FX_CHAIN_ON_BASE + t * FX_CHAIN_MAX as u32 + s;
+                    let instance = node
+                        .params
+                        .iter()
+                        .find(|p| p.id == instance_id)
+                        .map(|p| p.value.round().clamp(0.0, u8::MAX as f32) as u8)
+                        .unwrap_or(0);
+                    let on = node
+                        .params
+                        .iter()
+                        .find(|p| p.id == on_id)
+                        .map(|p| p.value >= 0.5)
+                        .unwrap_or(false);
+                    let mut params = [0.0; FX_PARAMS];
+                    for (p, value) in params.iter_mut().enumerate() {
+                        let id = PARAM_TRACK_FX_CHAIN_PARAM_BASE
+                            + t * (FX_CHAIN_MAX * FX_PARAMS) as u32
+                            + (slot * FX_PARAMS) as u32
+                            + p as u32;
+                        if let Some(param) = node.params.iter().find(|p2| p2.id == id) {
+                            *value = param.value;
+                        }
+                    }
+                    chain.push(FxSession {
+                        kind,
+                        instance,
+                        on,
+                        params,
+                    });
+                }
+                if !chain.is_empty() {
+                    state.fx_chain = chain;
+                } else if legacy_fx_seen {
+                    apply_legacy_fx_to_chain(&mut state.fx_chain, legacy_fx_on, legacy_fx_param);
                 }
                 for i in 0..4u32 {
                     let amp_id = PARAM_TRACK_AMP_ENV_BASE + t * 4 + i;
@@ -434,6 +593,7 @@ impl StudioSession {
             }
             state.clips.clear();
             state.gates.clear();
+            state.session_slots.clear();
             let base = base_midi(index);
             for clip in &entry.clips {
                 let ClipKind::Midi { notes } = &clip.kind else {
@@ -447,6 +607,20 @@ impl StudioSession {
                             state.gates.push((row, step));
                         }
                     }
+                } else if let Some(scene) = session_scene_of(clip.id) {
+                    let slot_notes = notes
+                        .iter()
+                        .map(|note| NoteSession {
+                            pitch: note.pitch,
+                            start_beats: ticks_to_beats(note.start_ticks),
+                            len_beats: ticks_to_beats(note.length_ticks),
+                            velocity: vel_to_f32(note.velocity),
+                        })
+                        .collect();
+                    state.session_slots.push(SessionSlotSession {
+                        scene,
+                        notes: slot_notes,
+                    });
                 } else {
                     let clip_notes = notes
                         .iter()
@@ -515,6 +689,65 @@ fn lfo_dest_from_f32(value: f32) -> LfoDestination {
         1 => LfoDestination::Pitch,
         2 => LfoDestination::Fm,
         _ => LfoDestination::Cutoff,
+    }
+}
+
+fn fx_kind_to_f32(kind: FxKind) -> f32 {
+    match kind {
+        FxKind::Distortion => 0.0,
+        FxKind::Phaser => 1.0,
+        FxKind::Flanger => 2.0,
+        FxKind::Chorus => 3.0,
+        FxKind::Eq => 4.0,
+        FxKind::Saturator => 5.0,
+    }
+}
+
+fn fx_kind_from_f32(value: f32) -> FxKind {
+    match value.round() as i32 {
+        1 => FxKind::Phaser,
+        2 => FxKind::Flanger,
+        3 => FxKind::Chorus,
+        4 => FxKind::Eq,
+        5 => FxKind::Saturator,
+        _ => FxKind::Distortion,
+    }
+}
+
+#[cfg(test)]
+fn default_fx_chain() -> Vec<FxSession> {
+    [
+        (FxKind::Distortion, FX_DEFAULTS[0]),
+        (FxKind::Phaser, FX_DEFAULTS[1]),
+        (FxKind::Flanger, FX_DEFAULTS[2]),
+        (FxKind::Chorus, FX_DEFAULTS[3]),
+    ]
+    .into_iter()
+    .map(|(kind, params)| FxSession {
+        kind,
+        instance: 0,
+        on: false,
+        params,
+    })
+    .collect()
+}
+
+fn apply_legacy_fx_to_chain(
+    chain: &mut [FxSession],
+    legacy_on: [bool; FX_COUNT],
+    legacy_params: [[f32; FX_PARAMS]; FX_COUNT],
+) {
+    for fx in chain.iter_mut().filter(|fx| fx.instance == 0) {
+        let index = match fx.kind {
+            FxKind::Distortion => 0,
+            FxKind::Phaser => 1,
+            FxKind::Flanger => 2,
+            FxKind::Chorus => 3,
+            // EQ and Saturator never existed in the legacy per-kind format
+            FxKind::Eq | FxKind::Saturator => continue,
+        };
+        fx.on = legacy_on[index];
+        fx.params = legacy_params[index];
     }
 }
 
@@ -588,12 +821,12 @@ mod tests {
             lfo_rate_hz: 2.0,
             lfo_depth: 0.0,
             lfo_dest: LfoDestination::Cutoff,
-            fx_on: [false; FX_COUNT],
-            fx_param: [[0.0; FX_PARAMS]; FX_COUNT],
+            fx_chain: default_fx_chain(),
             amp_env: [0.005, 0.1, 0.8, 0.3],
             filter_env: [0.01, 0.2, 0.3, 0.3],
             gates: Vec::new(),
             clips: Vec::new(),
+            session_slots: Vec::new(),
         }
     }
 
@@ -601,6 +834,9 @@ mod tests {
         StudioSession {
             bpm: 120.0,
             gain: 1.0,
+            loop_enabled: false,
+            loop_start_beats: 0.0,
+            loop_end_beats: 16.0,
             tracks: (0..NUM_TRACKS).map(|_| track_defaults()).collect(),
         }
     }
@@ -609,6 +845,9 @@ mod tests {
         let mut s = defaults();
         s.bpm = 140.0;
         s.gain = 0.7;
+        s.loop_enabled = true;
+        s.loop_start_beats = 4.0;
+        s.loop_end_beats = 12.0;
         // Each track gets a distinct patch + fx to prove per-track persistence
         s.tracks[0].level = 0.5;
         s.tracks[0].pan = -0.5;
@@ -634,10 +873,27 @@ mod tests {
         s.tracks[1].lfo_rate_hz = 5.5;
         s.tracks[1].lfo_depth = 0.75;
         s.tracks[1].lfo_dest = LfoDestination::Fm;
-        // Distortion on with custom params; chorus on, others off
-        s.tracks[1].fx_on = [true, false, false, true];
-        s.tracks[1].fx_param[0] = [6.0, 0.4, 0.8, 0.0];
-        s.tracks[1].fx_param[3] = [1.2, 5.0, 0.6, 0.0];
+        // Duplicate-capable chain is the authoritative character-FX state.
+        s.tracks[1].fx_chain = vec![
+            FxSession {
+                kind: FxKind::Distortion,
+                instance: 0,
+                on: true,
+                params: [6.0, 0.4, 0.8, 0.0],
+            },
+            FxSession {
+                kind: FxKind::Distortion,
+                instance: 1,
+                on: true,
+                params: [12.0, 0.2, 0.5, 0.0],
+            },
+            FxSession {
+                kind: FxKind::Chorus,
+                instance: 0,
+                on: true,
+                params: [1.2, 5.0, 0.6, 0.0],
+            },
+        ];
         s.tracks[1].filter_env = [0.05, 0.4, 0.2, 0.8];
         s.tracks[1].gates = vec![(0, 0), (2, 4), (5, 12)];
         // Velocity 1.0 maps cleanly through the 0..127 MIDI range
@@ -673,6 +929,30 @@ mod tests {
                 }],
             },
         ];
+        // Session-launcher slots: one empty (created, no notes) and one with notes
+        s.tracks[0].session_slots = vec![
+            SessionSlotSession {
+                scene: 0,
+                notes: vec![
+                    NoteSession {
+                        pitch: 48,
+                        start_beats: 0.0,
+                        len_beats: 1.0,
+                        velocity: 1.0,
+                    },
+                    NoteSession {
+                        pitch: 55,
+                        start_beats: 2.0,
+                        len_beats: 0.5,
+                        velocity: 1.0,
+                    },
+                ],
+            },
+            SessionSlotSession {
+                scene: 3,
+                notes: Vec::new(),
+            },
+        ];
         s
     }
 
@@ -684,6 +964,103 @@ mod tests {
         let loaded = load_from(&defaults(), &path).unwrap();
         std::fs::remove_file(&path).ok();
         assert_eq!(loaded, session);
+    }
+
+    #[test]
+    fn session_launcher_slots_round_trip() {
+        let session = sample();
+        let project = session.to_project();
+        let loaded = StudioSession::from_project(&project, &defaults());
+        // Track 0 had a slot at scene 0 (two notes) and an empty slot at scene 3
+        let slots = &loaded.tracks[0].session_slots;
+        assert_eq!(slots.len(), 2, "both created slots must persist");
+        assert_eq!(slots[0].scene, 0);
+        assert_eq!(slots[0].notes.len(), 2, "slot notes must persist");
+        assert_eq!(slots[1].scene, 3);
+        assert!(
+            slots[1].notes.is_empty(),
+            "an empty-but-created slot still persists"
+        );
+        // Session slots must not leak into arrangement clips or other tracks
+        assert!(loaded.tracks[1].session_slots.is_empty());
+        assert!(loaded.tracks[0].clips.is_empty());
+    }
+
+    #[test]
+    fn arrangement_loop_round_trips() {
+        let session = sample();
+        let project = session.to_project();
+        let loaded = StudioSession::from_project(&project, &defaults());
+        assert!(loaded.loop_enabled, "loop enable must persist");
+        assert_eq!(loaded.loop_start_beats, 4.0);
+        assert_eq!(loaded.loop_end_beats, 12.0);
+    }
+
+    #[test]
+    fn project_persists_character_fx_chain_without_legacy_parallel_state() {
+        let session = sample();
+        let project = session.to_project();
+        let macros = project
+            .graph
+            .nodes
+            .iter()
+            .find(|node| node.kind == MACROS_NODE_KIND)
+            .expect("macros node");
+
+        assert!(
+            macros.params.iter().any(|param| {
+                (PARAM_TRACK_FX_CHAIN_KIND_BASE..PARAM_TRACK_FX_CHAIN_INSTANCE_BASE)
+                    .contains(&param.id)
+            }),
+            "chain slot params should be persisted"
+        );
+        assert!(
+            !macros.params.iter().any(|param| {
+                (PARAM_TRACK_FX_ON_BASE..PARAM_TRACK_FX_PARAM_BASE).contains(&param.id)
+                    || (PARAM_TRACK_FX_PARAM_BASE..PARAM_TRACK_FX_CHAIN_KIND_BASE)
+                        .contains(&param.id)
+            }),
+            "legacy per-kind fx_on/fx_param params must not be written alongside fx_chain"
+        );
+    }
+
+    #[test]
+    fn legacy_per_kind_character_fx_params_load_into_default_chain() {
+        let defaults = defaults();
+        let mut project = defaults.to_project();
+        let macros = project
+            .graph
+            .nodes
+            .iter_mut()
+            .find(|node| node.kind == MACROS_NODE_KIND)
+            .expect("macros node");
+        macros.params.retain(|param| {
+            !(PARAM_TRACK_FX_CHAIN_KIND_BASE..PARAM_TRACK_FX_CHAIN_PARAM_BASE + 64)
+                .contains(&param.id)
+        });
+        let track = 1u32;
+        macros.params.push(ParamValue {
+            id: PARAM_TRACK_FX_ON_BASE + track * FX_COUNT as u32,
+            value: 1.0,
+        });
+        for (param, value) in [6.0, 0.4, 0.8, 0.0].into_iter().enumerate() {
+            macros.params.push(ParamValue {
+                id: PARAM_TRACK_FX_PARAM_BASE
+                    + track * (FX_COUNT * FX_PARAMS) as u32
+                    + param as u32,
+                value,
+            });
+        }
+
+        let loaded = StudioSession::from_project(&project, &defaults);
+        let distortion = loaded.tracks[track as usize]
+            .fx_chain
+            .iter()
+            .find(|fx| fx.kind == FxKind::Distortion && fx.instance == 0)
+            .expect("default distortion slot");
+
+        assert!(distortion.on);
+        assert_eq!(distortion.params, [6.0, 0.4, 0.8, 0.0]);
     }
 
     #[test]

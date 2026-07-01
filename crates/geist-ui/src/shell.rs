@@ -260,7 +260,7 @@ fn central(
 ) {
     match state.main_view() {
         MainView::Arrangement => {
-            views::arrangement::draw(ui, &mut session.timeline, &session.transport, intents)
+            views::arrangement::draw(ui, &mut session.timeline, &mut session.transport, intents)
         }
         MainView::Session => views::session::draw(ui, &mut session.session_grid, intents),
         MainView::Graph => views::node_graph::draw(ui, &mut session.graph, intents),

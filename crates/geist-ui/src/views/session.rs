@@ -21,6 +21,16 @@ const GAP: f32 = 4.0;
 const SCENE_W: f32 = 40.0;
 const HEADER_H: f32 = 20.0;
 
+// Launch quantization options, as (label, beats); 0 = immediate
+const QUANT_OPTIONS: [(&str, f32); 6] = [
+    ("Off", 0.0),
+    ("1/4", 1.0),
+    ("1/2", 2.0),
+    ("1 Bar", 4.0),
+    ("2 Bar", 8.0),
+    ("4 Bar", 16.0),
+];
+
 // Draw the session grid and apply selection, launch, stop, and create actions
 pub fn draw(ui: &mut egui::Ui, grid: &mut SessionGrid, intents: &mut Vec<CommandIntent>) {
     if grid.tracks == 0 || grid.scenes == 0 {
@@ -36,6 +46,11 @@ pub fn draw(ui: &mut egui::Ui, grid: &mut SessionGrid, intents: &mut Vec<Command
                 slot.queued = false;
             }
             intents.push(CommandIntent::new("session_stop_all"));
+        }
+        ui.separator();
+        ui.label(RichText::new("Quant").small().color(theme::TEXT_MUTED));
+        for (label, beats) in QUANT_OPTIONS {
+            ui.selectable_value(&mut grid.launch_quant, beats, label);
         }
     });
     ui.add_space(6.0);

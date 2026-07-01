@@ -32,6 +32,8 @@ define_id!(NodeId);
 define_id!(PortId);
 // Identifies an automatable/modulatable parameter
 define_id!(ParamId);
+// Identifies an internal or hosted device instance
+define_id!(DeviceId);
 // Identifies a clip in the timeline arena
 define_id!(ClipId);
 // Identifies a track in the arrangement

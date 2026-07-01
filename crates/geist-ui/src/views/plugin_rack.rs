@@ -32,9 +32,21 @@ enum RackEdit {
 
 // Draw the effects chain top-to-bottom with add/reorder/bypass/remove
 pub fn draw(ui: &mut egui::Ui, rack: &mut RackModel, intents: &mut Vec<CommandIntent>) {
-    if ui.button("+ Add Effect").clicked() {
-        intents.push(CommandIntent::new("add_effect"));
-    }
+    ui.menu_button("+ Add Effect", |ui| {
+        for name in [
+            "Distortion",
+            "Phaser",
+            "Flanger",
+            "Chorus",
+            "EQ",
+            "Saturator",
+        ] {
+            if ui.button(name).clicked() {
+                intents.push(CommandIntent::new(format!("add_effect:{name}")));
+                ui.close();
+            }
+        }
+    });
     ui.add_space(6.0);
 
     let len = rack.slots.len();
@@ -49,22 +61,33 @@ pub fn draw(ui: &mut egui::Ui, rack: &mut RackModel, intents: &mut Vec<CommandIn
                     ui.label(RichText::new("⠿").color(theme::TEXT_MUTED));
 
                     let selected = rack.selected == Some(index);
-                    let name_resp =
-                        ui.selectable_label(selected, RichText::new(&rack.slots[index].name).strong());
+                    let name_resp = ui.selectable_label(
+                        selected,
+                        RichText::new(&rack.slots[index].name).strong(),
+                    );
                     if name_resp.clicked() {
                         rack.selected = Some(index);
                     }
                     // Right-click the device header: bypass, reorder, or remove
                     name_resp.context_menu(|ui| {
                         let bypassed = rack.slots[index].bypassed;
-                        if ui.button(if bypassed { "Un-bypass" } else { "Bypass" }).clicked() {
+                        if ui
+                            .button(if bypassed { "Un-bypass" } else { "Bypass" })
+                            .clicked()
+                        {
                             rack.slots[index].bypassed = !bypassed;
                             intents.push(CommandIntent::new("toggle_bypass"));
                         }
-                        if ui.add_enabled(index > 0, egui::Button::new("Move up")).clicked() {
+                        if ui
+                            .add_enabled(index > 0, egui::Button::new("Move up"))
+                            .clicked()
+                        {
                             edit = Some(RackEdit::Move(index, index - 1));
                         }
-                        if ui.add_enabled(index + 1 < len, egui::Button::new("Move down")).clicked() {
+                        if ui
+                            .add_enabled(index + 1 < len, egui::Button::new("Move down"))
+                            .clicked()
+                        {
                             edit = Some(RackEdit::Move(index, index + 1));
                         }
                         if ui.button("Remove").clicked() {
@@ -81,10 +104,16 @@ pub fn draw(ui: &mut egui::Ui, rack: &mut RackModel, intents: &mut Vec<CommandIn
                         if ui.small_button("✕").clicked() {
                             edit = Some(RackEdit::Remove(index));
                         }
-                        if ui.add_enabled(index + 1 < len, egui::Button::new("▼").small()).clicked() {
+                        if ui
+                            .add_enabled(index + 1 < len, egui::Button::new("▼").small())
+                            .clicked()
+                        {
                             edit = Some(RackEdit::Move(index, index + 1));
                         }
-                        if ui.add_enabled(index > 0, egui::Button::new("▲").small()).clicked() {
+                        if ui
+                            .add_enabled(index > 0, egui::Button::new("▲").small())
+                            .clicked()
+                        {
                             edit = Some(RackEdit::Move(index, index - 1));
                         }
                         if ui

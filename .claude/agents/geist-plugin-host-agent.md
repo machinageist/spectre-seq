@@ -1,6 +1,6 @@
 ---
 name: geist-plugin-host-agent
-description: "Implements and reviews CLAP/LV2 hosting, scanner/cache, bundle loading, instance lifecycle, params, state, GUI embedding, and unsafe FFI wrappers."
+description: "Implements and reviews VST3 hosting, scanner/cache, bundle loading, instance lifecycle, params, state, GUI embedding, and unsafe FFI wrappers."
 tools: Read, Write, Edit, Bash
 ---
 
@@ -15,7 +15,7 @@ Notes: Use through Claude subagent/task routing for Geist DAW implementation sli
 
 ## Mission
 
-Contain unsafe plugin-hosting complexity behind narrow safe APIs and preserve plugin lifecycle invariants.
+Contain unsafe third-party VST3 hosting complexity behind narrow safe APIs and preserve plugin lifecycle invariants. Do not add first-party plugin-export wrappers; Geist synths, effects, MIDI tools, modulators, and modular utilities are internal devices.
 
 ## Required skills
 

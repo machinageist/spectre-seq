@@ -9,7 +9,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -41,6 +41,27 @@ pub enum FxKind {
     Phaser,
     Flanger,
     Chorus,
+    Eq,
+    Saturator,
+}
+
+// Maximum number of live character effects in one ordered per-track chain.
+pub const FX_CHAIN_MAX: usize = 8;
+
+// One addressable character-FX instance in the ordered chain.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct FxSlot {
+    pub kind: FxKind,
+    pub instance: u8,
+}
+
+impl FxSlot {
+    pub const fn empty() -> Self {
+        Self {
+            kind: FxKind::Distortion,
+            instance: u8::MAX,
+        }
+    }
 }
 
 // One instruction from the UI thread to the audio thread
@@ -69,6 +90,12 @@ pub enum EngineCommand {
     Stop,
     // Set the transport tempo in beats per minute
     SetBpm(f32),
+    // Set or clear the arrangement loop region, in beats
+    SetLoop {
+        enabled: bool,
+        start_beats: f32,
+        end_beats: f32,
+    },
     // Set a track's base filter cutoff in hertz
     SetCutoff {
         track: u8,
@@ -171,16 +198,24 @@ pub enum EngineCommand {
         track: u8,
         dest: LfoDestination,
     },
-    // Toggle one of a track's character/modulation effects
+    // Set the ordered character-FX slots for one track
+    SetFxChain {
+        track: u8,
+        len: u8,
+        slots: [FxSlot; FX_CHAIN_MAX],
+    },
+    // Toggle one addressable character/modulation effect instance
     SetFxOn {
         track: u8,
         fx: FxKind,
+        instance: u8,
         on: bool,
     },
-    // Set one parameter (addressed by index) of a track's character effect
+    // Set one parameter (addressed by index) of one character effect instance
     SetFxParam {
         track: u8,
         fx: FxKind,
+        instance: u8,
         param: u8,
         value: f32,
     },
@@ -214,6 +249,10 @@ pub enum EngineCommand {
         scene: u8,
         pitch: u8,
         start_beats: f32,
+    },
+    // Set the session launch quantization in beats (0 = launch immediately)
+    SetLaunchQuant {
+        beats: f32,
     },
     // Set a track's amplitude ADSR (attack/decay/release seconds, sustain 0..1)
     SetAmpEnv {
@@ -374,6 +413,9 @@ impl BeatClock {
     }
 }
 
+// Sentinel for "no session slot playing" in the per-track scene readback
+pub const SCENE_NONE: u8 = u8::MAX;
+
 // UI-thread handle: sends commands, reads the meters/clock, and drains the scope
 pub struct EngineControl {
     commands: Producer<EngineCommand>,
@@ -382,6 +424,8 @@ pub struct EngineControl {
     track_meters: Arc<Vec<LevelMeter>>,
     // Latest transport beat position for the UI playhead
     position: Arc<BeatClock>,
+    // Currently playing session scene per track (SCENE_NONE = none)
+    session_scene: Arc<Vec<AtomicU8>>,
     scope: Consumer<f32>,
     // Recorded audio buffers handed to the engine out-of-band
     assets: Producer<AudioAsset>,
@@ -395,6 +439,7 @@ pub struct EngineSink {
     pub meter: Arc<LevelMeter>,
     pub track_meters: Arc<Vec<LevelMeter>>,
     pub position: Arc<BeatClock>,
+    pub session_scene: Arc<Vec<AtomicU8>>,
     pub assets: Consumer<AudioAsset>,
     scope: Producer<f32>,
 }
@@ -411,12 +456,18 @@ pub fn control_plane(num_tracks: usize) -> (EngineControl, EngineSink) {
             .collect::<Vec<_>>(),
     );
     let position = Arc::new(BeatClock::new());
+    let session_scene = Arc::new(
+        (0..num_tracks)
+            .map(|_| AtomicU8::new(SCENE_NONE))
+            .collect::<Vec<_>>(),
+    );
     (
         EngineControl {
             commands: command_tx,
             meter: Arc::clone(&meter),
             track_meters: Arc::clone(&track_meters),
             position: Arc::clone(&position),
+            session_scene: Arc::clone(&session_scene),
             scope: scope_rx,
             assets: asset_tx,
             scope_view: Vec::with_capacity(SCOPE_VIEW_LEN),
@@ -426,6 +477,7 @@ pub fn control_plane(num_tracks: usize) -> (EngineControl, EngineSink) {
             meter,
             track_meters,
             position,
+            session_scene,
             assets: asset_rx,
             scope: scope_tx,
         },
@@ -472,6 +524,12 @@ impl EngineControl {
     // Latest transport position in beats for the UI playhead
     pub fn position_beats(&self) -> f64 {
         self.position.read()
+    }
+
+    // Currently playing session scene for a track, if any
+    pub fn playing_scene(&self, track: usize) -> Option<usize> {
+        let raw = self.session_scene.get(track)?.load(Ordering::Relaxed);
+        (raw != SCENE_NONE).then_some(raw as usize)
     }
 
     // Drain newly published scope samples into the rolling display window

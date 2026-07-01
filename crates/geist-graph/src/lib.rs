@@ -24,7 +24,7 @@ pub mod prelude {
     pub use crate::channel::{param_channel, ParamConsumer, ParamProducer};
     pub use crate::edge::{Edge, PortSpec};
     pub use crate::graph::Graph;
-    pub use crate::node::AudioNode;
+    pub use crate::node::{AudioDevice, AudioNode};
     pub use crate::nodes::{DelayNode, MeterCell, MixerNode, MonitorNode, PassthroughNode};
     pub use crate::process_list::{compile, ChannelSource, Executor, NodeStep, ProcessPlan};
     pub use crate::swap::{graph_swap, ActiveGraph, GraphPublisher};

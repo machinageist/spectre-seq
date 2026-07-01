@@ -137,12 +137,26 @@ impl ParamSpec {
 }
 
 // One effect in the visible, modifiable chain
+const CHARACTER_INSTANCE_POOL: u8 = 4;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectKind {
+    Distortion,
+    Phaser,
+    Flanger,
+    Chorus,
+    Eq,
+    Saturator,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct EffectSlot {
     pub name: String,
     pub bypassed: bool,
     pub wet: f32,
     pub params: Vec<ParamSpec>,
+    // Stable character-FX identity; fixed synth/delay/reverb slots leave this empty
+    pub character: Option<(EffectKind, u8)>,
 }
 
 impl EffectSlot {
@@ -152,7 +166,13 @@ impl EffectSlot {
             bypassed: false,
             wet: 1.0,
             params,
+            character: None,
         }
+    }
+
+    pub fn character(mut self, kind: EffectKind, instance: u8) -> Self {
+        self.character = Some((kind, instance));
+        self
     }
 }
 
@@ -195,6 +215,16 @@ impl RackModel {
 
     pub fn push(&mut self, slot: EffectSlot) {
         self.slots.push(slot);
+    }
+
+    // First unused instance id for this character effect kind
+    pub fn next_character_instance(&self, kind: EffectKind) -> Option<u8> {
+        (0..CHARACTER_INSTANCE_POOL).find(|&instance| {
+            !self
+                .slots
+                .iter()
+                .any(|slot| slot.character == Some((kind, instance)))
+        })
     }
 }
 
@@ -247,11 +277,64 @@ pub struct Note {
     pub velocity: f32,
 }
 
+// Grid divisions offered in the editors, as (label, beats-per-division). 0 = Off.
+pub const GRID_OPTIONS: [(&str, f32); 9] = [
+    ("Off", 0.0),
+    ("1/1", 4.0),
+    ("1/2", 2.0),
+    ("1/4", 1.0),
+    ("1/8", 0.5),
+    ("1/16", 0.25),
+    ("1/32", 0.125),
+    ("1/8T", 1.0 / 3.0),
+    ("1/16T", 1.0 / 6.0),
+];
+
+// Snap a beat position to the nearest grid division; grid <= 0 means no snap
+pub fn snap_beat(beat: f32, grid: f32) -> f32 {
+    if grid <= 0.0 {
+        beat
+    } else {
+        (beat / grid).round() * grid
+    }
+}
+
+// Snap a beat position down to the grid division at or below it
+pub fn floor_beat(beat: f32, grid: f32) -> f32 {
+    if grid <= 0.0 {
+        beat
+    } else {
+        (beat / grid).floor() * grid
+    }
+}
+
+// Quantize every note's start to the grid (a no-op when the grid is off)
+pub fn quantize_notes(notes: &mut [Note], grid: f32) {
+    if grid <= 0.0 {
+        return;
+    }
+    for note in notes.iter_mut() {
+        note.start_beats = snap_beat(note.start_beats, grid).max(0.0);
+    }
+}
+
 // A piano-roll pattern of notes over a number of beats
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PianoRollModel {
     pub notes: Vec<Note>,
     pub length_beats: f32,
+    // Editing grid in beats per division (0 = off); drives snap + gridlines
+    pub grid_div: f32,
+}
+
+impl Default for PianoRollModel {
+    fn default() -> Self {
+        Self {
+            notes: Vec::new(),
+            length_beats: 16.0,
+            grid_div: 0.25,
+        }
+    }
 }
 
 impl PianoRollModel {
@@ -291,13 +374,27 @@ pub struct Lane {
 }
 
 // The arrangement timeline: lanes and clips over beats, plus the selected clip
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TimelineModel {
     pub lanes: Vec<Lane>,
     pub clips: Vec<Clip>,
     pub length_beats: f32,
     // Index into `clips` of the selected clip, if any (the piano roll edits it)
     pub selected: Option<usize>,
+    // Arrangement grid in beats per division (0 = off); drives snap + gridlines
+    pub grid_div: f32,
+}
+
+impl Default for TimelineModel {
+    fn default() -> Self {
+        Self {
+            lanes: Vec::new(),
+            clips: Vec::new(),
+            length_beats: 0.0,
+            selected: None,
+            grid_div: 1.0,
+        }
+    }
 }
 
 impl TimelineModel {
@@ -385,7 +482,12 @@ pub struct StepPattern {
 
 impl StepPattern {
     pub fn new(rows: usize, steps: usize, base_midi: u8) -> Self {
-        Self { rows, steps, base_midi, cells: vec![false; rows * steps] }
+        Self {
+            rows,
+            steps,
+            base_midi,
+            cells: vec![false; rows * steps],
+        }
     }
 
     // Gate state at (row, step); false for out-of-range indices
@@ -450,6 +552,8 @@ pub struct SessionGrid {
     pub slots: Vec<SessionSlot>,
     // Selected slot index (scene * tracks + track), if any
     pub selected: Option<usize>,
+    // Launch quantization in beats (0 = immediate)
+    pub launch_quant: f32,
 }
 
 impl SessionGrid {
@@ -460,6 +564,7 @@ impl SessionGrid {
             scenes,
             slots: vec![SessionSlot::default(); tracks * scenes],
             selected: None,
+            launch_quant: 4.0,
         }
     }
 
@@ -519,7 +624,10 @@ impl SessionModel {
         let mut rack = RackModel::default();
         rack.push(EffectSlot::new(
             "Saturator",
-            vec![ParamSpec::new("Drive", 0.4, 0.0, 1.0), ParamSpec::new("Tone", 0.6, 0.0, 1.0)],
+            vec![
+                ParamSpec::new("Drive", 0.4, 0.0, 1.0),
+                ParamSpec::new("Tone", 0.6, 0.0, 1.0),
+            ],
         ));
         rack.push(EffectSlot::new(
             "Delay",
@@ -530,7 +638,10 @@ impl SessionModel {
         ));
         rack.push(EffectSlot::new(
             "Reverb",
-            vec![ParamSpec::new("Mix", 0.3, 0.0, 1.0), ParamSpec::new("Size", 0.7, 0.0, 1.0)],
+            vec![
+                ParamSpec::new("Mix", 0.3, 0.0, 1.0),
+                ParamSpec::new("Size", 0.7, 0.0, 1.0),
+            ],
         ));
         rack.selected = Some(0);
 
@@ -540,34 +651,68 @@ impl SessionModel {
                     id: 1,
                     name: "Wavetable".into(),
                     pos: (40.0, 60.0),
-                    inputs: vec![Port { name: "Pitch".into(), kind: SignalKind::Note }],
-                    outputs: vec![Port { name: "Out".into(), kind: SignalKind::Audio }],
+                    inputs: vec![Port {
+                        name: "Pitch".into(),
+                        kind: SignalKind::Note,
+                    }],
+                    outputs: vec![Port {
+                        name: "Out".into(),
+                        kind: SignalKind::Audio,
+                    }],
                 },
                 GraphNode {
                     id: 2,
                     name: "Filter".into(),
                     pos: (260.0, 60.0),
                     inputs: vec![
-                        Port { name: "In".into(), kind: SignalKind::Audio },
-                        Port { name: "Cutoff".into(), kind: SignalKind::Cv },
+                        Port {
+                            name: "In".into(),
+                            kind: SignalKind::Audio,
+                        },
+                        Port {
+                            name: "Cutoff".into(),
+                            kind: SignalKind::Cv,
+                        },
                     ],
-                    outputs: vec![Port { name: "Out".into(), kind: SignalKind::Audio }],
+                    outputs: vec![Port {
+                        name: "Out".into(),
+                        kind: SignalKind::Audio,
+                    }],
                 },
                 GraphNode {
                     id: 3,
                     name: "Output".into(),
                     pos: (480.0, 60.0),
-                    inputs: vec![Port { name: "In".into(), kind: SignalKind::Audio }],
+                    inputs: vec![Port {
+                        name: "In".into(),
+                        kind: SignalKind::Audio,
+                    }],
                     outputs: vec![],
                 },
             ],
             cables: vec![
-                Cable { from_node: 1, from_port: 0, to_node: 2, to_port: 0, kind: SignalKind::Audio },
-                Cable { from_node: 2, from_port: 0, to_node: 3, to_port: 0, kind: SignalKind::Audio },
+                Cable {
+                    from_node: 1,
+                    from_port: 0,
+                    to_node: 2,
+                    to_port: 0,
+                    kind: SignalKind::Audio,
+                },
+                Cable {
+                    from_node: 2,
+                    from_port: 0,
+                    to_node: 3,
+                    to_port: 0,
+                    kind: SignalKind::Audio,
+                },
             ],
         };
 
-        let mut piano = PianoRollModel { notes: Vec::new(), length_beats: 16.0 };
+        let mut piano = PianoRollModel {
+            notes: Vec::new(),
+            length_beats: 16.0,
+            ..Default::default()
+        };
         for (i, pitch) in [60u8, 64, 67, 72].iter().enumerate() {
             piano.add(Note {
                 pitch: *pitch,
@@ -579,17 +724,45 @@ impl SessionModel {
 
         let timeline = TimelineModel {
             lanes: vec![
-                Lane { name: "Drums".into() },
-                Lane { name: "Bass".into() },
-                Lane { name: "Lead".into() },
+                Lane {
+                    name: "Drums".into(),
+                },
+                Lane {
+                    name: "Bass".into(),
+                },
+                Lane {
+                    name: "Lead".into(),
+                },
             ],
             clips: vec![
-                Clip { id: 1, lane: 0, name: "Beat".into(), start_beats: 0.0, len_beats: 8.0, kind: SignalKind::Audio },
-                Clip { id: 2, lane: 1, name: "Bassline".into(), start_beats: 0.0, len_beats: 16.0, kind: SignalKind::Note },
-                Clip { id: 3, lane: 2, name: "Hook".into(), start_beats: 4.0, len_beats: 8.0, kind: SignalKind::Note },
+                Clip {
+                    id: 1,
+                    lane: 0,
+                    name: "Beat".into(),
+                    start_beats: 0.0,
+                    len_beats: 8.0,
+                    kind: SignalKind::Audio,
+                },
+                Clip {
+                    id: 2,
+                    lane: 1,
+                    name: "Bassline".into(),
+                    start_beats: 0.0,
+                    len_beats: 16.0,
+                    kind: SignalKind::Note,
+                },
+                Clip {
+                    id: 3,
+                    lane: 2,
+                    name: "Hook".into(),
+                    start_beats: 4.0,
+                    len_beats: 8.0,
+                    kind: SignalKind::Note,
+                },
             ],
             length_beats: 32.0,
             selected: None,
+            grid_div: 1.0,
         };
 
         // A two-track step sequencer; track 0 carries a four-on-the-floor kick
@@ -601,7 +774,10 @@ impl SessionModel {
         for (i, step) in [0usize, 3, 6, 10, 12].into_iter().enumerate() {
             lead.set(i + 2, step, true);
         }
-        let step_seq = StepSequencerModel { tracks: vec![kick, lead], selected: 0 };
+        let step_seq = StepSequencerModel {
+            tracks: vec![kick, lead],
+            selected: 0,
+        };
 
         let browser = BrowserModel {
             items: vec![
@@ -647,6 +823,16 @@ impl SessionModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grid_snapping_rounds_and_floors() {
+        assert_eq!(snap_beat(0.30, 0.25), 0.25);
+        assert_eq!(snap_beat(0.40, 0.25), 0.5);
+        assert_eq!(floor_beat(0.90, 0.25), 0.75);
+        // Grid off (0) is a passthrough
+        assert_eq!(snap_beat(1.7, 0.0), 1.7);
+        assert_eq!(floor_beat(1.3, 0.0), 1.3);
+    }
 
     #[test]
     fn solo_gates_audibility() {
@@ -695,9 +881,36 @@ mod tests {
     }
 
     #[test]
+    fn rack_allocates_duplicate_character_instances() {
+        let mut rack = RackModel::default();
+        rack.push(EffectSlot::new("Distortion", vec![]).character(EffectKind::Distortion, 0));
+        rack.push(EffectSlot::new("Distortion", vec![]).character(EffectKind::Distortion, 1));
+        rack.push(EffectSlot::new("Chorus", vec![]).character(EffectKind::Chorus, 0));
+
+        assert_eq!(
+            rack.next_character_instance(EffectKind::Distortion),
+            Some(2)
+        );
+        assert_eq!(rack.next_character_instance(EffectKind::Chorus), Some(1));
+
+        rack.push(EffectSlot::new("Distortion", vec![]).character(EffectKind::Distortion, 2));
+        rack.push(EffectSlot::new("Distortion", vec![]).character(EffectKind::Distortion, 3));
+        assert_eq!(rack.next_character_instance(EffectKind::Distortion), None);
+    }
+
+    #[test]
     fn piano_remove_finds_covering_note() {
-        let mut roll = PianoRollModel { notes: vec![], length_beats: 8.0 };
-        roll.add(Note { pitch: 60, start_beats: 1.0, len_beats: 2.0, velocity: 1.0 });
+        let mut roll = PianoRollModel {
+            notes: vec![],
+            length_beats: 8.0,
+            ..Default::default()
+        };
+        roll.add(Note {
+            pitch: 60,
+            start_beats: 1.0,
+            len_beats: 2.0,
+            velocity: 1.0,
+        });
         assert!(!roll.remove_at(60, 0.5));
         assert!(roll.remove_at(60, 2.0));
         assert!(roll.notes.is_empty());
@@ -728,9 +941,15 @@ mod tests {
             selected: None,
         };
         assert_eq!(model.matches(), vec![0]);
-        let all = BrowserModel { query: String::new(), ..model.clone() };
+        let all = BrowserModel {
+            query: String::new(),
+            ..model.clone()
+        };
         assert_eq!(all.matches().len(), 2);
-        let by_category = BrowserModel { query: "instr".into(), ..model };
+        let by_category = BrowserModel {
+            query: "instr".into(),
+            ..model
+        };
         assert_eq!(by_category.matches(), vec![1]);
     }
 }

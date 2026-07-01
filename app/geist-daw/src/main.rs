@@ -14,6 +14,7 @@ mod engine;
 mod fx;
 mod graph_view;
 mod gui;
+mod history;
 mod init;
 mod project;
 mod recorder;

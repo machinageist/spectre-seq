@@ -250,9 +250,9 @@ Must expose:
 - inline important parameters,
 - route health and latency markers.
 
-### Plugin rack
+### Device chain
 
-Purpose: edit a selected chain without losing context.
+Purpose: edit a selected native/VST device chain without losing context.
 
 Default feel: stacked semantic modules with focused controls.
 
@@ -261,7 +261,7 @@ Must expose:
 - bypass,
 - wet/dry where applicable,
 - key parameters,
-- open full plugin UI as optional detail,
+- open full VST editor UI as optional detail when a third-party plugin provides one,
 - pin/favorite controls into the main surface.
 
 ### Modulation

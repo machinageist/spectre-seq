@@ -22,7 +22,7 @@ The UI renders project state and emits commands. It does not own DAW truth.
 - Project/audio state remains outside UI widgets.
 - Widgets emit commands; app layer validates and applies them.
 - Metering consumes lock-free snapshots from audio side.
-- Expensive waveform/plugin scans run outside the frame loop.
+- Expensive waveform/VST scans run outside the frame loop.
 - Renderer trait keeps egui replaceable by future wgpu renderer.
 
 ## Implementation order
@@ -32,7 +32,7 @@ The UI renders project state and emits commands. It does not own DAW truth.
 3. Implement egui renderer shell.
 4. Build mixer view first.
 5. Build node graph view second.
-6. Build piano roll, arrangement, plugin rack, browser, modulation views.
+6. Build piano roll, arrangement, device chain/rack, browser, modulation views.
 7. Build reusable widgets: knob, fader, meter, cable, waveform, piano.
 8. Add screenshot/manual testing notes when automated UI tests are not practical.
 

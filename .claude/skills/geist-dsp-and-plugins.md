@@ -1,20 +1,20 @@
 ---
 name: geist-dsp-and-plugins
-description: "Load when implementing or reviewing `geist-dsp`, first-party synth/fx/modular plugins, oscillator/filter/envelope/LFO/effect engines, parameter definitions, voice allocation, or DSP benchmarks."
+description: "Load when implementing or reviewing `geist-dsp`, first-party synth/fx/modular internal devices, oscillator/filter/envelope/LFO/effect engines, parameter definitions, voice allocation, or DSP benchmarks."
 ---
 
 <!--
 Author: Jeff
-Date: 2026-05-27
-Description: DSP and plugin suite implementation guide
+Date: 2026-06-30
+Description: DSP and internal device implementation guide
 Notes: Use for geist-dsp, geist-synth, geist-fx, and geist-modular
 -->
 
-# Geist DSP And Plugins
+# Geist DSP And Internal Devices
 
 ## Responsibility
 
-DSP code is pure math over slices and small state structs. Plugin code wraps DSP engines as DAW nodes and optional CLAP exports.
+DSP code is pure math over slices and small state structs. Native device code wraps DSP engines as internal DAW nodes only.
 
 ## DSP rules
 
@@ -25,14 +25,13 @@ DSP code is pure math over slices and small state structs. Plugin code wraps DSP
 - Parameters are normalized at boundaries, not scattered through DSP loops.
 - SIMD is feature-gated and correctness-matched against scalar implementations.
 
-## Plugin layering
+## Native device layering
 
-Each first-party plugin keeps three layers:
+Each first-party device keeps two layers:
 - `engine/`: pure DSP and parameter math.
 - `daw_node.rs`: internal `AudioNode` wrapper.
-- `clap_plugin.rs`: standalone CLAP ABI wrapper.
 
-No DSP duplication between DAW node and CLAP wrapper.
+Do not add VST, CLAP, AU, LV2, or standalone plugin-export wrappers for first-party devices. External plugin hosting is VST3-only and belongs in `crates/geist-vst-host`.
 
 ## Implementation order
 
@@ -41,9 +40,9 @@ No DSP duplication between DAW node and CLAP wrapper.
 3. Implement filters with stability tests.
 4. Implement envelopes and LFOs.
 5. Implement effects one at a time.
-6. Build `geist-synth` voice, pool, osc stack, filter stack, and mod matrix.
-7. Build `geist-fx` modules.
-8. Build `geist-modular` utility nodes.
+6. Build `crates/geist-synth` voice, pool, osc stack, filter stack, and mod matrix.
+7. Build `crates/geist-fx` modules.
+8. Build `crates/geist-modular` utility nodes.
 9. Add benchmarks only after correctness tests exist.
 
 ## Test expectations

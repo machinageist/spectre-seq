@@ -8,7 +8,7 @@
 use egui::{pos2, vec2, Align2, FontId, Pos2, Rect, Sense, Stroke, StrokeKind};
 use geist_config::commands::CommandIntent;
 
-use crate::model::{Note, PianoRollModel};
+use crate::model::{floor_beat, snap_beat, Note, PianoRollModel};
 use crate::theme;
 use crate::views::{label_from_command, ActionChip};
 
@@ -23,10 +23,13 @@ pub fn default_piano_roll_actions() -> Vec<ActionChip> {
 }
 
 const KEY_W: f32 = 42.0;
-const ROW_H: f32 = 12.0;
+const ROW_H: f32 = 10.0;
 const PX_PER_BEAT: f32 = 28.0;
-const LOW_PITCH: u8 = 36; // C2
-const HIGH_PITCH: u8 = 84; // C6
+// Full MIDI range, C-1 (0) to G9 (127); the view scrolls and opens centered on C4
+const LOW_PITCH: u8 = 0;
+const HIGH_PITCH: u8 = 128;
+// Note the piano roll opens centered on
+const CENTER_PITCH: u8 = 60; // C4
 
 // Draw the piano roll and apply click-to-add / click-to-remove note editing.
 // `playhead_beats` draws a moving cursor at that loop position when set.
@@ -36,10 +39,33 @@ pub fn draw(
     playhead_beats: Option<f32>,
     intents: &mut Vec<CommandIntent>,
 ) {
+    // Header: the editing-grid selector + a quantize action
+    ui.horizontal(|ui| {
+        crate::views::grid_selector(ui, &mut roll.grid_div);
+        ui.separator();
+        if ui.button("Quantize").on_hover_text("Snap notes to grid (Cmd/Ctrl+U)").clicked() {
+            let grid = roll.grid_div;
+            crate::model::quantize_notes(&mut roll.notes, grid);
+            intents.push(CommandIntent::new("quantize"));
+        }
+    });
+    ui.add_space(2.0);
+    let grid = roll.grid_div;
+    // Default note length / quick-entry step is one grid division (a beat if Off)
+    let step = if grid > 0.0 { grid } else { 1.0 };
+
     let rows = (HIGH_PITCH - LOW_PITCH) as f32;
     let content = vec2(KEY_W + roll.length_beats * PX_PER_BEAT, rows * ROW_H);
 
-    egui::ScrollArea::both().show(ui, |ui| {
+    // Open centered on C4 once; afterwards the user's scroll position is kept
+    let center_id = ui.id().with("pr_centered");
+    let mut area = egui::ScrollArea::both();
+    if !ui.data(|d| d.get_temp::<bool>(center_id)).unwrap_or(false) {
+        let c4_top = (HIGH_PITCH - 1 - CENTER_PITCH) as f32 * ROW_H;
+        area = area.vertical_scroll_offset((c4_top - 90.0).max(0.0));
+        ui.data_mut(|d| d.insert_temp(center_id, true));
+    }
+    area.show(ui, |ui| {
         let (rect, resp) = ui.allocate_exact_size(content, Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         let grid_left = rect.left() + KEY_W;
@@ -76,16 +102,22 @@ pub fn draw(
             }
         }
 
-        // Beat grid lines, bars emphasized
+        // Grid lines: faint subdivisions at the grid, beats medium, bars strong
+        let sub = if grid > 0.0 { grid } else { 1.0 };
         let mut beat = 0.0;
-        while beat <= roll.length_beats {
+        while beat <= roll.length_beats + 1e-3 {
             let x = beat_x(beat);
-            let strong = (beat as i32) % 4 == 0;
-            painter.line_segment(
-                [pos2(x, rect.top()), pos2(x, rect.bottom())],
-                Stroke::new(1.0, if strong { theme::STROKE_STRONG } else { theme::STROKE }),
-            );
-            beat += 1.0;
+            let on_bar = (beat / 4.0).fract().abs() < 1e-3;
+            let on_beat = beat.fract().abs() < 1e-3;
+            let stroke = if on_bar {
+                Stroke::new(1.0, theme::STROKE_STRONG)
+            } else if on_beat {
+                Stroke::new(1.0, theme::STROKE)
+            } else {
+                Stroke::new(1.0, theme::STROKE.linear_multiply(0.5))
+            };
+            painter.line_segment([pos2(x, rect.top()), pos2(x, rect.bottom())], stroke);
+            beat += sub;
         }
 
         // Notes colored by velocity
@@ -136,6 +168,9 @@ pub fn draw(
             if let Some(p) = resp.interact_pointer_pos() {
                 let edit = match hit_note(roll, p, rect, grid_left) {
                     Some((i, true)) => Some(PrEdit::Resize { index: i }),
+                    Some((i, false)) if ui.input(|inp| inp.modifiers.alt) => {
+                        Some(PrEdit::Velocity { index: i })
+                    }
                     Some((i, false)) => Some(PrEdit::Move {
                         index: i,
                         grab_beat: pointer_beat(p.x) - roll.notes[i].start_beats,
@@ -143,8 +178,8 @@ pub fn draw(
                     None if p.x > grid_left && in_range(pointer_pitch(p.y)) => {
                         roll.add(Note {
                             pitch: pointer_pitch(p.y) as u8,
-                            start_beats: pointer_beat(p.x).floor(),
-                            len_beats: 1.0,
+                            start_beats: floor_beat(pointer_beat(p.x), grid),
+                            len_beats: step,
                             velocity: 0.9,
                         });
                         Some(PrEdit::Create { index: roll.notes.len() - 1 })
@@ -165,7 +200,7 @@ pub fn draw(
                 match edit {
                     PrEdit::Resize { index } | PrEdit::Create { index } => {
                         if let Some(n) = roll.notes.get_mut(index) {
-                            n.len_beats = (pointer_beat(p.x) - n.start_beats).max(0.25);
+                            n.len_beats = (pointer_beat(p.x) - n.start_beats).max(0.05);
                         }
                     }
                     PrEdit::Move { index, grab_beat } => {
@@ -177,6 +212,12 @@ pub fn draw(
                             }
                         }
                     }
+                    PrEdit::Velocity { index } => {
+                        if let Some(n) = roll.notes.get_mut(index) {
+                            let dv = -resp.drag_delta().y * 0.01;
+                            n.velocity = (n.velocity + dv).clamp(0.0, 1.0);
+                        }
+                    }
                 }
             }
         }
@@ -184,12 +225,22 @@ pub fn draw(
         // Commit a drag: snap to the beat grid, then clear the edit state
         if resp.drag_stopped() {
             if let Some(edit) = ui.data(|d| d.get_temp::<PrEdit>(edit_id)) {
-                let index = match edit {
-                    PrEdit::Resize { index } | PrEdit::Create { index } | PrEdit::Move { index, .. } => index,
-                };
-                if let Some(n) = roll.notes.get_mut(index) {
-                    n.len_beats = n.len_beats.round().max(1.0);
-                    n.start_beats = n.start_beats.round().max(0.0);
+                // Velocity edits don't reposition; only the geometry edits snap
+                if !matches!(edit, PrEdit::Velocity { .. }) {
+                    let index = match edit {
+                        PrEdit::Resize { index }
+                        | PrEdit::Create { index }
+                        | PrEdit::Move { index, .. } => index,
+                        PrEdit::Velocity { index } => index,
+                    };
+                    if let Some(n) = roll.notes.get_mut(index) {
+                        n.len_beats = if grid > 0.0 {
+                            ((n.len_beats / grid).round().max(1.0)) * grid
+                        } else {
+                            n.len_beats.max(0.125)
+                        };
+                        n.start_beats = snap_beat(n.start_beats, grid).max(0.0);
+                    }
                 }
                 ui.data_mut(|d| d.remove::<PrEdit>(edit_id));
                 intents.push(CommandIntent::new("edit_note"));
@@ -205,8 +256,8 @@ pub fn draw(
                 {
                     roll.add(Note {
                         pitch: pointer_pitch(p.y) as u8,
-                        start_beats: pointer_beat(p.x).floor(),
-                        len_beats: 1.0,
+                        start_beats: floor_beat(pointer_beat(p.x), grid),
+                        len_beats: step,
                         velocity: 0.9,
                     });
                     intents.push(CommandIntent::new("add_note"));
@@ -222,6 +273,8 @@ enum PrEdit {
     Move { index: usize, grab_beat: f32 },
     Resize { index: usize },
     Create { index: usize },
+    // Alt-drag a note vertically to set its velocity
+    Velocity { index: usize },
 }
 
 // Note under a point, with whether the point is on its right-edge resize handle

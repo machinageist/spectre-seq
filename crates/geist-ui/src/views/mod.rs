@@ -80,6 +80,19 @@ fn surface_for_lens(frame: &RenderFrame) -> LensSurface {
     }
 }
 
+// A compact grid-division selector shared by the piano roll and arrangement.
+// Mutates the bound beats-per-division (0 = off) in place.
+pub fn grid_selector(ui: &mut egui::Ui, grid_div: &mut f32) {
+    ui.label(
+        egui::RichText::new("Grid")
+            .small()
+            .color(crate::theme::TEXT_MUTED),
+    );
+    for (label, beats) in crate::model::GRID_OPTIONS {
+        ui.selectable_value(grid_div, beats, label);
+    }
+}
+
 pub(crate) fn action_chips(commands: &[String]) -> Vec<ActionChip> {
     commands
         .iter()

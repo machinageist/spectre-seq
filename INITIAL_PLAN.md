@@ -1,131 +1,248 @@
-## Phase 0 — Foundations (Weeks 1–2)
+<!--
+Author: Jeff
+Date: 2026-06-30
+Description: Current implementation plan for the Rust-first native DAW architecture
+Notes: Supersedes CLAP/LV2/plugin-suite language; internal devices are not plugin binaries
+-->
 
-- Create cargo workspace; establish `geist-core` crate first, nothing depends on nothing
-- Define canonical types: `NodeId(u64)`, `PortId(u64)`, `PortType` enum, `AudioConfig`, `ProcessContext<'a>`
-- `ProcessContext` holds: sample rate, block size, input/output buffer slices, event queue slice — all borrowed, zero allocation
-- Enforce real-time constraints via type system: `ProcessContext` is `!Send`; audio callback is `extern "C"`-compatible
-- Define `AudioNode` trait: `fn process(&mut self, ctx: &mut ProcessContext)`
-- Pin crate-level lints: `#![deny(unsafe_code)]` in safe crates, explicit `#![allow(unsafe_code)]` only in FFI crates
-- Set up CI (GitHub Actions): `cargo test`, `cargo clippy`, `cargo build --release` for linux/macos/windows
+# Rust-First Native DAW Implementation Plan
 
----
+## Product posture
 
-## Phase 1 — Audio Graph Engine (Weeks 3–6)
+Working title remains `geist-daw` until Jeff chooses a product name. The product is a Rust-first DAW for electronic music production, live performance, modular routing, sound design, and generative MIDI composition.
 
-- Implement `geist-graph`: directed graph of `AudioNode` instances connected by typed port edges
-- Topological sort on every patch change; result is a flat `Vec<ProcessStep>` — this is the only representation the audio thread sees
-- Feedback loops get automatic one-block delay; detect cycles, insert `DelayNode` transparently
-- All graph mutations happen on the app thread; result is atomically swapped via `Arc<ArcSwap<ProcessGraph>>` — audio thread never locks
-- Communication: `rtrb` ring buffer for UI→audio parameter changes; `crossbeam-channel` bounded for audio→UI metering
-- Port types are enforced at connection time; mismatched types are a compile-time error where possible, runtime `Result` otherwise
-- Write unit tests for: cycle detection, topological order, buffer routing correctness, one-block delay insertion
-- Benchmark: graph with 128 nodes must sort and swap in under 1ms on the app thread
+The DAW owns its audio graph, DSP, sequencing, project model, automation/modulation, native devices, and UI/controller state. Third-party plugin support is VST3 hosting only. First-party synths, effects, MIDI tools, modulators, and utility nodes are internal DAW devices and must never be exported as VST, CLAP, AU, LV2, or standalone plugin binaries.
 
----
+## Non-negotiable architecture
 
-## Phase 2 — Audio Backend (Weeks 5–7, overlaps Phase 1)
+- Native devices live in workspace crates under `crates/`, not `plugins/`.
+- `geist-synth`, `geist-fx`, and `geist-modular` are internal device crates.
+- `geist-vst-host` is the only active external plugin-format crate.
+- `geist-clap-host` and `geist-lv2-host` are excluded from the workspace and remain historical shelved scaffolds only until deleted.
+- VST3 devices are wrapped as internal graph nodes/device implementations. Native devices do not depend on VST abstractions.
+- Audio callback code consumes precompiled state and bounded queues only: no heap allocation, blocking locks, file/network I/O, logging, UI calls, plugin scanning, dynamic graph mutation, or panics across the boundary.
 
-- `geist-audio-backend`: one trait, multiple platform impls hiding behind it
-- Wrap `cpal` (Apache 2.0) initially; the trait boundary means it can be replaced per-platform later
-- Platform priority: PipeWire (Linux) → JACK → ALSA; CoreAudio (macOS); WASAPI (Windows)
-- `AudioBackend::start()` takes ownership of the compiled `ProcessGraph` and drives it from the audio callback — no DAW logic on this thread
-- Expose: sample rate negotiation, buffer size, device enumeration, xrun detection and reporting
-- Validate: round-trip latency test, xrun counter under load, no allocations in callback (verify with `assert_no_alloc` crate in debug builds)
+## Workspace layout
 
----
+```text
+Cargo.toml
+app/geist-daw/              # app shell, controller, runtime wiring
+crates/geist-core/          # IDs, time, ports, params, events, process context
+crates/geist-audio-backend/ # audio I/O trait and cpal callback bridge
+crates/geist-graph/         # editable graph, topology, compiled process plan, swap
+crates/geist-dsp/           # pure DSP primitives and tests
+crates/geist-timeline/      # transport, tempo map, clips, tracks, scheduling
+crates/geist-automation/    # automation lanes and modulation resolution
+crates/geist-project/       # schema, serialization, assets, autosave
+crates/geist-config/        # workflow profiles, templates, keybindings
+crates/geist-ui/            # UI state, commands, renderer/view/widget models
+crates/geist-synth/         # flagship internal synth device
+crates/geist-fx/            # internal native audio effects devices
+crates/geist-modular/       # internal utility/modular routing devices
+crates/geist-vst-host/      # VST3-only host adapter boundary
+docs/                       # architecture, ADRs, plan trail, validation notes
+```
 
-## Phase 3 — DSP Primitives (Weeks 6–10)
+## Dependency policy
 
-- `geist-dsp`: pure Rust, no FFI, no I/O — just math operating on `&mut [f32]` slices
-- Implement per module, each independently testable and benchmarkable:
-  - **Oscillators**: bandlimited saw/square/tri via PolyBLEP; wavetable engine with linear interp
-  - **Filters**: state-variable filter (SVF) canonical implementation; Moog ladder approximation
-  - **Envelopes**: ADSR/AHDSR with configurable curves (linear, exponential, custom LUT)
-  - **LFO**: free/synced, phase-accumulator design, all waveforms
-  - **Effects**: convolution reverb (FFT-based, `rustfft`), stereo delay with feedback, waveshaper/saturator
-- All DSP structs are `#[repr(C)]` — prepares them for SIMD and future CLAP FFI reuse
-- Add SIMD acceleration via `std::simd` (nightly) or `packed_simd2` for hot paths; gate behind a feature flag
-- Criterion benchmarks for every hot path: oscillator, filter, convolution
+Allowed dependencies are isolated by layer: native OS audio/windowing, GPU/UI backend, serialization, math/FFT utilities, file dialogs, platform bindings, VST3 hosting bindings, and testing utilities. External DAW engines, synth/effects engines, modular synthesis engines, plugin-wrapper frameworks for first-party devices, and UI frameworks that own realtime architecture are out of scope unless Jeff explicitly approves them.
 
----
+## Internal device model
 
-## Phase 4 — CLAP Host (Weeks 9–13)
+The graph-facing abstraction is `geist-graph::AudioNode` today. The long-term device abstraction should generalize this into a richer internal `AudioDevice` surface with prepare/process/parameter descriptors/latency/state/load-state. Native devices and VST wrappers both adapt into that internal surface, but only `geist-vst-host` knows VST3 details.
 
-- `geist-clap-host`: wraps `clap-sys` raw FFI in a safe Rust API
-- Scanner: walk `~/.clap`, `/usr/lib/clap`, platform-standard paths; load `.clap` bundles; cache metadata in a `sled` or `sqlite` DB
-- Each loaded plugin instance is a `ClapPluginNode` implementing `AudioNode` — slots into the process graph transparently
-- Handle: audio i/o, parameter get/set, parameter flush, note events, MIDI, save/restore state (blob of bytes)
-- GUI: plugins that provide their own GUI get a raw window handle via `raw-window-handle` crate; your UI provides the parent
-- Isolation: each plugin runs in its own thread during `init`/`destroy`; audio processing is inline on audio thread (CLAP contract)
-- LV2 host in `geist-lv2-host`: lower priority, same `AudioNode` interface; use `lv2` crate (ISC licensed)
+Native device crates:
 
----
+- `geist-synth`: polyphonic wavetable/subtractive instrument, voice allocator, wavetable oscillators, envelopes, filters, parameter surface, graph node.
+- `geist-fx`: utility/gain-style app path plus delay, reverb, chorus, saturator, EQ, distortion/phaser/flanger DSP integration as internal effects.
+- `geist-modular`: internal utility nodes for CV/control/gate-style routing math.
+- Future `geist-midi-tools`: internal MIDI processors such as scale lock, arpeggiator, chord/probability/generative tools.
 
-## Phase 5 — Plugin Suite (Weeks 10–18, parallel track)
+## VST hosting boundary
 
-- Each plugin in `plugins/` has three layers: `engine/` (pure DSP), `daw_node.rs` (implements `AudioNode`), `clap_plugin.rs` (implements CLAP ABI)
-- Same `engine/` compiles into both; zero duplication
-- Build `geist-synth` first — it's the flagship and exercises the most DSP infrastructure:
-  - 2× wavetable oscillators with morph, unison, detune
-  - 2× SVF filters in series/parallel with FM routing
-  - Modulation matrix: any envelope/LFO output → any parameter; implemented as a `Vec<ModRoute>` resolved per block
-  - Polyphonic with per-voice state; voice allocation with steal modes
-- Build `geist-fx` second: reverb, delay, chorus, saturator, EQ — each as a standalone CLAP
-- Build `geist-modular`: utility nodes (math ops, signal mux, attenuverter, slew limiter, logic gates, sample-and-hold) — these are the glue for "any signal to any input"
-- CLAP binaries built with `cargo build --release --features clap-plugin`; DAW-internal nodes built without that feature
+`geist-vst-host` owns plugin discovery, bundle resolution, module loading, host app callbacks, class descriptors, future scan cache, instantiation, state blobs, parameter mapping, processing adapter, latency reporting, and editor-window integration. Other crates may depend on the common internal device/graph traits, not on VST3 COM bindings or lifecycle types.
 
----
+VST scanning and cache updates run off the audio thread. VST process calls may run on the audio thread only after instances are prepared and wrapped in a graph/device adapter that obeys the same callback contract as native devices.
 
-## Phase 6 — Timeline Engine (Weeks 14–20)
+## Phase 0 — repository inspection and architecture alignment
 
-- `geist-timeline`: transport state machine, clip model, pattern sequencer
-- Transport: BPM (with automation), time signature, play/pause/record/loop — state is an `Arc<AtomicTransport>` readable from audio thread
-- Clip types: audio clip (sample playback via `rubato` for pitch/time), MIDI clip (note event sequence), automation clip (breakpoint envelope)
-- Pattern sequencer: step sequencer + piano roll data model; emits `NoteEvent` stream into the graph
-- All clips live in an `Arena<Clip>`; the timeline holds only IDs and positions — separation of data from layout
-- Undo/redo: command pattern, `Vec<Box<dyn Command>>`; every mutation is a reversible command object
+Status: complete for this slice.
 
----
+Findings:
 
-## Phase 7 — Automation & Modulation (Weeks 16–22)
+- The workspace already builds and has substantial native Rust implementations across core, graph, audio backend, DSP, timeline, automation, project, UI, app, synth, effects, modular utilities, and VST host scaffolding.
+- The old plan still described CLAP/LV2 hosting and first-party plugin exports even though ADR 001 had already chosen VST3-only hosting.
+- Native device crates physically lived under `plugins/`, with dormant CLAP export files. That contradicted the new hard rule.
+- `cargo test --workspace` was green before this architecture slice.
 
-- `geist-automation`: unifies automation lanes and real-time modulation into one system
-- Automation lane: breakpoint curve over timeline position; evaluated per-block, outputs `f32` into parameter target
-- Modulation source: any `PortType::CV` output in the graph can target any `PortType::Parameter` input — this IS the modular routing feature
-- Modulation matrix stored as `Vec<ModRoute { src: PortId, dst: PortId, depth: f32, bipolar: bool }>`
-- All parameter values are: `base_value + sum(active_mod_routes × depth)`, clamped per parameter spec
-- Modulation is per-block (not per-sample) for non-audio signals; audio-rate modulation is just a CV audio port connection — the graph handles it uniformly
+Actions:
 
----
+- Move native device crates from `plugins/` to `crates/`.
+- Remove dormant first-party CLAP export source files.
+- Exclude CLAP/LV2 host crates from active workspace builds.
+- Rewrite this plan and the proposed file tree around VST3-only external hosting and internal native devices.
+- Add/refresh documentation trail in `HANDOFF.md` and `docs/architecture/native-vst-internal-devices.md`.
 
-## Phase 8 — UI (Weeks 20–32)
+## Phase 1 — workspace and core types
 
-- Start with `egui` (MIT) + `eframe` for rapid prototype; design UI behind a trait so the renderer is swappable
-- Implement views in priority order: mixer → node graph → piano roll → arrangement → plugin rack
-- Node graph view is the signature UI: render graph with bezier cables, port type-colored, drag-to-connect, rubber-band select
-- All UI state is derived from app state; UI never owns ground truth — it reads from `Arc<RwLock<ProjectState>>` and sends commands
-- Parameter controls (knobs, faders) send `ParameterChange` commands; audio thread reads via `rtrb` with no locking
-- Metering: audio thread writes peak/RMS into lock-free ring buffer; UI reads and draws at 60fps independently
-- Font/icon assets are embedded at compile time via `include_bytes!` — zero runtime asset loading
-- Long-term: replace `egui` with custom `wgpu` renderer; the trait boundary makes this non-breaking
+Status: implemented in the existing codebase and retained.
 
----
+Implemented surface includes workspace membership, core IDs, ports, config, process context, MIDI/note/parameter events, parameter ranges, transport snapshots, beat/sample conversions, project schema, track/clip models, serialization, and tests.
 
-## Phase 9 — Project Format & Persistence (Weeks 24–28)
+Completed in the 2026-06-30 continuation slice:
 
-- `geist-project`: serialization of the entire DAW state to disk
-- Format: `CBOR` (compact binary) or `MessagePack` for the main project file; human-readable `TOML` for settings
-- Project file contains: graph topology, all parameter values, all clip data, plugin state blobs (opaque bytes from CLAP), automation curves
-- Audio files are referenced by relative path + content hash (blake3); never embedded — project portability is the user's responsibility
-- Versioning: project format has a `u32` schema version; forward-compatibility via unknown-field skipping; breaking changes bump major version
-- Autosave: write to a `.geist-autosave` temp file on a background thread every 60s; crash recovery on next launch
+- Added explicit public time newtypes in `crates/geist-core/src/time.rs`: `SampleTime`, `BeatTime`, `Seconds`, `PpqTick`, and `BarBeat`.
+- Exported the time types through `geist-core::prelude`.
+- Added unit tests for sample/seconds, beat/sample, PPQ, bar/beat/tick, and invalid conversion inputs.
+- Added internal device model primitives in `crates/geist-core/src/devices.rs`: `DeviceKind`, `DeviceDescriptor`, and `DeviceState`.
+- Added `DeviceId` to `crates/geist-core/src/ids.rs` and exported the device model through `geist-core::prelude`.
+- Added tests proving native vs hosted origin stays hidden behind the common descriptor/state envelope.
+- Added `geist-graph::node::AudioDevice` as the common internal device surface above `AudioNode`, with descriptor, parameter, latency, state, and load-state hooks.
+- Re-exported `AudioDevice` through `geist-graph::prelude` and tested the default latency/state contract.
 
----
+Next refinement:
 
-## Phase 10 — Polish, Distribution, Community (Weeks 30+)
+- Implement `AudioDevice` for concrete native devices and the VST wrapper as their descriptors/states are formalized.
 
-- `cargo xtask` for all build tasks: build plugins, run benchmarks, package releases, generate CLAP metadata
-- Cross-compilation: `cross` crate for Linux→Windows/macOS builds in CI; test on all three in CI matrix
-- Plugin distribution: individual CLAP binaries as GitHub Release artifacts; bundle installer script (shell + PowerShell)
-- Documentation: `mdbook` for user docs; `rustdoc` for API; architecture decision records (ADRs) in `docs/adr/`
-- Community: public RFC process for breaking API changes; plugin SDK published as its own crate so third parties can write native nodes
+## Phase 2 — audio engine skeleton
+
+Status: implemented through app/audio-backend/graph seams.
+
+Implemented surface includes audio backend trait, cpal backend, block bridge, stream config, xrun counter, process context, transport snapshots, event buffers, silence/rolling render behavior in app tests, and realtime command queues.
+
+Next refinements:
+
+- Formalize `crates/geist-audio-engine/` only if app-level engine code needs extraction from `app/geist-daw`.
+- Add stronger debug-only audio-thread guardrails for allocation/logging/locks where feasible.
+
+## Phase 3 — graph engine
+
+Status: implemented and tested.
+
+Implemented surface includes editable graph, node and port IDs, typed port descriptors, connection validation, topological ordering, feedback detection, one-block delay policy, compiled process plan, executor, graph swap, and graph tests.
+
+Completed in the 2026-06-30 continuation slice:
+
+- Added the common `AudioDevice` trait while keeping `AudioNode` as the minimal realtime process trait.
+
+Next refinements:
+
+- Extend port taxonomy toward MIDI/events, control scalar/vector, gate, trigger, pitch, clock, transport, sidechain, and MPE expression without hard-coding stereo assumptions.
+- Fold latency accounting into compilation.
+
+## Phase 4 — sequencing
+
+Status: implemented for current vertical slice.
+
+Implemented surface includes tempo map, transport, playhead, tracks, MIDI clips/patterns, clip placements, half-open sample windows, arrangement scheduling, session launch behavior in app tests, and undo/redo command primitives.
+
+Next refinements:
+
+- Add explicit scene/follow-action models.
+- Expand arrangement regions and automation/modulation lanes in the UI-facing model.
+- Add MIDI tool crate and sample-accurate MIDI transformation buffers.
+
+## Phase 5 — first native synth
+
+Status: implemented as an internal device crate.
+
+Implemented surface includes `crates/geist-synth`, voice allocator, oscillator stack, wavetable/subtractive voice path, filter stack, ADSR/AHDSR support through DSP primitives, MIDI note handling, parameter macros, unison/FM/pitch controls, and offline/sample-accurate tests.
+
+Hard rule: `geist-synth` is an internal DAW instrument only. It has no CLAP/VST/AU/LV2 export module.
+
+## Phase 6 — first native effects
+
+Status: implemented as internal device crates/app chain.
+
+Implemented surface includes `crates/geist-fx`, delay, reverb, chorus, saturator, EQ nodes, DSP distortion/phaser/flanger primitives, app-level FX chain processing, bypass behavior, duplicate instance addressing, finite/silence tests, and project/session persistence for current chain state.
+
+Hard rule: native effects are internal DAW devices only. They are not plugin binaries.
+
+## Phase 7 — minimal app UI
+
+Status: implemented beyond the original placeholder level.
+
+Implemented surface includes eframe/egui shell, transport controls, arrangement/session/piano roll/mixer/browser/device rack surfaces, workflow profiles, UI commands, widgets, project save/load seams, and app tests for interaction models.
+
+Next refinements:
+
+- Keep device-chain language reserved for native/internal devices and plugin language reserved for third-party hosted VSTs.
+- Keep UI as command/snapshot driven; no direct mutation of audio-thread state.
+
+## Phase 8 — VST host boundary
+
+Status: active VST3 scaffolding exists; headless-safe tests pass.
+
+Implemented surface includes `crates/geist-vst-host`, VST3 bundle paths, scanner, descriptors, host app identity, module loading failure paths, instance error surfaces, and a `VstPluginNode` boundary shell.
+
+Next refinements:
+
+- Add scan/cache schema.
+- Add plugin state storage integration with `geist-project` opaque blobs.
+- Add parameter mapping and latency reporting.
+- Validate against real `.vst3` binaries outside headless CI.
+
+## Phase 9 — modular routing UI
+
+Status: partially implemented as UI graph view and internal modular utility nodes.
+
+Implemented surface includes node graph view models, port/cable geometry helpers, validation-oriented graph model, and internal `geist-modular` nodes.
+
+Next refinements:
+
+- Connect graph edits to project command model.
+- Surface validation messages in UI.
+- Add advanced patching panel without making cable spaghetti the default view.
+
+## First vertical slice status
+
+Current repo satisfies the first meaningful vertical slice at code/test level:
+
+- Workspace builds and tests.
+- App crate exists and launches through eframe/cpal code paths.
+- Project/session save and load are covered by tests.
+- Tracks, clips, transport, MIDI scheduling, synth rendering, native effects, and graph data are implemented and tested.
+- VST hosting remains optional and is not required for the first slice.
+
+## Risk register
+
+1. Existing uncommitted B5 UI/app work predates this architecture slice; do not overwrite it casually.
+2. `geist-clap-host` and `geist-lv2-host` still exist as excluded historical crates; delete in a separate cleanup once Jeff confirms no archaeology is needed.
+3. Historical filenames such as `docs/plugin_sdk.md` and `docs/adr/001-clap-over-vst.md` remain for archaeology/link stability; their content must state the current VST3-only, internal-device policy.
+4. VST3 process/editor integration cannot be fully proven headless; it needs real plugin fixtures and OS-window QA.
+5. Audio-thread no-allocation enforcement is tested indirectly today; stronger guardrails are still needed.
+6. Time newtypes are present; tempo/meter edge-case expansion remains open.
+7. Moving native device crates changes file paths; downstream scripts/docs may need path updates.
+
+## Validation plan
+
+- `cargo test --workspace` after every cross-crate slice.
+- `cargo check --workspace` after workspace membership/path edits.
+- Targeted tests:
+  - `cargo test -p geist-core`
+  - `cargo test -p geist-graph`
+  - `cargo test -p geist-dsp`
+  - `cargo test -p geist-synth`
+  - `cargo test -p geist-fx`
+  - `cargo test -p geist-timeline`
+  - `cargo test -p geist-project`
+  - `cargo test -p geist-vst-host`
+- `cargo clippy --workspace` before committing.
+- Manual app smoke: `cargo run -p geist-daw --release` when a GUI/audio device is available.
+
+## Files changed for this architecture slice
+
+- `Cargo.toml`
+- `app/geist-daw/Cargo.toml`
+- `crates/geist-synth/**` moved from `plugins/geist-synth/**`
+- `crates/geist-fx/**` moved from `plugins/geist-fx/**`
+- `crates/geist-modular/**` moved from `plugins/geist-modular/**`
+- Removed first-party CLAP export files from moved native device crates
+- `INITIAL_PLAN.md`
+- `PROPOSED_FILE_TREE.md`
+- `docs/architecture.md`
+- `docs/architecture/native-vst-internal-devices.md`
+- `docs/vst_hosting.md`
+- `docs/plugin_sdk.md`
+- `.claude/skills/geist-dsp-and-plugins.md`
+- `HANDOFF.md`

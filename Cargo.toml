@@ -20,6 +20,9 @@ resolver = "2"
 members = [
     "xtask",
     "crates/*",
-    "plugins/*",
     "app/geist-daw",
+]
+exclude = [
+    "crates/geist-clap-host",
+    "crates/geist-lv2-host",
 ]

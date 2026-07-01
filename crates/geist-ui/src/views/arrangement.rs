@@ -11,7 +11,7 @@
 use egui::{pos2, vec2, Align2, FontId, Rect, Sense, Stroke, StrokeKind};
 use geist_config::commands::CommandIntent;
 
-use crate::model::{Clip, TimelineModel, Transport};
+use crate::model::{snap_beat, Clip, TimelineModel, Transport};
 use crate::renderer::ViewPlan;
 use crate::theme;
 use crate::views::{action_chips, LensSurface};
@@ -39,9 +39,15 @@ const NEW_CLIP_BEATS: f32 = 4.0;
 pub fn draw(
     ui: &mut egui::Ui,
     timeline: &mut TimelineModel,
-    transport: &Transport,
+    transport: &mut Transport,
     _intents: &mut Vec<CommandIntent>,
 ) {
+    // Header: the arrangement grid selector
+    ui.horizontal(|ui| {
+        crate::views::grid_selector(ui, &mut timeline.grid_div);
+    });
+    ui.add_space(2.0);
+
     let lane_count = timeline.lanes.len();
     let lanes = lane_count.max(1) as f32;
     let content = vec2(
@@ -50,6 +56,7 @@ pub fn draw(
     );
 
     egui::ScrollArea::horizontal().show(ui, |ui| {
+        let grid = timeline.grid_div;
         let (rect, bg) = ui.allocate_exact_size(content, Sense::click());
         let painter = ui.painter_at(rect);
         let grid_left = rect.left() + LABEL_W;
@@ -67,6 +74,51 @@ pub fn draw(
                 pos2(beat_x(transport.loop_end_beats as f32), rect.bottom()),
             );
             painter.rect_filled(loop_rect, 0.0, theme::ACCENT.linear_multiply(0.06));
+        }
+
+        // Drag across the bar ruler to set the loop region; a bare click clears it.
+        // The anchor beat where the drag began is stashed in egui temp state.
+        let ruler_rect = Rect::from_min_max(
+            pos2(grid_left, rect.top()),
+            pos2(rect.right(), rect.top() + RULER_H),
+        );
+        let ruler_id = ui.id().with("loop_ruler");
+        let ruler = ui.interact(ruler_rect, ruler_id, Sense::click_and_drag());
+        if ruler.drag_started() {
+            if let Some(p) = ruler.interact_pointer_pos() {
+                ui.data_mut(|d| d.insert_temp(ruler_id, x_beat(p.x)));
+            }
+        }
+        if ruler.dragged() {
+            if let (Some(p), Some(anchor)) = (
+                ruler.interact_pointer_pos(),
+                ui.data(|d| d.get_temp::<f32>(ruler_id)),
+            ) {
+                let a = snap_beat(anchor, grid).max(0.0);
+                let b = snap_beat(x_beat(p.x), grid).max(0.0);
+                let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+                transport.loop_start_beats = lo as f64;
+                transport.loop_end_beats = hi as f64;
+                transport.loop_enabled = hi - lo > 0.01;
+            }
+        }
+        if ruler.clicked() {
+            transport.loop_enabled = false;
+        }
+
+        // Faint subdivision lines at the grid (beat lines a touch stronger)
+        if grid > 0.0 {
+            let mut g = 0.0;
+            while g <= timeline.length_beats + 1e-3 {
+                let x = beat_x(g);
+                let on_beat = g.fract().abs() < 1e-3;
+                let tint = if on_beat { 0.7 } else { 0.4 };
+                painter.line_segment(
+                    [pos2(x, rect.top() + RULER_H), pos2(x, rect.bottom())],
+                    Stroke::new(1.0, theme::STROKE.linear_multiply(tint)),
+                );
+                g += grid;
+            }
         }
 
         // Bar ruler
@@ -154,7 +206,12 @@ pub fn draw(
                 timeline.clips[index].len_beats = (x_beat(new_right) - clip.start_beats).max(0.25);
             }
             if handle.drag_stopped() {
-                let snapped = timeline.clips[index].len_beats.round().max(1.0);
+                let len = timeline.clips[index].len_beats;
+                let snapped = if grid > 0.0 {
+                    ((len / grid).round().max(1.0)) * grid
+                } else {
+                    len.round().max(1.0)
+                };
                 timeline.clips[index].len_beats = snapped;
             }
 
@@ -172,7 +229,7 @@ pub fn draw(
                 }
             }
             if body.drag_stopped() {
-                let snapped = timeline.clips[index].start_beats.round().max(0.0);
+                let snapped = snap_beat(timeline.clips[index].start_beats, grid).max(0.0);
                 timeline.clips[index].start_beats = snapped;
             }
 
@@ -220,7 +277,7 @@ pub fn draw(
                     });
                     if !over_clip {
                         let lane = y_lane(p.y);
-                        let start = x_beat(p.x).round().max(0.0);
+                        let start = snap_beat(x_beat(p.x), grid).max(0.0);
                         timeline.clips.push(Clip {
                             id: 0,
                             lane,
