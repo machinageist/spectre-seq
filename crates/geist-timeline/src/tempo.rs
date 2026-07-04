@@ -222,12 +222,19 @@ mod tests {
     #[test]
     fn repeated_set_at_same_beat_does_not_accumulate() {
         // Changing BPM (always at beat 0) must replace the origin point, not
-        // append; otherwise the map would grow without bound as tempo is tweaked
+        // append; the engine calls this from the audio callback, so growth
+        // would also be an allocation on the audio thread
         let mut map = TempoMap::new(SR, 120.0);
+        let cap = map.tempos.capacity();
         for bpm in 100..200 {
             map.set_tempo(0.0, bpm as f64);
         }
-        assert_eq!(map.tempos.len(), 1, "origin tempo must be replaced, not appended");
+        assert_eq!(
+            map.tempos.len(),
+            1,
+            "origin tempo must be replaced, not appended"
+        );
+        assert_eq!(map.tempos.capacity(), cap, "tempo list grew its buffer");
         assert!(close(map.tempo_at(0.0), 199.0));
     }
 

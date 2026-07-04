@@ -120,8 +120,10 @@ pub fn draw(
             beat += sub;
         }
 
-        // Notes colored by velocity
-        for note in &roll.notes {
+        // Notes colored by velocity; the selected note gets a strong outline
+        let sel_id = ui.id().with("pr_sel");
+        let selected: Option<usize> = ui.data(|d| d.get_temp::<usize>(sel_id));
+        for (i, note) in roll.notes.iter().enumerate() {
             let y = pitch_top(note.pitch);
             let note_rect = Rect::from_min_size(
                 pos2(beat_x(note.start_beats), y + 1.0),
@@ -132,7 +134,12 @@ pub fn draw(
                 3.0,
                 theme::ACCENT.linear_multiply(0.4 + 0.6 * note.velocity.clamp(0.0, 1.0)),
             );
-            painter.rect_stroke(note_rect, 3.0, Stroke::new(1.0, theme::ACCENT), StrokeKind::Inside);
+            let (w, color) = if selected == Some(i) {
+                (2.0, theme::TEXT)
+            } else {
+                (1.0, theme::ACCENT)
+            };
+            painter.rect_stroke(note_rect, 3.0, Stroke::new(w, color), StrokeKind::Inside);
         }
 
         // Playhead at the current loop position
@@ -153,13 +160,31 @@ pub fn draw(
         let in_range = |pitch: i32| (LOW_PITCH as i32..HIGH_PITCH as i32).contains(&pitch);
         let edit_id = ui.id().with("pr_edit");
 
-        // Right-click a note to delete it
+        // Right-click a note to delete it (indices shift, so drop the selection)
         if resp.secondary_clicked() {
             if let Some(p) = resp.interact_pointer_pos() {
                 if let Some((i, _)) = hit_note(roll, p, rect, grid_left) {
                     roll.notes.remove(i);
+                    ui.data_mut(|d| d.remove::<usize>(sel_id));
                     intents.push(CommandIntent::new("remove_note"));
                 }
+            }
+        }
+
+        // Delete/Backspace removes the selected note while the roll is hovered
+        // and no text field is being edited
+        if let Some(i) = selected {
+            let pressed = ui.input(|inp| {
+                inp.key_pressed(egui::Key::Delete) || inp.key_pressed(egui::Key::Backspace)
+            });
+            if pressed
+                && resp.hovered()
+                && ui.memory(|m| m.focused().is_none())
+                && i < roll.notes.len()
+            {
+                roll.notes.remove(i);
+                ui.data_mut(|d| d.remove::<usize>(sel_id));
+                intents.push(CommandIntent::new("remove_note"));
             }
         }
 
@@ -247,19 +272,20 @@ pub fn draw(
             }
         }
 
-        // A plain click on an empty cell adds a one-beat note (quick entry)
+        // A plain click selects a note; on an empty cell it adds a one-beat
+        // note (quick entry) and selects it
         if resp.clicked() {
             if let Some(p) = resp.interact_pointer_pos() {
-                if p.x > grid_left
-                    && in_range(pointer_pitch(p.y))
-                    && hit_note(roll, p, rect, grid_left).is_none()
-                {
+                if let Some((i, _)) = hit_note(roll, p, rect, grid_left) {
+                    ui.data_mut(|d| d.insert_temp(sel_id, i));
+                } else if p.x > grid_left && in_range(pointer_pitch(p.y)) {
                     roll.add(Note {
                         pitch: pointer_pitch(p.y) as u8,
                         start_beats: floor_beat(pointer_beat(p.x), grid),
                         len_beats: step,
                         velocity: 0.9,
                     });
+                    ui.data_mut(|d| d.insert_temp(sel_id, roll.notes.len() - 1));
                     intents.push(CommandIntent::new("add_note"));
                 }
             }

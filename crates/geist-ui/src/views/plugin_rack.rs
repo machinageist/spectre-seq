@@ -30,8 +30,22 @@ enum RackEdit {
     Remove(usize),
 }
 
-// Draw the effects chain top-to-bottom with add/reorder/bypass/remove
+// Draw the effects chain top-to-bottom with add/reorder/bypass/remove.
+// The whole rack is a drop zone for browser items; each card accepts a
+// dragged grip (⠿) from another card to reorder.
 pub fn draw(ui: &mut egui::Ui, rack: &mut RackModel, intents: &mut Vec<CommandIntent>) {
+    let frame = egui::Frame::default();
+    let (_, dropped) = ui.dnd_drop_zone::<CommandIntent, ()>(frame, |ui| {
+        draw_chain(ui, rack, intents);
+    });
+    // A browser item dropped anywhere on the rack executes its insert intent
+    if let Some(intent) = dropped {
+        intents.push((*intent).clone());
+    }
+}
+
+// The add menu plus the reorderable effect cards
+fn draw_chain(ui: &mut egui::Ui, rack: &mut RackModel, intents: &mut Vec<CommandIntent>) {
     ui.menu_button("+ Add Effect", |ui| {
         for name in [
             "Distortion",
@@ -54,11 +68,14 @@ pub fn draw(ui: &mut egui::Ui, rack: &mut RackModel, intents: &mut Vec<CommandIn
 
     egui::ScrollArea::vertical().show(ui, |ui| {
         for index in 0..len {
-            ui.group(|ui| {
+            let card = ui.group(|ui| {
                 ui.set_width(ui.available_width().min(420.0));
 
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("⠿").color(theme::TEXT_MUTED));
+                    // Drag the grip onto another card to move this slot there
+                    ui.dnd_drag_source(ui.id().with(("rack_grip", index)), index, |ui| {
+                        ui.label(RichText::new("⠿").color(theme::TEXT_MUTED));
+                    });
 
                     let selected = rack.selected == Some(index);
                     let name_resp = ui.selectable_label(
@@ -150,9 +167,39 @@ pub fn draw(ui: &mut egui::Ui, rack: &mut RackModel, intents: &mut Vec<CommandIn
                         .show(ui);
                 });
             });
+            // Another card's grip hovering here previews and commits a reorder
+            if card
+                .response
+                .dnd_hover_payload::<usize>()
+                .is_some_and(|from| *from != index)
+            {
+                ui.painter().rect_stroke(
+                    card.response.rect,
+                    3.0,
+                    egui::Stroke::new(1.5, theme::ACCENT),
+                    egui::StrokeKind::Outside,
+                );
+            }
+            if let Some(from) = card.response.dnd_release_payload::<usize>() {
+                if *from != index {
+                    edit = Some(RackEdit::Move(*from, index));
+                }
+            }
             ui.add_space(6.0);
         }
     });
+
+    // Delete/Backspace removes the selected effect while the pointer is over
+    // the rack and no text field is being edited
+    if edit.is_none() && ui.ui_contains_pointer() {
+        if let Some(selected) = rack.selected {
+            let pressed = ui
+                .input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace));
+            if pressed && ui.memory(|m| m.focused().is_none()) {
+                edit = Some(RackEdit::Remove(selected));
+            }
+        }
+    }
 
     match edit {
         Some(RackEdit::Move(from, to)) => rack.reorder(from, to),

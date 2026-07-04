@@ -112,12 +112,34 @@ pub fn draw(ui: &mut egui::Ui, grid: &mut SessionGrid, intents: &mut Vec<Command
                 let x = grid_left + track as f32 * stride_x;
                 let cell = Rect::from_min_size(pos2(x, y), vec2(SLOT_W, SLOT_H));
                 let id = ui.id().with(("session_slot", scene, track));
-                let resp = ui.interact(cell, id, Sense::click());
+                let resp = ui.interact(cell, id, Sense::click_and_drag());
                 let index = grid.index(track, scene);
                 let (filled, playing, queued, name) = grid
                     .slot(track, scene)
                     .map(|s| (s.filled, s.playing, s.queued, s.name.clone()))
                     .unwrap_or((false, false, false, String::new()));
+
+                // A filled slot can be dragged onto another slot: move by
+                // default, copy while Alt is held at release
+                if filled {
+                    resp.dnd_set_drag_payload((track, scene));
+                }
+                let drop_hover = resp
+                    .dnd_hover_payload::<(usize, usize)>()
+                    .is_some_and(|src| *src != (track, scene));
+                if let Some(src) = resp.dnd_release_payload::<(usize, usize)>() {
+                    if *src != (track, scene) {
+                        let verb = if ui.input(|i| i.modifiers.alt) {
+                            "session_copy"
+                        } else {
+                            "session_move"
+                        };
+                        intents.push(CommandIntent::new(format!(
+                            "{verb}:{}:{}:{track}:{scene}",
+                            src.0, src.1
+                        )));
+                    }
+                }
 
                 // Double-click empty -> create a clip; click filled -> select + launch
                 if resp.double_clicked() && !filled {
@@ -169,7 +191,9 @@ pub fn draw(ui: &mut egui::Ui, grid: &mut SessionGrid, intents: &mut Vec<Command
                         if playing { theme::BG } else { theme::TEXT },
                     );
                 }
-                let stroke = if selected {
+                let stroke = if drop_hover {
+                    Stroke::new(2.0, theme::ACCENT)
+                } else if selected {
                     Stroke::new(1.5, theme::ACCENT)
                 } else if resp.hovered() {
                     Stroke::new(1.0, theme::STROKE_STRONG)
@@ -180,4 +204,16 @@ pub fn draw(ui: &mut egui::Ui, grid: &mut SessionGrid, intents: &mut Vec<Command
             }
         }
     });
+
+    // Delete/Backspace clears the selected filled slot while the grid is
+    // hovered and no text field is being edited; the app owns the teardown
+    if let Some(index) = grid.selected {
+        let (scene, track) = (index / grid.tracks, index % grid.tracks);
+        let filled = grid.slot(track, scene).map(|s| s.filled).unwrap_or(false);
+        let pressed =
+            ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace));
+        if filled && pressed && ui.ui_contains_pointer() && ui.memory(|m| m.focused().is_none()) {
+            intents.push(CommandIntent::new(format!("session_clear:{track}:{scene}")));
+        }
+    }
 }

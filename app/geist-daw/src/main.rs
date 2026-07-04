@@ -9,6 +9,8 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
+#[cfg(test)]
+mod alloc_guard;
 mod control;
 mod engine;
 mod fx;
@@ -23,6 +25,12 @@ mod studio;
 mod startup;
 
 use std::time::Duration;
+
+// Test builds route every heap op through the counting allocator so the
+// audio-callback no-alloc contract is enforced, not just described
+#[cfg(test)]
+#[global_allocator]
+static TEST_ALLOC: alloc_guard::CountingAlloc = alloc_guard::CountingAlloc;
 
 use crate::control::EngineControl;
 use crate::engine::Engine;

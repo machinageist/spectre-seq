@@ -41,7 +41,7 @@ fn strip(ui: &mut egui::Ui, mixer: &mut MixerModel, index: usize, intents: &mut 
     let name = mixer.channels[index].name.clone();
     let audible = mixer.is_audible(index);
 
-    ui.group(|ui| {
+    let group = ui.group(|ui| {
         ui.set_width(74.0);
         ui.vertical_centered(|ui| {
             if ui
@@ -93,4 +93,27 @@ fn strip(ui: &mut egui::Ui, mixer: &mut MixerModel, index: usize, intents: &mut 
             }
         });
     });
+
+    // A browser item dropped on a strip targets this track: effects insert
+    // into its chain, anything else selects the track and runs its intent
+    if group
+        .response
+        .dnd_hover_payload::<CommandIntent>()
+        .is_some()
+    {
+        ui.painter().rect_stroke(
+            group.response.rect,
+            3.0,
+            egui::Stroke::new(1.5, theme::ACCENT),
+            egui::StrokeKind::Outside,
+        );
+    }
+    if let Some(intent) = group.response.dnd_release_payload::<CommandIntent>() {
+        mixer.selected = index;
+        if let Some(name) = intent.command.strip_prefix("add_effect:") {
+            intents.push(CommandIntent::new(format!("add_effect_to:{index}:{name}")));
+        } else {
+            intents.push((*intent).clone());
+        }
+    }
 }

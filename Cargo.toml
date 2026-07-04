@@ -1,19 +1,10 @@
 # ==============================================================================
 # File: Cargo.toml
 # Layer: workspace root
-# Purpose: workspace root; members = all crates
-# Status: Pseudocode scaffold; implementation intentionally pending.
+# Purpose: workspace root; active members = crates/* + app, CLAP/LV2 hosts excluded
+# Status: Implemented.
 # Contract: Keep comments terse, declarative, and synchronized with code.
 # ==============================================================================
-
-# Pseudocode plan:
-# - Declare responsibility: workspace root; members = all crates
-# - Define public types before behavior.
-# - Separate real-time-safe paths from UI/app paths.
-# - Prefer explicit errors over implicit panics.
-# - Add tests beside behavior once implementation begins.
-# - Keep config explicit and reproducible.
-# - Document each non-default setting inline.
 
 [workspace]
 resolver = "2"

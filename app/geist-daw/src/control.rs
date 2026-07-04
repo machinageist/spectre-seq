@@ -429,6 +429,9 @@ pub struct EngineControl {
     scope: Consumer<f32>,
     // Recorded audio buffers handed to the engine out-of-band
     assets: Producer<AudioAsset>,
+    // Buffers the engine displaced from its asset store, drained and dropped
+    // here so the deallocation never happens in the audio callback
+    asset_returns: Consumer<Arc<[f32]>>,
     // Rolling display window the UI redraws each frame
     scope_view: Vec<f32>,
 }
@@ -442,6 +445,7 @@ pub struct EngineSink {
     pub session_scene: Arc<Vec<AtomicU8>>,
     pub assets: Consumer<AudioAsset>,
     scope: Producer<f32>,
+    asset_returns: Producer<Arc<[f32]>>,
 }
 
 // Build the paired UI and audio ends of the control plane for `num_tracks`
@@ -449,6 +453,7 @@ pub fn control_plane(num_tracks: usize) -> (EngineControl, EngineSink) {
     let (command_tx, command_rx) = RingBuffer::new(COMMAND_CAPACITY);
     let (scope_tx, scope_rx) = RingBuffer::new(SCOPE_CAPACITY);
     let (asset_tx, asset_rx) = RingBuffer::new(ASSET_CAPACITY);
+    let (asset_return_tx, asset_return_rx) = RingBuffer::new(ASSET_CAPACITY);
     let meter = Arc::new(LevelMeter::new());
     let track_meters = Arc::new(
         (0..num_tracks)
@@ -470,6 +475,7 @@ pub fn control_plane(num_tracks: usize) -> (EngineControl, EngineSink) {
             session_scene: Arc::clone(&session_scene),
             scope: scope_rx,
             assets: asset_tx,
+            asset_returns: asset_return_rx,
             scope_view: Vec::with_capacity(SCOPE_VIEW_LEN),
         },
         EngineSink {
@@ -480,11 +486,20 @@ pub fn control_plane(num_tracks: usize) -> (EngineControl, EngineSink) {
             session_scene,
             assets: asset_rx,
             scope: scope_tx,
+            asset_returns: asset_return_tx,
         },
     )
 }
 
 impl EngineSink {
+    // Hand a displaced sample buffer back to the UI thread for dropping.
+    // Wait-free; if the ring is saturated the Arc drops here as a last resort
+    // (deallocating in the callback beats leaking, and a full ring means the
+    // UI produced ASSET_CAPACITY replacements without one frame of drain)
+    pub fn return_asset(&mut self, samples: Arc<[f32]>) {
+        let _ = self.asset_returns.push(samples);
+    }
+
     // Publish a decimated copy of the block's mono waveform for the scope
     // Wait-free: samples are dropped if the UI falls behind, never blocked
     pub fn push_scope(&mut self, mono: &[f32]) {
@@ -532,8 +547,14 @@ impl EngineControl {
         (raw != SCENE_NONE).then_some(raw as usize)
     }
 
+    // Drop sample buffers the engine displaced from its asset store
+    pub fn drain_asset_returns(&mut self) {
+        while self.asset_returns.pop().is_ok() {}
+    }
+
     // Drain newly published scope samples into the rolling display window
     pub fn update_scope(&mut self) {
+        self.drain_asset_returns();
         while let Ok(sample) = self.scope.pop() {
             self.scope_view.push(sample);
         }

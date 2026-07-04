@@ -9,5 +9,6 @@
 pub mod filter_stack;
 pub mod mod_matrix;
 pub mod osc_stack;
+pub mod params;
 pub mod voice;
 pub mod voice_pool;

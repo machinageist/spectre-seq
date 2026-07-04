@@ -346,6 +346,10 @@ pub struct StudioApp {
     status: String,
     // Snapshot-based undo/redo of the editable surface
     history: EditHistory,
+    // One-shot: an undo/redo restored non-selected content; the per-frame
+    // selected-only note syncs can't catch the engine up, so a full-map
+    // resync runs after the regular syncs this frame
+    resync_history: bool,
 }
 
 impl StudioApp {
@@ -389,6 +393,7 @@ impl StudioApp {
             computer_held: [false; COMPUTER_KEYS.len()],
             status: String::new(),
             history: EditHistory::new(),
+            resync_history: false,
         }
     }
 
@@ -1250,7 +1255,29 @@ impl StudioApp {
                         });
                     }
                 }
-                None => {} // freshly id-assigned clips were Added above
+                None => {
+                    // Not in the mirror: restored by undo/redo (or id-assigned
+                    // above, where the duplicate AddClip is an engine no-op).
+                    // Re-home it, notes and all
+                    self.control.send(EngineCommand::AddClip {
+                        track: clip.lane as u8,
+                        id: clip.id,
+                        start_beats: clip.start_beats,
+                        len_beats: clip.len_beats,
+                    });
+                    let notes = self.clip_notes.get(&clip.id).cloned().unwrap_or_default();
+                    for note in &notes {
+                        self.control.send(EngineCommand::AddClipNote {
+                            track: clip.lane as u8,
+                            clip: clip.id,
+                            pitch: note.pitch,
+                            start_beats: note.start_beats,
+                            len_beats: note.len_beats,
+                            velocity: note.velocity,
+                        });
+                    }
+                    self.clip_notes_mirror.insert(clip.id, notes);
+                }
             }
         }
 
@@ -1328,16 +1355,65 @@ impl StudioApp {
     // Translate rack intents into visible character-FX slots
     fn handle_rack_intents(&mut self, intents: &[CommandIntent]) {
         for intent in intents {
-            let Some(name) = intent.command.strip_prefix("add_effect:") else {
+            let cmd = intent.command.as_str();
+            if let Some(rest) = cmd.strip_prefix("add_effect_to:") {
+                // Track-targeted insert (mixer-strip drop); the target may not
+                // be the rack currently on screen
+                if let Some((track, name)) = rest.split_once(':') {
+                    if let (Ok(track), Some(kind)) =
+                        (track.parse::<usize>(), effect_kind_from_name(name))
+                    {
+                        if track < NUM_TRACKS {
+                            self.add_effect_to_track(track, kind);
+                        }
+                    }
+                }
+                continue;
+            }
+            let Some(name) = cmd.strip_prefix("add_effect:") else {
                 continue;
             };
             let Some(kind) = effect_kind_from_name(name) else {
                 continue;
             };
-            if let Some(instance) = self.session.rack.next_character_instance(kind) {
-                let slot = character_slot(kind, instance, None, true);
-                self.session.rack.push(slot);
-                self.session.rack.selected = Some(self.session.rack.slots.len() - 1);
+            self.add_effect_to_track(self.rack_track, kind);
+        }
+    }
+
+    // Append a character effect to a track's chain. The on-screen rack is
+    // edited live; hidden tracks edit their stored rack, which sync_rack
+    // loads (and diffs to the engine) when that track is next selected.
+    fn add_effect_to_track(&mut self, track: usize, kind: EffectKind) {
+        let rack = if track == self.rack_track {
+            &mut self.session.rack
+        } else {
+            &mut self.track_racks[track]
+        };
+        if let Some(instance) = rack.next_character_instance(kind) {
+            let slot = character_slot(kind, instance, None, true);
+            rack.push(slot);
+            rack.selected = Some(rack.slots.len() - 1);
+        }
+    }
+
+    // Translate browser intents into rack focus/selection (inserts reuse the
+    // add_effect path in handle_rack_intents)
+    fn handle_browser_intents(&mut self, intents: &[CommandIntent]) {
+        for intent in intents {
+            let cmd = intent.command.as_str();
+            if cmd == "show_device" {
+                self.state.set_detail_view(DetailView::Device);
+            } else if let Some(name) = cmd.strip_prefix("select_device:") {
+                if let Some(index) = self
+                    .session
+                    .rack
+                    .slots
+                    .iter()
+                    .position(|slot| slot.name.eq_ignore_ascii_case(name))
+                {
+                    self.session.rack.selected = Some(index);
+                    self.state.set_detail_view(DetailView::Device);
+                }
             }
         }
     }
@@ -1361,6 +1437,18 @@ impl StudioApp {
             } else if let Some(rest) = cmd.strip_prefix("session_create:") {
                 if let Some((track, scene)) = parse_track_scene(rest) {
                     self.create_slot(track, scene);
+                }
+            } else if let Some(rest) = cmd.strip_prefix("session_clear:") {
+                if let Some((track, scene)) = parse_track_scene(rest) {
+                    self.clear_slot(track, scene);
+                }
+            } else if let Some(rest) = cmd.strip_prefix("session_move:") {
+                if let Some((src, dst)) = parse_slot_pair(rest) {
+                    self.move_or_copy_slot(src, dst, false);
+                }
+            } else if let Some(rest) = cmd.strip_prefix("session_copy:") {
+                if let Some((src, dst)) = parse_slot_pair(rest) {
+                    self.move_or_copy_slot(src, dst, true);
                 }
             } else if cmd == "session_stop_all" {
                 for track in 0..NUM_TRACKS {
@@ -1396,6 +1484,95 @@ impl StudioApp {
             .or_default();
         let grid = &mut self.session.session_grid;
         grid.selected = Some(grid.index(track, scene));
+    }
+
+    // Clear one session slot: stop it if active, release + drop its engine
+    // notes, then reset the grid cell and every studio binding that points at it
+    fn clear_slot(&mut self, track: usize, scene: usize) {
+        let key = (track as u8, scene as u8);
+        let active = self
+            .session
+            .session_grid
+            .slot(track, scene)
+            .map(|s| s.playing || s.queued)
+            .unwrap_or(false);
+        if active {
+            self.control.send(EngineCommand::StopSlot { track: key.0 });
+        }
+        if let Some(notes) = self.session_notes.remove(&key) {
+            for note in &notes {
+                self.control.send(EngineCommand::RemoveSessionNote {
+                    track: key.0,
+                    scene: key.1,
+                    pitch: note.pitch,
+                    start_beats: note.start_beats,
+                });
+            }
+        }
+        self.session_notes_mirror.remove(&key);
+        if self.session_edit == Some(key) {
+            self.session_edit = None;
+            self.session.piano.notes.clear();
+        }
+        if self.session_record_target == Some(key) {
+            self.session_record_target = None;
+        }
+        let grid = &mut self.session.session_grid;
+        let index = grid.index(track, scene);
+        if let Some(slot) = grid.slot_mut(track, scene) {
+            *slot = Default::default();
+        }
+        if grid.selected == Some(index) {
+            grid.selected = None;
+        }
+    }
+
+    // Move or copy a session slot's clip to another slot. The destination is
+    // overwritten; a move clears the source afterwards.
+    fn move_or_copy_slot(&mut self, src: (usize, usize), dst: (usize, usize), copy: bool) {
+        if src == dst || !self.slot_filled(src.0, src.1) {
+            return;
+        }
+        let skey = (src.0 as u8, src.1 as u8);
+        let dkey = (dst.0 as u8, dst.1 as u8);
+        let notes = self.session_notes.get(&skey).cloned().unwrap_or_default();
+        let name = self
+            .session
+            .session_grid
+            .slot(src.0, src.1)
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+
+        if self.slot_filled(dst.0, dst.1) {
+            self.clear_slot(dst.0, dst.1);
+        }
+        self.control.send(EngineCommand::CreateSessionSlot {
+            track: dkey.0,
+            scene: dkey.1,
+            len_beats: SESSION_CLIP_LEN,
+        });
+        for note in &notes {
+            self.control.send(EngineCommand::AddSessionNote {
+                track: dkey.0,
+                scene: dkey.1,
+                pitch: note.pitch,
+                start_beats: note.start_beats,
+                len_beats: note.len_beats,
+                velocity: note.velocity,
+            });
+        }
+        self.session_notes.insert(dkey, notes.clone());
+        self.session_notes_mirror.insert(dkey, notes);
+        if !copy {
+            self.clear_slot(src.0, src.1);
+        }
+        let grid = &mut self.session.session_grid;
+        let index = grid.index(dst.0, dst.1);
+        if let Some(slot) = grid.slot_mut(dst.0, dst.1) {
+            slot.filled = true;
+            slot.name = name;
+        }
+        grid.selected = Some(index);
     }
 
     // Queue one slot to launch; the engine readback flips it to playing at the
@@ -1648,6 +1825,104 @@ impl StudioApp {
         // Force the piano roll to rebind so it reflects the restored selection
         self.piano_clip = None;
         self.session_edit = None;
+        self.resync_history = true;
+    }
+
+    // Catch the engine up on every session slot and clip whose notes an
+    // undo/redo changed outside the current selection
+    fn resync_after_history(&mut self) {
+        // Session-slot notes: diff every slot against the engine mirror
+        let keys: Vec<(u8, u8)> = self
+            .session_notes
+            .keys()
+            .chain(self.session_notes_mirror.keys())
+            .copied()
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        for key in keys {
+            let current = self.session_notes.get(&key).cloned().unwrap_or_default();
+            let mirror = self
+                .session_notes_mirror
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+            let (track, scene) = key;
+            for note in &mirror {
+                if !current.iter().any(|c| same_note(c, note)) {
+                    self.control.send(EngineCommand::RemoveSessionNote {
+                        track,
+                        scene,
+                        pitch: note.pitch,
+                        start_beats: note.start_beats,
+                    });
+                }
+            }
+            for note in &current {
+                if !mirror.iter().any(|m| same_note(m, note)) {
+                    self.control.send(EngineCommand::AddSessionNote {
+                        track,
+                        scene,
+                        pitch: note.pitch,
+                        start_beats: note.start_beats,
+                        len_beats: note.len_beats,
+                        velocity: note.velocity,
+                    });
+                }
+            }
+            self.session_notes_mirror.insert(key, current);
+        }
+
+        // Clip notes: sync_timeline already restored the clips themselves;
+        // diff each surviving clip's note content
+        let ids: Vec<u64> = self
+            .clip_notes
+            .keys()
+            .chain(self.clip_notes_mirror.keys())
+            .copied()
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        for id in ids {
+            let Some(lane) = self
+                .session
+                .timeline
+                .clips
+                .iter()
+                .find(|c| c.id == id)
+                .map(|c| c.lane)
+            else {
+                // Clip gone: RemoveClip in sync_timeline released its notes
+                self.clip_notes_mirror.remove(&id);
+                continue;
+            };
+            let current = self.clip_notes.get(&id).cloned().unwrap_or_default();
+            let mirror = self.clip_notes_mirror.get(&id).cloned().unwrap_or_default();
+            let track = lane as u8;
+            for note in &mirror {
+                if !current.iter().any(|c| same_note(c, note)) {
+                    self.control.send(EngineCommand::RemoveClipNote {
+                        track,
+                        clip: id,
+                        pitch: note.pitch,
+                        start_beats: note.start_beats,
+                    });
+                }
+            }
+            for note in &current {
+                if !mirror.iter().any(|m| same_note(m, note)) {
+                    self.control.send(EngineCommand::AddClipNote {
+                        track,
+                        clip: id,
+                        pitch: note.pitch,
+                        start_beats: note.start_beats,
+                        len_beats: note.len_beats,
+                        velocity: note.velocity,
+                    });
+                }
+            }
+            self.clip_notes_mirror.insert(id, current);
+        }
     }
 
     // Apply a discrete transport button press to the engine and the mirror
@@ -2076,9 +2351,10 @@ impl eframe::App for StudioApp {
         if let Some(action) = response.transport {
             self.apply_transport(action);
         }
-        // App-level actions emitted by rack/session views this frame
+        // App-level actions emitted by rack/session/browser views this frame
         self.handle_rack_intents(&response.intents);
         self.handle_session_intents(&response.intents);
+        self.handle_browser_intents(&response.intents);
 
         // Reflect any view edits to the engine, then keep meters animating
         self.emit_engine_diff();
@@ -2094,6 +2370,12 @@ impl eframe::App for StudioApp {
             self.sync_clip_notes();
         }
         self.sync_steps();
+        // After an undo/redo, the selected-only syncs above have already run;
+        // sweep every other slot/clip so the engine matches the restored state
+        if self.resync_history {
+            self.resync_after_history();
+            self.resync_history = false;
+        }
 
         // Session persistence, after the syncs so the snapshot is current
         if response.save_requested {
@@ -2342,15 +2624,35 @@ fn cable(from: u64, to: u64) -> geist_ui::model::Cable {
     }
 }
 
-// The browser catalog of the engine's built-in instrument and effects
+// The browser catalog of the engine's built-in instrument and effects.
+// Every item carries a live intent: character effects insert into the selected
+// track's chain, fixed devices focus their rack slot, the synth opens the rack.
 fn browser_catalog() -> BrowserModel {
+    let mut items = vec![
+        BrowserItem::new("Geist Synth", "Instrument", SignalKind::Note)
+            .with_intent(CommandIntent::new("show_device")),
+    ];
+    for name in [
+        "Distortion",
+        "Phaser",
+        "Flanger",
+        "Chorus",
+        "EQ",
+        "Saturator",
+    ] {
+        items.push(
+            BrowserItem::new(name, "Effect", SignalKind::Audio)
+                .with_intent(CommandIntent::new(format!("add_effect:{name}"))),
+        );
+    }
+    for name in ["Filter", "Delay", "Reverb"] {
+        items.push(
+            BrowserItem::new(name, "Device", SignalKind::Audio)
+                .with_intent(CommandIntent::new(format!("select_device:{name}"))),
+        );
+    }
     BrowserModel {
-        items: vec![
-            BrowserItem::new("Geist Synth", "Instrument", SignalKind::Note),
-            BrowserItem::new("Filter", "Effect", SignalKind::Audio),
-            BrowserItem::new("Delay", "Effect", SignalKind::Audio),
-            BrowserItem::new("Reverb", "Effect", SignalKind::Audio),
-        ],
+        items,
         query: String::new(),
         selected: None,
     }
@@ -2433,6 +2735,14 @@ fn session_slot_pos(record_start: f32, note_start_rel: f32, slot_len: f32) -> f3
 fn parse_track_scene(s: &str) -> Option<(usize, usize)> {
     let (t, sc) = s.split_once(':')?;
     Some((t.parse().ok()?, sc.parse().ok()?))
+}
+
+// Parse "src_track:src_scene:dst_track:dst_scene" into two in-range slots
+fn parse_slot_pair(s: &str) -> Option<((usize, usize), (usize, usize))> {
+    let mut parts = s.split(':');
+    let src = (parts.next()?.parse().ok()?, parts.next()?.parse().ok()?);
+    let dst = (parts.next()?.parse().ok()?, parts.next()?.parse().ok()?);
+    (src.0 < NUM_TRACKS && dst.0 < NUM_TRACKS && parts.next().is_none()).then_some((src, dst))
 }
 
 fn lfo_dest_to_knob(dest: LfoDestination) -> f32 {
@@ -2873,6 +3183,39 @@ mod tests {
             item.intent.args.get("target").unwrap(),
             "selected_parameter"
         );
+    }
+
+    #[test]
+    fn slot_pair_parses_in_range_and_rejects_garbage() {
+        assert_eq!(parse_slot_pair("0:1:2:3"), Some(((0, 1), (2, 3))));
+        assert_eq!(parse_slot_pair("0:1:2"), None, "missing field");
+        assert_eq!(parse_slot_pair("0:1:2:3:4"), None, "extra field");
+        assert_eq!(parse_slot_pair("9:0:0:0"), None, "src track out of range");
+        assert_eq!(parse_slot_pair("0:0:9:0"), None, "dst track out of range");
+        assert_eq!(parse_slot_pair("a:0:0:0"), None, "non-numeric");
+    }
+
+    #[test]
+    fn browser_catalog_items_carry_live_intents() {
+        // Every browser item must do something real on insert: character
+        // effects add to the chain, fixed devices focus their rack slot
+        let catalog = browser_catalog();
+        assert!(!catalog.items.is_empty());
+        for item in &catalog.items {
+            assert!(
+                !item.intent.command.starts_with("insert:"),
+                "{} still has a dead insert intent",
+                item.name
+            );
+        }
+        assert!(catalog
+            .items
+            .iter()
+            .any(|i| i.intent.command == "add_effect:Distortion"));
+        assert!(catalog
+            .items
+            .iter()
+            .any(|i| i.intent.command == "select_device:Reverb"));
     }
 
     #[test]

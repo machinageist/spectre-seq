@@ -1,0 +1,112 @@
+[
+  {
+    "file": "docs/specs/ableton-live-clean-room-spec.md",
+    "lines": 626,
+    "headings": 48,
+    "urls": 19,
+    "markers": {
+      "partial": 0,
+      "gap": 1,
+      "TODO": 0,
+      "deferred": 0,
+      "out of scope": 1,
+      "omitted": 1,
+      "not fully": 0,
+      "missing": 7
+    },
+    "has": {
+      "provenance": true,
+      "coverage": true,
+      "mapping": true,
+      "non_goals": true
+    }
+  },
+  {
+    "file": "docs/modular_rack_spec.md",
+    "lines": 1263,
+    "headings": 93,
+    "urls": 15,
+    "markers": {
+      "partial": 5,
+      "gap": 4,
+      "TODO": 0,
+      "deferred": 0,
+      "out of scope": 1,
+      "omitted": 1,
+      "not fully": 1,
+      "missing": 0
+    },
+    "has": {
+      "provenance": true,
+      "coverage": true,
+      "mapping": true,
+      "non_goals": true
+    }
+  },
+  {
+    "file": "docs/specs/serum-2-clean-room-spec.md",
+    "lines": 1228,
+    "headings": 55,
+    "urls": 11,
+    "markers": {
+      "partial": 0,
+      "gap": 24,
+      "TODO": 0,
+      "deferred": 0,
+      "out of scope": 1,
+      "omitted": 0,
+      "not fully": 0,
+      "missing": 7
+    },
+    "has": {
+      "provenance": true,
+      "coverage": true,
+      "mapping": true,
+      "non_goals": true
+    }
+  },
+  {
+    "file": "docs/specs/geist-modular-synth-spec.md",
+    "lines": 733,
+    "headings": 68,
+    "urls": 8,
+    "markers": {
+      "partial": 8,
+      "gap": 6,
+      "TODO": 0,
+      "deferred": 0,
+      "out of scope": 2,
+      "omitted": 1,
+      "not fully": 1,
+      "missing": 7
+    },
+    "has": {
+      "provenance": true,
+      "coverage": true,
+      "mapping": true,
+      "non_goals": true
+    }
+  },
+  {
+    "file": "docs/specs/bitwig-studio-clean-room-spec.md",
+    "lines": 713,
+    "headings": 127,
+    "urls": 22,
+    "markers": {
+      "partial": 0,
+      "gap": 1,
+      "TODO": 0,
+      "deferred": 0,
+      "out of scope": 8,
+      "omitted": 0,
+      "not fully": 0,
+      "missing": 3
+    },
+    "has": {
+      "provenance": true,
+      "coverage": true,
+      "mapping": true,
+      "non_goals": true
+    }
+  }
+]

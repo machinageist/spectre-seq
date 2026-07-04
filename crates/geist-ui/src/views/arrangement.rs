@@ -40,7 +40,7 @@ pub fn draw(
     ui: &mut egui::Ui,
     timeline: &mut TimelineModel,
     transport: &mut Transport,
-    _intents: &mut Vec<CommandIntent>,
+    intents: &mut Vec<CommandIntent>,
 ) {
     // Header: the arrangement grid selector
     ui.horizontal(|ui| {
@@ -250,7 +250,14 @@ pub fn draw(
                 }
             });
 
-            if selected && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
+            // Focus gate: Backspace while typing in a text field must not
+            // delete the selected clip
+            if selected
+                && ui.memory(|m| m.focused().is_none())
+                && ui.input(|i| {
+                    i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)
+                })
+            {
                 remove = Some(index);
             }
         }
@@ -292,6 +299,32 @@ pub fn draw(
             }
         } else if bg.clicked() {
             timeline.selected = None;
+        }
+
+        // A browser item dropped on a lane targets that lane's track: effects
+        // insert into its chain, anything else runs its intent unchanged
+        if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
+            let lane = y_lane(pos.y);
+            if bg.dnd_hover_payload::<CommandIntent>().is_some() && lane < lane_count {
+                let top = rect.top() + RULER_H + lane as f32 * LANE_H;
+                let lane_rect =
+                    Rect::from_min_size(pos2(rect.left(), top), vec2(rect.width(), LANE_H));
+                painter.rect_stroke(
+                    lane_rect,
+                    0.0,
+                    Stroke::new(1.5, theme::ACCENT),
+                    StrokeKind::Inside,
+                );
+            }
+            if let Some(intent) = bg.dnd_release_payload::<CommandIntent>() {
+                if lane < lane_count {
+                    if let Some(name) = intent.command.strip_prefix("add_effect:") {
+                        intents.push(CommandIntent::new(format!("add_effect_to:{lane}:{name}")));
+                    } else {
+                        intents.push((*intent).clone());
+                    }
+                }
+            }
         }
 
         // Playhead

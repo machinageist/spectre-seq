@@ -245,8 +245,11 @@ struct ClipNote {
 }
 
 // One MIDI clip placed on the timeline. Notes are relative to the clip start and
-// play once across the clip's span at absolute transport position.
+// play once across the clip's span at absolute transport position. Clips live in
+// a preallocated pool: `live` marks occupancy so the audio thread never
+// constructs or drops a clip (both would touch the heap in the callback).
 struct ArrClip {
+    live: bool,
     id: u64,
     start_beats: f32,
     len_beats: f32,
@@ -254,12 +257,13 @@ struct ArrClip {
 }
 
 impl ArrClip {
-    // Empty clip; note capacity is fixed for realtime safety
-    fn new(id: u64, start_beats: f32, len_beats: f32) -> Self {
+    // Dead pool slot; note capacity is fixed for realtime safety
+    fn dead() -> Self {
         Self {
-            id,
-            start_beats,
-            len_beats,
+            live: false,
+            id: 0,
+            start_beats: 0.0,
+            len_beats: 0.0,
             notes: Vec::with_capacity(MAX_CLIP_NOTES),
         }
     }
@@ -295,10 +299,11 @@ pub struct Arrangement {
 }
 
 impl Arrangement {
-    // Empty arrangement; clip capacity is fixed for realtime safety
+    // Empty arrangement; the MIDI clip pool is fully built up front so the
+    // audio thread only flips `live` flags, never allocates or frees
     pub fn new() -> Self {
         Self {
-            clips: Vec::with_capacity(MAX_CLIPS_PER_TRACK),
+            clips: (0..MAX_CLIPS_PER_TRACK).map(|_| ArrClip::dead()).collect(),
             audio: Vec::with_capacity(MAX_CLIPS_PER_TRACK),
         }
     }
@@ -356,32 +361,42 @@ impl Arrangement {
         }
     }
 
-    // Add a placed clip unless the arrangement is full or the id already exists
+    // Activate a dead pool slot for a placed clip unless the pool is full or
+    // the id already exists
     fn add_clip(&mut self, id: u64, start_beats: f32, len_beats: f32) {
-        if self.clips.len() < MAX_CLIPS_PER_TRACK && !self.clips.iter().any(|c| c.id == id) {
-            self.clips.push(ArrClip::new(id, start_beats, len_beats));
+        if self.clips.iter().any(|c| c.live && c.id == id) {
+            return;
+        }
+        if let Some(clip) = self.clips.iter_mut().find(|c| !c.live) {
+            clip.live = true;
+            clip.id = id;
+            clip.start_beats = start_beats;
+            clip.len_beats = len_beats;
+            clip.notes.clear();
         }
     }
 
     // Move a clip's start position
     fn move_clip(&mut self, id: u64, start_beats: f32) {
-        if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
+        if let Some(clip) = self.clips.iter_mut().find(|c| c.live && c.id == id) {
             clip.start_beats = start_beats.max(0.0);
         }
     }
 
     // Resize a clip's length
     fn resize_clip(&mut self, id: u64, len_beats: f32) {
-        if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
+        if let Some(clip) = self.clips.iter_mut().find(|c| c.live && c.id == id) {
             clip.len_beats = len_beats.max(0.0);
         }
     }
 
-    // Remove a clip by id (MIDI or audio), releasing any sounding notes
+    // Remove a clip by id (MIDI or audio), releasing any sounding notes. MIDI
+    // clips return to the pool (marked dead); their note buffer is kept
     fn remove_clip(&mut self, id: u64, out: &mut Vec<NoteEvent>) {
-        if let Some(index) = self.clips.iter().position(|c| c.id == id) {
-            self.clips[index].release(out);
-            self.clips.swap_remove(index);
+        if let Some(clip) = self.clips.iter_mut().find(|c| c.live && c.id == id) {
+            clip.release(out);
+            clip.notes.clear();
+            clip.live = false;
         }
         if let Some(index) = self.audio.iter().position(|c| c.id == id) {
             self.audio.swap_remove(index);
@@ -390,7 +405,7 @@ impl Arrangement {
 
     // Add a note (relative to the clip start) to a clip, if room remains
     fn add_note(&mut self, id: u64, pitch: u8, start_beats: f32, len_beats: f32, velocity: f32) {
-        if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
+        if let Some(clip) = self.clips.iter_mut().find(|c| c.live && c.id == id) {
             if clip.notes.len() < MAX_CLIP_NOTES {
                 clip.notes.push(ClipNote {
                     pitch,
@@ -405,7 +420,7 @@ impl Arrangement {
 
     // Remove the first note matching pitch+start within a clip, releasing it if sounding
     fn remove_note(&mut self, id: u64, pitch: u8, start_beats: f32, out: &mut Vec<NoteEvent>) {
-        if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
+        if let Some(clip) = self.clips.iter_mut().find(|c| c.live && c.id == id) {
             if let Some(index) = clip
                 .notes
                 .iter()
@@ -421,7 +436,7 @@ impl Arrangement {
 
     // Drop every note in a clip, releasing any that are sounding
     fn clear_clip(&mut self, id: u64, out: &mut Vec<NoteEvent>) {
-        if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
+        if let Some(clip) = self.clips.iter_mut().find(|c| c.live && c.id == id) {
             clip.release(out);
             clip.notes.clear();
         }
@@ -430,7 +445,7 @@ impl Arrangement {
     // Trigger/release notes so the sounding set matches the absolute beat
     pub fn advance(&mut self, beat: f64, out: &mut Vec<NoteEvent>) {
         for clip in &mut self.clips {
-            if clip.len_beats <= 0.0 {
+            if !clip.live || clip.len_beats <= 0.0 {
                 continue;
             }
             let start = clip.start_beats as f64;
@@ -852,13 +867,22 @@ impl BlockProcessor for SynthProcessor {
         }
 
         // Move any newly recorded buffers into the asset store (no allocation:
-        // the Arc is built on the UI thread and only its pointer is stored here)
+        // the Arc is built on the UI thread and only its pointer is stored here).
+        // Displaced buffers go back over the return ring so their deallocation
+        // happens on the UI thread, never in this callback.
         while let Ok(asset) = sink.assets.pop() {
-            if let Some(slot) = audio_assets.get_mut(asset.slot) {
-                *slot = Some(StoredAsset {
-                    samples: asset.samples,
-                    channels: asset.channels,
-                });
+            match audio_assets.get_mut(asset.slot) {
+                Some(slot) => {
+                    if let Some(old) = slot.take() {
+                        sink.return_asset(old.samples);
+                    }
+                    *slot = Some(StoredAsset {
+                        samples: asset.samples,
+                        channels: asset.channels,
+                    });
+                }
+                // Out-of-range slot: bounce the buffer straight back
+                None => sink.return_asset(asset.samples),
             }
         }
 
@@ -918,6 +942,9 @@ impl BlockProcessor for SynthProcessor {
                     }
                 }
                 EngineCommand::SetBpm(bpm) => {
+                    // Beat 0 always has a tempo point, so this replaces in
+                    // place and never allocates (pinned by a geist-timeline
+                    // test); any other beat here would insert on this thread
                     transport.tempo_map_mut().set_tempo(0.0, bpm as f64);
                 }
                 EngineCommand::SetLoop {
@@ -1398,7 +1425,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::control::control_plane;
+    use crate::control::{control_plane, AudioAsset};
     use geist_core::config::AudioConfig;
     use geist_core::events::NoteEventKind;
 
@@ -1728,11 +1755,14 @@ mod tests {
     fn arrangement_stays_within_capacity() {
         let mut arr = Arrangement::new();
         let clip_cap = arr.clips.capacity();
-        // Overfill clips
+        // Overfill clips: the pool saturates at MAX_CLIPS_PER_TRACK live slots
         for id in 0..(MAX_CLIPS_PER_TRACK as u64 + 10) {
             arr.add_clip(id, 0.0, 4.0);
         }
-        assert_eq!(arr.clips.len(), MAX_CLIPS_PER_TRACK);
+        assert_eq!(
+            arr.clips.iter().filter(|c| c.live).count(),
+            MAX_CLIPS_PER_TRACK
+        );
         assert_eq!(arr.clips.capacity(), clip_cap, "clip list grew its buffer");
         // Overfill one clip's notes
         let note_cap = arr.clips[0].notes.capacity();
@@ -1744,6 +1774,20 @@ mod tests {
             arr.clips[0].notes.capacity(),
             note_cap,
             "clip notes grew the buffer"
+        );
+        // Remove returns the slot to the pool without dropping its note buffer
+        let mut out = Vec::with_capacity(8);
+        arr.remove_clip(0, &mut out);
+        assert!(!arr.clips[0].live);
+        assert_eq!(
+            arr.clips[0].notes.capacity(),
+            note_cap,
+            "pool slot freed its buffer"
+        );
+        arr.add_clip(99, 0.0, 4.0);
+        assert!(
+            arr.clips[0].live && arr.clips[0].id == 99,
+            "dead slot was not reused"
         );
     }
 
@@ -1834,6 +1878,118 @@ mod tests {
         assert_eq!(proc.tracks[2].patch.lfo_depth, 1.25);
         assert_eq!(proc.tracks[2].patch.lfo_dest, LfoDestination::Fm);
         assert_eq!(proc.tracks[1].patch.lfo_dest, DEFAULT_LFO_DEST);
+    }
+
+    #[test]
+    fn displaced_audio_asset_drops_on_the_ui_thread() {
+        // Replacing an occupied asset slot must not free the old buffer in the
+        // callback: the engine bounces it over the return ring, and the UI
+        // drain releases the final reference.
+        let (mut control, mut proc, len) = processor(false);
+        let frames = len / 2;
+        let mut output = vec![0.0f32; len];
+        let first: Arc<[f32]> = vec![0.1f32; 8].into();
+        let second: Arc<[f32]> = vec![0.2f32; 8].into();
+
+        control.send_asset(AudioAsset {
+            slot: 0,
+            samples: Arc::clone(&first),
+            channels: 1,
+        });
+        proc.process_block(&[], &mut output, 2, frames);
+        assert_eq!(Arc::strong_count(&first), 2); // test + engine slot
+
+        control.send_asset(AudioAsset {
+            slot: 0,
+            samples: Arc::clone(&second),
+            channels: 1,
+        });
+        proc.process_block(&[], &mut output, 2, frames);
+        // Displaced buffer now sits in the return ring, not freed in the block
+        assert_eq!(Arc::strong_count(&first), 2); // test + return ring
+        control.update_scope();
+        assert_eq!(
+            Arc::strong_count(&first),
+            1,
+            "displaced buffer was not released by the UI drain"
+        );
+        assert_eq!(Arc::strong_count(&second), 2); // test + engine slot
+
+        // An out-of-range slot bounces straight back instead of dropping here
+        let stray: Arc<[f32]> = vec![0.3f32; 4].into();
+        control.send_asset(AudioAsset {
+            slot: MAX_AUDIO_ASSETS + 1,
+            samples: Arc::clone(&stray),
+            channels: 1,
+        });
+        proc.process_block(&[], &mut output, 2, frames);
+        assert_eq!(Arc::strong_count(&stray), 2); // test + return ring
+        control.update_scope();
+        assert_eq!(Arc::strong_count(&stray), 1);
+    }
+
+    #[test]
+    fn audio_callback_is_allocation_free_in_steady_state() {
+        // The realtime contract, enforced: with a busy scene (placed clip,
+        // playing session slot, live notes, delay+reverb) and live command
+        // traffic, process_block must never touch the heap. The counting
+        // allocator in alloc_guard observes every alloc/dealloc/realloc.
+        let (mut control, mut proc, len) = processor(true);
+        let frames = len / 2;
+        let mut output = vec![0.0f32; len];
+
+        control.send(EngineCommand::AddClip {
+            track: 2,
+            id: 1,
+            start_beats: 0.0,
+            len_beats: 16.0,
+        });
+        control.send(EngineCommand::AddClipNote {
+            track: 2,
+            clip: 1,
+            pitch: 60,
+            start_beats: 0.0,
+            len_beats: 8.0,
+            velocity: 1.0,
+        });
+        control.send(EngineCommand::CreateSessionSlot {
+            track: 0,
+            scene: 0,
+            len_beats: 4.0,
+        });
+        control.send(EngineCommand::AddSessionNote {
+            track: 0,
+            scene: 0,
+            pitch: 64,
+            start_beats: 0.0,
+            len_beats: 2.0,
+            velocity: 0.9,
+        });
+        control.send(EngineCommand::LaunchSlot { track: 0, scene: 0 });
+        control.send(EngineCommand::SetDelay { track: 1, on: true });
+        control.send(EngineCommand::SetReverb { track: 1, on: true });
+        for _ in 0..8 {
+            proc.process_block(&[], &mut output, 2, frames);
+        }
+
+        let ((), hits) = crate::alloc_guard::assert_no_alloc_scope(|| {
+            for i in 0..32u32 {
+                let key = 60 + (i % 12) as u8;
+                control.send(EngineCommand::NoteOn {
+                    track: 0,
+                    key,
+                    velocity: 1.0,
+                });
+                control.send(EngineCommand::NoteOff { track: 0, key });
+                control.send(EngineCommand::SetCutoff {
+                    track: 0,
+                    hz: 500.0 + i as f32,
+                });
+                control.send(EngineCommand::SetBpm(120.0 + (i % 8) as f32));
+                proc.process_block(&[], &mut output, 2, frames);
+            }
+        });
+        assert_eq!(hits, 0, "audio callback touched the heap in steady state");
     }
 
     #[test]

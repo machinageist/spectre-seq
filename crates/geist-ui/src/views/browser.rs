@@ -51,18 +51,21 @@ pub fn draw(ui: &mut egui::Ui, browser: &mut BrowserModel, intents: &mut Vec<Com
             let name = browser.items[idx].name.clone();
             let category = browser.items[idx].category.clone();
             let color = browser.items[idx].kind.color();
+            let payload = browser.items[idx].intent.clone();
 
-            let resp = ui.horizontal(|ui| {
-                // Signal-type color dot
-                let (dot, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
-                ui.painter().circle_filled(dot.center(), 4.0, color);
-                ui.selectable_label(
-                    selected,
-                    RichText::new(format!("{name}    {category}")),
-                )
+            // Each row is draggable: dropping it on the device rack executes
+            // the same intent as a double-click
+            let drag = ui.dnd_drag_source(ui.id().with(("browser_item", idx)), payload, |ui| {
+                ui.horizontal(|ui| {
+                    // Signal-type color dot
+                    let (dot, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
+                    ui.painter().circle_filled(dot.center(), 4.0, color);
+                    ui.selectable_label(selected, RichText::new(format!("{name}    {category}")))
+                })
+                .inner
             });
 
-            let label = resp.inner;
+            let label = drag.inner;
             if label.clicked() {
                 browser.selected = Some(idx);
             }
