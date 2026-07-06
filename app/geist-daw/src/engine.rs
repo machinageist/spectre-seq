@@ -17,7 +17,7 @@ use geist_core::events::NoteEvent;
 use geist_core::transport::TransportSnapshot;
 use geist_dsp::prelude::{Lfo, LfoWaveform};
 use geist_graph::node::AudioNode;
-use geist_synth::prelude::{ModMatrix, ModRoute, SynthNode};
+use geist_synth::prelude::{ModMatrix, ModRoute, ModSource, ModTarget, SynthNode};
 use geist_timeline::prelude::Transport;
 
 use crate::control::{EngineCommand, EngineSink, LfoDestination, SCENE_NONE};
@@ -207,11 +207,12 @@ pub const DEFAULT_BPM: f64 = 120.0;
 // Startup session launch quantization in beats (one 4/4 bar)
 pub const DEFAULT_LAUNCH_QUANT: f64 = 4.0;
 
-fn lfo_dest_index(dest: LfoDestination) -> usize {
+// Map the patch's LFO destination onto its synth mod target identity
+fn lfo_dest_target(dest: LfoDestination) -> ModTarget {
     match dest {
-        LfoDestination::Cutoff => MOD_DEST_CUTOFF,
-        LfoDestination::Pitch => MOD_DEST_PITCH,
-        LfoDestination::Fm => MOD_DEST_FM,
+        LfoDestination::Cutoff => ModTarget::Cutoff,
+        LfoDestination::Pitch => ModTarget::Pitch,
+        LfoDestination::Fm => ModTarget::Fm,
     }
 }
 
@@ -224,14 +225,6 @@ pub const MAX_CLIP_NOTES: usize = 256;
 pub const MAX_CLIPS_PER_TRACK: usize = 64;
 // Start-beat tolerance when matching a note for removal
 const START_EPS: f32 = 1e-3;
-
-// Track-local modulation matrix indices
-const MOD_SRC_LFO: usize = 0;
-const MOD_DEST_CUTOFF: usize = 0;
-const MOD_DEST_PITCH: usize = 1;
-const MOD_DEST_FM: usize = 2;
-const MOD_SOURCE_COUNT: usize = 1;
-const MOD_DEST_COUNT: usize = 3;
 
 // One timed note inside a clip, positioned relative to the clip start, with its
 // current sounding state
@@ -760,16 +753,17 @@ impl Track {
         self.lfo.set_frequency(self.patch.lfo_rate_hz, block_rate);
         self.mod_matrix.clear();
         self.mod_matrix.add_route(ModRoute::bipolar(
-            MOD_SRC_LFO,
-            lfo_dest_index(self.patch.lfo_dest),
+            ModSource::Lfo1,
+            lfo_dest_target(self.patch.lfo_dest),
             self.patch.lfo_depth,
         ));
-        let sources = [self.lfo.next_sample(); MOD_SOURCE_COUNT];
-        let mut dests = [0.0f32; MOD_DEST_COUNT];
+        let sources = [self.lfo.next_sample(); ModSource::COUNT];
+        let mut dests = [0.0f32; ModTarget::COUNT];
         self.mod_matrix.resolve(&sources, &mut dests);
-        let cutoff = (self.patch.cutoff_hz + dests[MOD_DEST_CUTOFF]).clamp(20.0, 18_000.0);
-        let pitch = dests[MOD_DEST_PITCH];
-        let fm_amount = (self.patch.fm_amount + dests[MOD_DEST_FM]).max(0.0);
+        let cutoff =
+            (self.patch.cutoff_hz + dests[ModTarget::Cutoff.index()]).clamp(20.0, 18_000.0);
+        let pitch = dests[ModTarget::Pitch.index()];
+        let fm_amount = (self.patch.fm_amount + dests[ModTarget::Fm.index()]).max(0.0);
 
         self.node
             .set_unison(self.patch.unison_voices, self.patch.detune_cents);
@@ -1853,9 +1847,9 @@ mod tests {
 
     #[test]
     fn lfo_destinations_map_to_track_modulation_slots() {
-        assert_eq!(lfo_dest_index(LfoDestination::Cutoff), MOD_DEST_CUTOFF);
-        assert_eq!(lfo_dest_index(LfoDestination::Pitch), MOD_DEST_PITCH);
-        assert_eq!(lfo_dest_index(LfoDestination::Fm), MOD_DEST_FM);
+        assert_eq!(lfo_dest_target(LfoDestination::Cutoff), ModTarget::Cutoff);
+        assert_eq!(lfo_dest_target(LfoDestination::Pitch), ModTarget::Pitch);
+        assert_eq!(lfo_dest_target(LfoDestination::Fm), ModTarget::Fm);
     }
 
     #[test]

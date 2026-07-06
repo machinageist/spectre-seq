@@ -246,6 +246,7 @@ pub struct GraphNode {
 }
 
 // A connection between two node ports
+// `channels` is the polyphonic lane count; poly cables (>1) render thicker
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cable {
     pub from_node: u64,
@@ -253,6 +254,7 @@ pub struct Cable {
     pub to_node: u64,
     pub to_port: usize,
     pub kind: SignalKind,
+    pub channels: u16,
 }
 
 // The signal graph: nodes and the cables between them
@@ -265,6 +267,97 @@ pub struct GraphModel {
 impl GraphModel {
     pub fn node(&self, id: u64) -> Option<&GraphNode> {
         self.nodes.iter().find(|n| n.id == id)
+    }
+
+    // Connect an output port to an input port; returns false if either end
+    // is missing. Any output patches to any input (validation is feedback
+    // only); an input holds one cable, so a new connection replaces it, while
+    // outputs fan out freely. The cable takes the output port's signal color
+    pub fn connect(
+        &mut self,
+        from_node: u64,
+        from_port: usize,
+        to_node: u64,
+        to_port: usize,
+    ) -> bool {
+        let Some(kind) = self
+            .node(from_node)
+            .and_then(|n| n.outputs.get(from_port))
+            .map(|p| p.kind)
+        else {
+            return false;
+        };
+        if self
+            .node(to_node)
+            .and_then(|n| n.inputs.get(to_port))
+            .is_none()
+        {
+            return false;
+        }
+        self.disconnect_input(to_node, to_port);
+        self.cables.push(Cable {
+            from_node,
+            from_port,
+            to_node,
+            to_port,
+            kind,
+            channels: 1,
+        });
+        true
+    }
+
+    // Remove and return the single cable feeding an input, if any
+    pub fn disconnect_input(&mut self, to_node: u64, to_port: usize) -> Option<Cable> {
+        let index = self
+            .cables
+            .iter()
+            .position(|c| c.to_node == to_node && c.to_port == to_port)?;
+        Some(self.cables.remove(index))
+    }
+
+    // The cable currently feeding an input, if any
+    pub fn cable_at_input(&self, to_node: u64, to_port: usize) -> Option<&Cable> {
+        self.cables
+            .iter()
+            .find(|c| c.to_node == to_node && c.to_port == to_port)
+    }
+
+    // Lowest unused node id (ids are stable connection keys, never reused)
+    pub fn next_node_id(&self) -> u64 {
+        self.nodes.iter().map(|n| n.id).max().map_or(1, |m| m + 1)
+    }
+
+    // Add a node at a position and return its id. Ports are a generic In/Out
+    // pair colored by `kind`; catalog-accurate port topology is applied when
+    // engine wiring lands (task 10). The output carries the item's signal
+    // color, the input accepts audio like a rack device's main in.
+    pub fn add_node(&mut self, name: impl Into<String>, kind: SignalKind, pos: (f32, f32)) -> u64 {
+        let id = self.next_node_id();
+        self.nodes.push(GraphNode {
+            id,
+            name: name.into(),
+            pos,
+            inputs: vec![Port {
+                name: "In".into(),
+                kind: SignalKind::Audio,
+            }],
+            outputs: vec![Port {
+                name: "Out".into(),
+                kind,
+            }],
+        });
+        id
+    }
+
+    // Remove a node and every cable touching it; returns true if it existed
+    pub fn remove_node(&mut self, id: u64) -> bool {
+        let before = self.nodes.len();
+        self.nodes.retain(|n| n.id != id);
+        if self.nodes.len() == before {
+            return false;
+        }
+        self.cables.retain(|c| c.from_node != id && c.to_node != id);
+        true
     }
 }
 
@@ -697,6 +790,7 @@ impl SessionModel {
                     to_node: 2,
                     to_port: 0,
                     kind: SignalKind::Audio,
+                    channels: 1,
                 },
                 Cable {
                     from_node: 2,
@@ -704,6 +798,7 @@ impl SessionModel {
                     to_node: 3,
                     to_port: 0,
                     kind: SignalKind::Audio,
+                    channels: 1,
                 },
             ],
         };

@@ -13,4 +13,5 @@ edition = "2021"
 
 [dependencies]
 geist-core = { path = "../geist-core" }
+geist-dsp = { path = "../geist-dsp" }
 geist-graph = { path = "../geist-graph" }

@@ -12,14 +12,15 @@ use geist_core::config::AudioConfig;
 use geist_core::context::ProcessContext;
 use geist_graph::node::AudioNode;
 
-use crate::util::{is_high, process_mono_ch0, GATE_HIGH, GATE_LOW};
+use crate::standards::Schmitt;
+use crate::util::{process_mono_ch0, GATE_HIGH, GATE_LOW};
 
 // Divides an incoming clock: passes every Nth rising-edge pulse through
 // Pulse width is preserved; non-passing pulses output low for their duration
 pub struct ClockDividerNode {
     division: u32,
     count: u64,
-    prev_high: bool,
+    trigger: Schmitt,
     pass: bool,
 }
 
@@ -29,7 +30,7 @@ impl ClockDividerNode {
         Self {
             division: division.max(1),
             count: 0,
-            prev_high: false,
+            trigger: Schmitt::new(),
             pass: false,
         }
     }
@@ -50,29 +51,27 @@ impl AudioNode for ClockDividerNode {
     fn process(&mut self, ctx: &mut ProcessContext) {
         let division = self.division as u64;
         let mut count = self.count;
-        let mut prev = self.prev_high;
+        let mut trigger = self.trigger;
         let mut pass = self.pass;
         process_mono_ch0(ctx, |x| {
-            let now = is_high(x);
-            if now && !prev {
+            if trigger.step(x) {
                 count += 1;
                 pass = count.is_multiple_of(division);
             }
-            prev = now;
-            if now && pass {
+            if trigger.is_high() && pass {
                 GATE_HIGH
             } else {
                 GATE_LOW
             }
         });
         self.count = count;
-        self.prev_high = prev;
+        self.trigger = trigger;
         self.pass = pass;
     }
 
     fn reset(&mut self) {
         self.count = 0;
-        self.prev_high = false;
+        self.trigger = Schmitt::new();
         self.pass = false;
     }
 }
@@ -328,6 +327,14 @@ mod tests {
         let input = vec![0.0f32, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0];
         let out = run(&mut node, &input, 1);
         assert_eq!(out, input);
+    }
+
+    #[test]
+    fn clock_divider_uses_schmitt_rearm_threshold() {
+        let mut node = ClockDividerNode::new(1);
+        let input = vec![0.0f32, 1.0, 0.5, 0.2, 1.0, 0.1, 0.9, 1.0];
+        let out = run(&mut node, &input, 1);
+        assert_eq!(out, vec![0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0]);
     }
 
     #[test]

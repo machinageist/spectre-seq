@@ -11,14 +11,15 @@
 use geist_core::context::ProcessContext;
 use geist_graph::node::AudioNode;
 
-use crate::util::{is_high, process_pair_ch0};
+use crate::standards::Schmitt;
+use crate::util::process_pair_ch0;
 
 // Latches the signal on each rising edge of the trigger and holds it
 // Feeding noise into the signal with a clock trigger yields stepped random CV
 #[derive(Default)]
 pub struct SampleAndHoldNode {
     held: f32,
-    prev_high: bool,
+    trigger: Schmitt,
 }
 
 impl SampleAndHoldNode {
@@ -31,22 +32,20 @@ impl SampleAndHoldNode {
 impl AudioNode for SampleAndHoldNode {
     fn process(&mut self, ctx: &mut ProcessContext) {
         let mut held = self.held;
-        let mut prev = self.prev_high;
+        let mut detector = self.trigger;
         process_pair_ch0(ctx, |signal, trigger| {
-            let now = is_high(trigger);
-            if now && !prev {
+            if detector.step(trigger) {
                 held = signal;
             }
-            prev = now;
             held
         });
         self.held = held;
-        self.prev_high = prev;
+        self.trigger = detector;
     }
 
     fn reset(&mut self) {
         self.held = 0.0;
-        self.prev_high = false;
+        self.trigger = Schmitt::new();
     }
 }
 
@@ -54,6 +53,7 @@ impl AudioNode for SampleAndHoldNode {
 #[derive(Default)]
 pub struct TrackAndHoldNode {
     held: f32,
+    gate: Schmitt,
 }
 
 impl TrackAndHoldNode {
@@ -66,17 +66,21 @@ impl TrackAndHoldNode {
 impl AudioNode for TrackAndHoldNode {
     fn process(&mut self, ctx: &mut ProcessContext) {
         let mut held = self.held;
+        let mut detector = self.gate;
         process_pair_ch0(ctx, |signal, gate| {
-            if is_high(gate) {
+            detector.step(gate);
+            if detector.is_high() {
                 held = signal;
             }
             held
         });
         self.held = held;
+        self.gate = detector;
     }
 
     fn reset(&mut self) {
         self.held = 0.0;
+        self.gate = Schmitt::new();
     }
 }
 
@@ -116,6 +120,15 @@ mod tests {
     }
 
     #[test]
+    fn sample_hold_uses_schmitt_rearm_threshold() {
+        let mut node = SampleAndHoldNode::new();
+        let signal = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+        let trigger = [0.0, 1.0, 0.5, 0.2, 1.0, 0.1, 0.9, 1.0];
+        let out = run(&mut node, &pair(&signal, &trigger));
+        assert_eq!(out, vec![0.0, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.8]);
+    }
+
+    #[test]
     fn sample_hold_persists_across_blocks() {
         let mut node = SampleAndHoldNode::new();
         let signal = [0.9; FRAMES];
@@ -135,6 +148,15 @@ mod tests {
         let out = run(&mut node, &pair(&signal, &gate));
         // Tracks 0.1,0.2,0.3; holds 0.3 while low; tracks 0.6; holds 0.6
         assert_eq!(out, vec![0.1, 0.2, 0.3, 0.3, 0.3, 0.6, 0.6, 0.6]);
+    }
+
+    #[test]
+    fn track_hold_uses_schmitt_gate_state() {
+        let mut node = TrackAndHoldNode::new();
+        let signal = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+        let gate = [0.0, 1.0, 0.5, 0.2, 0.1, 0.9, 1.0, 0.0];
+        let out = run(&mut node, &pair(&signal, &gate));
+        assert_eq!(out, vec![0.0, 0.2, 0.3, 0.4, 0.4, 0.4, 0.7, 0.7]);
     }
 
     #[test]

@@ -15,6 +15,7 @@ use geist_core::events::NoteEventKind;
 use geist_dsp::prelude::SvfMode;
 use geist_graph::node::AudioNode;
 
+use crate::engine::filter_stack::FilterRouting;
 use crate::engine::voice_pool::VoicePool;
 
 // Default voice count when none is specified
@@ -45,14 +46,32 @@ impl SynthNode {
         &mut self.pool
     }
 
-    // Set the base lowpass cutoff and resonance on every voice
+    // Set filter A base cutoff and resonance on every voice, in lowpass mode
     // The per-voice filter envelope still modulates relative to this base, so a
     // control surface can sweep the filter without disabling the envelope
     pub fn set_filter(&mut self, cutoff_hz: f32, resonance: f32) {
+        self.set_filter_a(cutoff_hz, resonance, SvfMode::Lowpass);
+    }
+
+    // Set filter A base cutoff, resonance, and mode on every voice
+    pub fn set_filter_a(&mut self, cutoff_hz: f32, resonance: f32, mode: SvfMode) {
         for voice in self.pool.voices_mut() {
-            voice
-                .filter_mut()
-                .set_filter_a(cutoff_hz, resonance, SvfMode::Lowpass);
+            voice.filter_mut().set_filter_a(cutoff_hz, resonance, mode);
+        }
+    }
+
+    // Set filter B base cutoff, resonance, and mode on every voice
+    // Filter B is only audible once routing engages it (series or parallel)
+    pub fn set_filter_b(&mut self, cutoff_hz: f32, resonance: f32, mode: SvfMode) {
+        for voice in self.pool.voices_mut() {
+            voice.filter_mut().set_filter_b(cutoff_hz, resonance, mode);
+        }
+    }
+
+    // Choose series or parallel routing for the two filters on every voice
+    pub fn set_filter_routing(&mut self, routing: FilterRouting) {
+        for voice in self.pool.voices_mut() {
+            voice.filter_mut().set_routing(routing);
         }
     }
 
@@ -391,6 +410,68 @@ mod tests {
             render(&mut base, &[]),
             render(&mut shifted, &[]),
             "osc B detune had no effect"
+        );
+    }
+
+    // Settle a note past the filter envelope, then sum energy over many blocks
+    fn settled_energy(node: &mut SynthNode, key: u8) -> f32 {
+        let _ = render(node, &[NoteEvent::on(0, 0, key, 1.0)]);
+        for _ in 0..120 {
+            render(node, &[]);
+        }
+        let mut energy = 0.0;
+        for _ in 0..16 {
+            energy += block_energy(&render(node, &[]));
+        }
+        energy
+    }
+
+    #[test]
+    fn filter_b_in_series_darkens_the_output() {
+        // Both filters wide open passes more highs than a low filter B in series
+        let mut open = SynthNode::new(SAMPLE_RATE as f32, 8);
+        open.prepare(&config());
+        open.set_osc_mix(1.0); // saw: rich in harmonics to filter
+        open.set_filter_a(16_000.0, 0.7, SvfMode::Lowpass);
+        open.set_filter_b(16_000.0, 0.7, SvfMode::Lowpass);
+
+        let mut closed_b = SynthNode::new(SAMPLE_RATE as f32, 8);
+        closed_b.prepare(&config());
+        closed_b.set_osc_mix(1.0);
+        closed_b.set_filter_a(16_000.0, 0.7, SvfMode::Lowpass);
+        closed_b.set_filter_b(200.0, 0.7, SvfMode::Lowpass);
+
+        let open_energy = settled_energy(&mut open, 84);
+        let closed_energy = settled_energy(&mut closed_b, 84);
+        assert!(
+            open_energy > closed_energy * 1.5,
+            "filter B in series had no effect: {open_energy} vs {closed_energy}"
+        );
+    }
+
+    #[test]
+    fn parallel_routing_differs_from_series() {
+        // A lowpass then a highpass in series carves out a narrow band and kills
+        // most energy; the same pair in parallel passes both ends and keeps more
+        let mut series = SynthNode::new(SAMPLE_RATE as f32, 8);
+        series.prepare(&config());
+        series.set_osc_mix(1.0);
+        series.set_filter_a(400.0, 0.7, SvfMode::Lowpass);
+        series.set_filter_b(4_000.0, 0.7, SvfMode::Highpass);
+        series.set_filter_routing(FilterRouting::Series);
+
+        let mut parallel = SynthNode::new(SAMPLE_RATE as f32, 8);
+        parallel.prepare(&config());
+        parallel.set_osc_mix(1.0);
+        parallel.set_filter_a(400.0, 0.7, SvfMode::Lowpass);
+        parallel.set_filter_b(4_000.0, 0.7, SvfMode::Highpass);
+        parallel.set_filter_routing(FilterRouting::Parallel);
+
+        let series_energy = settled_energy(&mut series, 60);
+        let parallel_energy = settled_energy(&mut parallel, 60);
+        assert!(
+            parallel_energy > series_energy * 1.5,
+            "routing had no audible effect: parallel {parallel_energy} vs series {series_energy}"
         );
     }
 

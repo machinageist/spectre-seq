@@ -1559,6 +1559,7 @@ name = "geist-modular"
 version = "0.1.0"
 dependencies = [
  "geist-core",
+ "geist-dsp",
  "geist-graph",
 ]
 
@@ -1571,6 +1572,15 @@ dependencies = [
  "serde",
  "serde_bytes",
  "toml",
+]
+
+[[package]]
+name = "geist-stacksynth"
+version = "0.1.0"
+dependencies = [
+ "geist-dsp",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

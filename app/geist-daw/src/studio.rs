@@ -2621,6 +2621,7 @@ fn cable(from: u64, to: u64) -> geist_ui::model::Cable {
         to_node: to,
         to_port: 0,
         kind: SignalKind::Audio,
+        channels: 1,
     }
 }
 

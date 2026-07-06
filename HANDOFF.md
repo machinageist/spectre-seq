@@ -25,6 +25,52 @@ Notes: Branch state, committed milestones, and the uncommitted in-flight B5 work
   Docs trail: `INITIAL_PLAN.md`, `PROPOSED_FILE_TREE.md`, `docs/architecture.md`,
   `docs/architecture/native-vst-internal-devices.md`, `docs/vst_hosting.md`.
 
+## Modular rack execution (2026-07-03, "implement the new plan" /loop)
+Executing `AGENTS/changes/modular-rack/PLAN.md` (P6 lane) task by task, one commit each.
+- **Task 1 DONE (`b0273a5`):** `geist-modular::standards` — GATE_V 10, 1 ms Pulse, 0.1/1.0 V
+  Schmitt, v/oct conversions (C4 audio / 2 Hz LFO anchors), NaN flush; 5 property tests pin
+  the spec §2 numbers. `cargo test -p geist-modular` 33 green; fmt-clean.
+- **Task 2 DONE (uncommitted, 2026-07-03):** retrofit timing/logic/S&H edge nodes onto
+  shared `standards::Schmitt`. `ClockDividerNode`, `FlipFlopNode`, `SampleAndHoldNode`, and
+  `TrackAndHoldNode` now use 1.0 V fire / 0.1 V rearm hysteresis while preserving existing
+  clean 0/1 output behavior. Added threshold-edge tests. `cargo test -p geist-modular` =
+  37 pass; touched modular files rustfmt-clean.
+- **Task 3 DONE (uncommitted, 2026-07-03):** added poly channel helpers in
+  `crates/geist-modular/src/util.rs` and exported them via `geist-modular::prelude`:
+  `get_poly_voltage` (M=1 broadcast, M>=N index, 1<M<N zero-fill, 0=unpatched,
+  16-channel cap), `mono_audio_sum`, and `mono_cv_first`. Unit tests cover every spec
+  case plus mono fallback. `cargo test -p geist-modular` = 44 pass; `cargo check -p
+  geist-modular` clean.
+- **Tasks 2+3 committed** (`6e5db10`, `bf35d28`) after validation (44 tests green).
+- **Task 4 DONE (`c2506a8`):** `catalog::rack_catalog()`/`rack_node()` — 19 constructible
+  utility nodes with spec §10.3 tags + port lists; tests pin unique names, on-vocabulary
+  tags, and build/prepare/process-finite for every entry. 47 crate tests green.
+- **Task 5 DONE (`8f54e70`):** `rack_nodes` — VCO/LFO/Env/Filter/VCA adapters over
+  geist-dsp (PolyBlepOsc/Lfo/Adsr/Svf), v/oct + Schmitt-gated CV per standards, no new
+  DSP. geist-modular now depends on geist-dsp. Registered all five in the catalog (24
+  entries). 53 crate tests green (6 new adapter tests: A4 tracking, 2 Hz LFO, env gate
+  edge/release, VCA scaling+unity, VCF attenuation, sub-threshold gate); clippy clean;
+  fmt-clean.
+- **Next: Task 6** — bridge nodes: transport clock node (24 PPQN + divided output off the
+  transport snapshot), MIDI->CV node (v/oct, gate no-legato-retrig, velocity, RTRG; poly
+  modes Rotate/Reuse/Reset per spec §6.4), rack-out node feeding the track chain. Then M3
+  patching UX in views/node_graph.rs.
+- **Both gates resolved by Jeff (`57b4065`):** task 7 feedback-only validation (never
+  refuse a connection); task 10 migrate the live engine onto geist-graph's compiled plan.
+- Coordination: a parallel session is executing the P7 sound-design lane
+  (`AGENTS/changes/sound-design-depth/`); this lane stays in geist-modular/graph/ui
+  rack surfaces to avoid collisions. JEFF gates ahead: typed-port feedback (task 7),
+  engine adoption (task 10).
+
+## Production plan (2026-07-03, third /loop)
+Jeff asked for the implementation plan. `PRODUCTION_PLAN.md` (repo root) now maps the path
+from the current vertical slice to production-ready: P1 stability floor (reverb-decay gate,
+live RT guard, xrun surfacing, latency accounting) -> P2 VST3 hosting end-to-end (the
+switcher blocker) -> P3 automation surfaced -> P4 audio clips -> P5 session completion ->
+P6 graph goes live (adoption gate) -> P7 sound-design depth -> P8 ship polish. JEFF gates
+marked inline; standing per-slice validation gates included. Next /loop iterations execute
+it in order unless Jeff redirects.
+
 ## Loop continuation — GUI interactability pass (2026-07-03, second /loop)
 Jeff re-scoped the loop: everything (clips, instruments, effects, piano-roll notes) must be
 GUI-interactable — click-move, double-click create, Delete-key delete, drag-and-drop. That
@@ -299,3 +345,21 @@ Duplicate-capable, reorderable per-track effects chain. The design from the prio
 - Don't half-land B5 — it spans engine, control, UI, studio mirror, and persistence together.
 - This file is uncommitted unless Jeff asks; the B5 source changes are also uncommitted.
 - Legacy saved projects can still contain old per-kind FX params; keep the load-only migration path until project schema migration policy is formalized.
+
+## 2026-07-04 stacksynth /loop — S0 landed
+
+- New crate `crates/geist-stacksynth` (generator-stack synth per
+  `docs/specs/geist-modular-synth-spec.md` + `-plan.md`): S0 patch schema +
+  validator committed as `78b0f2e` (17 crate tests; workspace 635 green).
+- Validator rules: 32/32/3/8 limits, unique ids, missing-input + no-output
+  warnings, poly-lane prefix, rightward lane sends, route target legality,
+  undelayed-cycle rejection (AuxIn edge = legal one-sample-delay breaker).
+- S1 voice-graph compile committed `102c85e`: `compile()` -> per-voice
+  `RenderPlan` (one buffer/module, topo-ordered steps, resolved audio-rate
+  `ModBinding`s, AuxIn = delayed tap, enabled output bus sends). 8 tests.
+- S2a source frequency/phase math committed `82c2f25`: `instantaneous_hz`
+  (exp pitch / linear harmonic / signed shift), phase increment/wrap, seeded
+  per-note random start phase (SplitMix64, reproducible). Added geist-dsp dep.
+  14 tests; crate 39 green.
+- Next slice: S2b analog oscillator DSP (saw/pulse/tri/sine, pulse width,
+  hard sync, phase-mod input, per-voice osc state) on top of source.rs.

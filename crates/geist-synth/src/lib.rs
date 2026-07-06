@@ -16,7 +16,7 @@ pub mod engine;
 pub mod prelude {
     pub use crate::daw_node::SynthNode;
     pub use crate::engine::filter_stack::{FilterRouting, FilterStack};
-    pub use crate::engine::mod_matrix::{ModMatrix, ModRoute};
+    pub use crate::engine::mod_matrix::{ModMatrix, ModRoute, ModSource, ModTarget};
     pub use crate::engine::osc_stack::{OscStack, UnisonOsc};
     pub use crate::engine::voice::Voice;
     pub use crate::engine::voice_pool::{StealMode, VoicePool};

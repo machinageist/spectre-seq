@@ -11,6 +11,7 @@
 use geist_core::context::ProcessContext;
 use geist_graph::node::AudioNode;
 
+use crate::standards::Schmitt;
 use crate::util::{
     gate_level, is_high, map_per_channel, process_mono_ch0, reduce_gate_into_ch0, GATE_HIGH,
     GATE_LOW,
@@ -110,7 +111,7 @@ impl AudioNode for NotNode {
 #[derive(Default)]
 pub struct FlipFlopNode {
     state: bool,
-    prev_high: bool,
+    trigger: Schmitt,
 }
 
 impl FlipFlopNode {
@@ -123,22 +124,20 @@ impl FlipFlopNode {
 impl AudioNode for FlipFlopNode {
     fn process(&mut self, ctx: &mut ProcessContext) {
         let mut state = self.state;
-        let mut prev = self.prev_high;
+        let mut trigger = self.trigger;
         process_mono_ch0(ctx, |x| {
-            let now = is_high(x);
-            if now && !prev {
+            if trigger.step(x) {
                 state = !state;
             }
-            prev = now;
             gate_level(state)
         });
         self.state = state;
-        self.prev_high = prev;
+        self.trigger = trigger;
     }
 
     fn reset(&mut self) {
         self.state = false;
-        self.prev_high = false;
+        self.trigger = Schmitt::new();
     }
 }
 
@@ -206,6 +205,14 @@ mod tests {
         let out = run(&mut node, &input, 1);
         // edge at idx1 -> high (stays for 1,2); falls at 3; edge at idx5 -> low
         assert_eq!(out, vec![0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn flip_flop_uses_schmitt_rearm_threshold() {
+        let mut node = FlipFlopNode::new();
+        let input = vec![0.0f32, 1.0, 0.5, 0.2, 1.0, 0.1, 0.9, 1.0];
+        let out = run(&mut node, &input, 1);
+        assert_eq!(out, vec![0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0]);
     }
 
     #[test]

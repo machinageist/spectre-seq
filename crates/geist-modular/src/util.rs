@@ -10,6 +10,8 @@
 
 use geist_core::context::ProcessContext;
 
+use crate::standards::POLY_MAX;
+
 // Gate/trigger convention shared by every logic and timing node
 // A signal reads high at or above the threshold; logic emits clean 0/1 levels
 pub const GATE_THRESHOLD: f32 = 0.5;
@@ -29,6 +31,53 @@ pub fn gate_level(high: bool) -> f32 {
         GATE_HIGH
     } else {
         GATE_LOW
+    }
+}
+
+// Read a secondary poly input for one active engine using VCV-style rules
+// M=0 returns 0 V; M=1 broadcasts; M>1 maps by index and zero-fills overflow
+#[inline]
+pub fn get_poly_voltage(
+    input: &[f32],
+    frames: usize,
+    channels: usize,
+    engine: usize,
+    frame: usize,
+) -> f32 {
+    if channels == 0 || frames == 0 || frame >= frames {
+        return 0.0;
+    }
+    let channels = channels.min(POLY_MAX);
+    let ch = if channels == 1 {
+        0
+    } else if engine < channels {
+        engine
+    } else {
+        return 0.0;
+    };
+    input.get(ch * frames + frame).copied().unwrap_or(0.0)
+}
+
+// Sum all channels of a poly audio input for a mono audio-only module
+#[inline]
+pub fn mono_audio_sum(input: &[f32], frames: usize, channels: usize, frame: usize) -> f32 {
+    if frames == 0 || frame >= frames {
+        return 0.0;
+    }
+    let mut sum = 0.0;
+    for ch in 0..channels.min(POLY_MAX) {
+        sum += input.get(ch * frames + frame).copied().unwrap_or(0.0);
+    }
+    sum
+}
+
+// Read channel 0 of a poly CV/hybrid input for a mono module fallback
+#[inline]
+pub fn mono_cv_first(input: &[f32], frames: usize, channels: usize, frame: usize) -> f32 {
+    if channels == 0 || frames == 0 || frame >= frames {
+        0.0
+    } else {
+        input.get(frame).copied().unwrap_or(0.0)
     }
 }
 
@@ -142,5 +191,69 @@ pub fn process_pair_ch0(ctx: &mut ProcessContext, mut step: impl FnMut(f32, f32)
     }
     for ch in 1..out_ch {
         output[ch * frames..(ch + 1) * frames].fill(0.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FRAMES: usize = 4;
+
+    fn sample(input: &[f32], channels: usize, engine: usize, frame: usize) -> f32 {
+        get_poly_voltage(input, FRAMES, channels, engine, frame)
+    }
+
+    #[test]
+    fn poly_voltage_broadcasts_one_channel_to_all_engines() {
+        let input = [1.0, 2.0, 3.0, 4.0];
+        assert_eq!(sample(&input, 1, 0, 2), 3.0);
+        assert_eq!(sample(&input, 1, 7, 2), 3.0);
+    }
+
+    #[test]
+    fn poly_voltage_maps_index_when_source_has_enough_channels() {
+        let input = [
+            1.0, 2.0, 3.0, 4.0, 10.0, 20.0, 30.0, 40.0, 100.0, 200.0, 300.0, 400.0,
+        ];
+        assert_eq!(sample(&input, 3, 0, 1), 2.0);
+        assert_eq!(sample(&input, 3, 1, 1), 20.0);
+        assert_eq!(sample(&input, 3, 2, 1), 200.0);
+    }
+
+    #[test]
+    fn poly_voltage_zero_fills_engines_beyond_short_poly_source() {
+        let input = [1.0, 2.0, 3.0, 4.0, 10.0, 20.0, 30.0, 40.0];
+        assert_eq!(sample(&input, 2, 0, 0), 1.0);
+        assert_eq!(sample(&input, 2, 1, 0), 10.0);
+        assert_eq!(sample(&input, 2, 2, 0), 0.0);
+    }
+
+    #[test]
+    fn poly_voltage_zero_fills_unpatched_source() {
+        assert_eq!(sample(&[], 0, 0, 0), 0.0);
+        assert_eq!(sample(&[], 0, 3, 2), 0.0);
+    }
+
+    #[test]
+    fn poly_voltage_caps_at_public_channel_limit() {
+        let input = [1.0f32; FRAMES * (POLY_MAX + 1)];
+        assert_eq!(sample(&input, POLY_MAX + 1, POLY_MAX - 1, 0), 1.0);
+        assert_eq!(sample(&input, POLY_MAX + 1, POLY_MAX, 0), 0.0);
+    }
+
+    #[test]
+    fn mono_audio_fallback_sums_all_channels() {
+        let input = [
+            1.0, 2.0, 3.0, 4.0, 10.0, 20.0, 30.0, 40.0, 100.0, 200.0, 300.0, 400.0,
+        ];
+        assert_eq!(mono_audio_sum(&input, FRAMES, 3, 2), 333.0);
+    }
+
+    #[test]
+    fn mono_cv_fallback_reads_first_channel() {
+        let input = [1.0, 2.0, 3.0, 4.0, 10.0, 20.0, 30.0, 40.0];
+        assert_eq!(mono_cv_first(&input, FRAMES, 2, 3), 4.0);
+        assert_eq!(mono_cv_first(&[], FRAMES, 0, 3), 0.0);
     }
 }
