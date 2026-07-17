@@ -13,7 +13,7 @@ Notes: Observed public behavior only; version limitations recorded per source
 - **Decision authority:** Jeff
 - **Upstream sources:** `SRC-PHASE-PLANT-LIVE-DOCS`; `SRC-VCV-RACK2-VOLTAGE-STANDARDS`; `SRC-SERUM2-SUPPORT-CPU-ARTICLE`
 - **Downstream dependents:** flagship-synth spec, modular-routing spec, DSP contracts, requirements ledger
-- **Supersedes:** none; legacy `docs/specs/geist-modular-synth-spec.md` remains historical evidence
+- **Supersedes:** removed prototype-era modular-synth specification
 - **Superseded by:** none
 - **Open decisions:** none
 - **Known gaps:** Phase Plant docs expose no product/manual version; Serum 2 still has no complete public manual (gap unchanged); extraction used assisted summarization with transcription risk until spot-verified

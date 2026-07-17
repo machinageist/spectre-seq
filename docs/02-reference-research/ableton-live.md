@@ -14,7 +14,7 @@ Notes: Inventory only; no external behavior is adopted as a Geist requirement he
 - **Decision authority:** Jeff
 - **Upstream sources:** `SRC-ABLETON-LIVE12-MANUAL-WELCOME`; `docs/02-reference-research/methodology.md`
 - **Downstream dependents:** workflow field study, Geist requirements ledger, application and subsystem specifications
-- **Supersedes:** none; legacy `docs/specs/ableton-live-clean-room-spec.md` remains historical evidence pending extraction
+- **Supersedes:** removed prototype-era Ableton specification
 - **Superseded by:** none
 - **Open decisions:** which device-reference chapters merit full behavioral extraction versus capability classification
 - **Known gaps:** chapter contents, subsections, cross-feature behavior, errors, persistence, undo, realtime implications, and workflow corroboration remain unreviewed

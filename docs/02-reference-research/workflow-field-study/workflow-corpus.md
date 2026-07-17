@@ -16,7 +16,9 @@ Notes: Index discovery is not a reviewed workflow observation
 - **Supersedes:** none
 - **Superseded by:** none
 - **Open decisions:** scoring/long-timeline cohort; interview and usability-study plan
-- **Known gaps:** no source has completed action-sequence extraction review; product and population coverage remain far below saturation targets
+- **Known gaps:** four FL Studio sources have completed timestamped action-sequence
+  extraction; Ableton evidence is interview self-report only; product and population
+  coverage remain far below saturation targets
 
 ## Corpus states
 
@@ -141,7 +143,8 @@ Before adding a line to `workflow-observations.jsonl`, a reviewer must verify:
 2. source type and evidence class;
 3. publication date and product version, or explicit unknowns;
 4. musician role, genre, and environment, or explicit unknowns;
-5. ordered action sequence with timestamps/pages;
+5. ordered action sequence with timestamps/pages for demonstrated workflows; interview
+   self-reports MUST instead preserve thematic statements without implying observed order;
 6. repeated inner loop and completion condition;
 7. commands, gestures, focus/view transitions, and acted-on objects;
 8. observed friction versus reviewer inference;
@@ -152,6 +155,12 @@ Before adding a line to `workflow-observations.jsonl`, a reviewer must verify:
 
 Four FL Studio observations have passed extraction, including professional long-form session `WF-FL-NICK-MIRA-003` and official audio-interface recording tutorial `WF-FL-RECORD-004`. The recording source establishes a documented success path from device/permission setup through input, monitoring, arming, capture, and mixer routing, while leaving latency, effect monitoring, failure, compatibility, and media recovery unproven.
 
-Two Ableton Live observations have passed extraction from official Input/Output artist interviews: `WF-ABLETON-LUSTWERK-005` (Session-loop production, minimal-take vocal workflow, Stream-Deck-driven zero-latency live template) and `WF-ABLETON-TSURUTA-006` (color-coded groups, +6 dB master Utility deactivated at export, Command-modifier free-hand automation drawing). Both are interview self-reports admitted at `low` confidence: they establish stated habits and one concrete binding, not visible action sequences. Video or session evidence is still required for Ableton Live before any gesture-level claim.
+Two Ableton Live interview self-reports have passed thematic extraction:
+`WF-ABLETON-LUSTWERK-005` (Session-loop production, minimal-take vocal workflow,
+Stream-Deck-driven zero-latency live template) and `WF-ABLETON-TSURUTA-006`
+(color-coded groups, +6 dB master Utility deactivated at export, Command-modifier
+free-hand automation drawing). They are not action-sequence observations and MUST NOT
+be used for sequence, gesture, frequency, or priority analysis. Video or session
+evidence is still required for Ableton Live before any gesture-level claim.
 
 This remains far below saturation; command frequency, product priority, and usability targets remain prohibited.

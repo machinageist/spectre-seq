@@ -6,3 +6,6 @@
 
 # Claude Code per-machine settings (project skills/agents stay tracked)
 .claude/settings.local.json
+
+# Rebuild workspace build artifacts
+/rebuild/target

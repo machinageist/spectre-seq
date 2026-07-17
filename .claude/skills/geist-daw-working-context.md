@@ -14,12 +14,13 @@ Notes: Load first for every Geist DAW implementation or review task
 
 ## Purpose
 
-This repository is an early scaffold for a modular Rust DAW.
+This repository contains one specification-first Geist DAW implementation workspace.
 
 Current source of truth:
-- `INITIAL_PLAN.md` defines phase order.
-- `PROPOSED_FILE_TREE.md` defines intended architecture.
-- Generated Rust/config/docs files currently contain pseudocode comments, not implementation.
+- `docs/README.md` defines documentation authority and conflict precedence.
+- `docs/status/STATUS.md` and `docs/status/NEXT.md` define verified state and next slices.
+- `docs/06-plans/rebuild-roadmap.md` defines rebuild milestone order.
+- `Cargo.toml` and `crates/` are the only implementation workspace.
 
 ## Execution posture
 
@@ -52,29 +53,11 @@ Notes: Non-obvious context, design decisions
 -->
 ```
 
-## Phase order
-
-1. Workspace and `geist-core` primitives.
-2. `geist-graph` process graph and atomic graph swap.
-3. `geist-audio-backend` callback boundary.
-4. `geist-dsp` primitives and benchmarks.
-5. VST3 host boundary for third-party plugins only.
-6. First-party internal devices: synth, fx, modular utilities.
-7. Timeline, automation, modulation.
-8. UI shell and views.
-9. Project persistence and autosave.
-10. xtask, release packaging, docs, ADRs.
-
 ## Skill loading map
 
 - Core IDs, ports, events, params, transport: load `geist-realtime-rust`.
-- Graph, topology, process list, channels: load `geist-graph-engine` and `geist-realtime-rust`.
-- Audio backends and callbacks: load `geist-audio-backend` and `geist-realtime-rust`.
-- DSP, synth, fx, modular utilities: load `geist-dsp-and-plugins` and `geist-realtime-rust`.
-- VST3 hosting boundary: load `geist-plugin-hosting` and `geist-realtime-rust`.
-- Timeline, automation, persistence: load `geist-project-timeline`.
-- UI work: load `geist-ui-workflow`.
-- Any review: load `geist-validation-gates` plus the domain skill.
+- Graph, audio, DSP, plugin, and transport work: load `geist-realtime-rust`.
+- Any review: load `geist-validation-gates`.
 
 ## Completion rule
 
@@ -82,5 +65,5 @@ A slice is not complete until:
 - code compiles for the touched crate,
 - targeted tests pass or a tracked reason exists,
 - pseudocode comments reflect the implemented behavior,
-- docs/ADRs are updated when architecture changes,
+- accepted requirements and plans are updated when architecture changes,
 - no unrelated files were changed.

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Author: Jeff
+# Date: 2026-07-12
+# Description: One-line launcher for the Geist interaction prototype
+# Notes: Arguments pass through to geist-app; use --smoke-test for headless validation
+
+set -euo pipefail
+cd "$(dirname "$0")"
+exec cargo run --locked --quiet -p geist-app -- "$@"

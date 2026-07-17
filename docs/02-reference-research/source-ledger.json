@@ -497,8 +497,8 @@
       "version_evidence": "Article states the template requires Live 12 Suite; the artist reports using Ableton since Version 2.0; no version is stated for the described working sessions.",
       "mutable_url": true,
       "access_limitation": "Interview self-report with no visible action sequence; exact gestures, bindings, and UI transitions are not observable. The downloadable template is finished state, not action history, and excludes MIDI mappings and third-party Max for Live devices.",
-      "coverage_status": "reviewed-workflow-source",
-      "notes": "Supports WF-ABLETON-LUSTWERK-005. Publication date and topic corroborated against the independently recorded candidate registry entry WF-SRC-ABLETON-001."
+      "coverage_status": "reviewed-self-report-source",
+      "notes": "Supports thematic self-report record WF-ABLETON-LUSTWERK-005, not an observed action sequence. Publication date and topic corroborated against candidate WF-SRC-ABLETON-001."
     },
     {
       "source_id": "SRC-ABLETON-IO-TSURUTA-2026",
@@ -519,8 +519,8 @@
       "version_evidence": "Article states the downloadable 'Euphorique' Live Set requires Live 12 Suite; mention of Roar and the updated Auto Filter implies a Live 12-era context but no session version is stated.",
       "mutable_url": true,
       "access_limitation": "Interview self-report with no visible action sequence. The downloadable Set is explicitly a recreation: some parts were originally bounced to audio and were rebuilt to demonstrate MIDI editing and automation, so it is educational state, not creation history.",
-      "coverage_status": "reviewed-workflow-source",
-      "notes": "Supports WF-ABLETON-TSURUTA-006 and one macOS automation-drawing shortcut row. Publication date and topic corroborated against the independently recorded candidate registry entry WF-SRC-ABLETON-010."
+      "coverage_status": "reviewed-self-report-source",
+      "notes": "Supports thematic self-report record WF-ABLETON-TSURUTA-006 and one reported automation-drawing shortcut row, not an observed action sequence. Publication date and topic corroborated against candidate WF-SRC-ABLETON-010."
     },
     {
       "source_id": "SRC-BITWIG-ARTIST-HAMILTON",

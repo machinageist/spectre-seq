@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "project": {
+    "id": 1311768467463790320,
+    "name": "R1 Canonical Fixture",
+    "tempo_map": {
+      "segments": [
+        {
+          "start": 0,
+          "bpm": 128.0
+        },
+        {
+          "start": 15360,
+          "bpm": 96.5
+        }
+      ]
+    },
+    "transport": {
+      "state": "Playing",
+      "position": 72000,
+      "loop_region": {
+        "start": 48000,
+        "end": 192000
+      },
+      "loop_enabled": true
+    },
+    "meter_map": [
+      {
+        "start": 0,
+        "signature": {
+          "numerator": 4,
+          "denominator": 4
+        }
+      },
+      {
+        "start": 15360,
+        "signature": {
+          "numerator": 7,
+          "denominator": 8
+        }
+      }
+    ],
+    "future_session": {
+      "color": "ultraviolet",
+      "launch_quantization": 8
+    }
+  },
+  "r1_extension": {
+    "enabled": true,
+    "revision": 3
+  }
+}

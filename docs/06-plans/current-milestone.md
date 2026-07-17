@@ -1,41 +1,42 @@
 <!--
 Author: Jeff
-Date: 2026-07-11
-Description: The single active rebuild milestone for the Geist DAW specification-first rebuild
-Notes: Exactly one milestone is active; the roadmap document will own ordering when it exists
+Date: 2026-07-12
+Description: The single active Geist DAW milestone
+Notes: Exactly one milestone is active; the roadmap owns ordering
 -->
 
-# Current Milestone — Cross-Product Field Research Foundation
+# Current Milestone — R0/R1 Foundation
 
-- **Status:** proposed
-- **Last verified:** 2026-07-11
-- **Scope:** the active milestone only
+- **Status:** accepted
+- **Last verified:** 2026-07-16
+- **Scope:** R0 completion and R1 musical-kernel exit
 - **Decision authority:** Jeff
-- **Upstream sources:** `../status/STATUS.md`, `../02-reference-research/methodology.md`, rebuild mandate Phase C/6.8
-- **Downstream dependents:** `../status/NEXT.md`, future `rebuild-roadmap.md`
-- **Supersedes:** milestone claims in `PRODUCTION_PLAN.md` and `INITIAL_PLAN.md` for the rebuild lane
+- **Upstream sources:** `rebuild-roadmap.md`, accepted requirements and decisions
+- **Downstream dependents:** `../status/NEXT.md`, implementation slices
+- **Supersedes:** all removed prototype plans
 - **Superseded by:** none
-- **Open decisions:** saturation threshold per product before the milestone closes
-- **Known gaps:** long-timeline/scoring and accessibility-focused workflow evidence has no identified sources yet
+- **Open decisions:** none that block the next code slice
+- **Known gaps:** R1 identity/API disposition plus the R2 editable/compiled graph
 
-## Outcome
+## Current evidence
 
-The workflow field study reaches balanced cross-product coverage: admitted, fully provenanced workflow observations for Ableton Live and Bitwig Studio alongside the existing four FL Studio observations, plus at least one manual promoted to a section-level coverage matrix, so that priority claims about Geist's core loop become defensible.
+The root workspace contains a deterministic musical kernel plus the first R2/R4 vertical slice. `geist-dsp` defines borrowed planar buffers, bounded note events, immutable layouts, backend parameter descriptors, Pulse, Gain, Saturator, and a deterministic source. `geist-offline` renders the native device chain without a compiled graph. `geist-app` derives its Build and Shape surfaces from those backend contracts. This early vertical slice shortens feedback cycles but does not satisfy the editable/compiled graph or live-engine milestones.
+
+The accepted R1 JSON and 960-PPQ decisions now have checked-in fixture evidence. TIME-003 is verified against signed pre-roll, exact and fractional piecewise boundaries, 24-hour positions, round-once accumulation, and honest nearest-tick quantization bounds. R1 exit still requires requirement-by-requirement identity and atomic-save API disposition.
+
+## Requirements in scope
+
+CORE-001..004, TIME-001..005, RT-001 as workspace policy, and the GRAPH-001 type seam.
 
 ## Non-goals
 
-- No requirements ledger, architecture contracts, or implementation work in this milestone.
-- No completeness claims for any reference spec.
-- No new FL Studio sources.
-- No changes to the modular-rack or stacksynth code lanes under this milestone.
+Audio I/O, production UI, devices, DSP, VST3, recording, and broad graph implementation. The launchable interaction prototype is exploratory evidence, not completion of these outcomes.
 
 ## Exit evidence
 
-- `workflow-observations.jsonl` contains admitted observations for at least three products, each passing the cross-reference validation (all source IDs in ledger, all corroborating IDs resolve, CSV rows resolve).
-- `source-index.md` and `workflow-corpus.md` counts match the machine-readable artifacts.
-- One product dossier carries a section-level coverage matrix mapped to its versioned manual inventory.
-- `STATUS.md` field-research section updated with the new counts and the validation date.
-
-## Verification
-
-Run the artifact cross-check (JSONL/ledger/CSV parse plus ID resolution) and diff document counts against artifact counts; record the run in `../status/VALIDATION.md` only if commands beyond document checks are executed.
+- `cargo fmt --all -- --check` passes.
+- `cargo clippy --locked --workspace --all-targets -- -D warnings` passes.
+- `cargo test --locked --workspace` passes.
+- Tempo, time, transport, event, ID, and persistence properties are covered.
+- The deterministic offline harness exists.
+- Traceability and status match the implementation.

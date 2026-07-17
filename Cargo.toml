@@ -1,19 +1,24 @@
-# ==============================================================================
-# File: Cargo.toml
-# Layer: workspace root
-# Purpose: workspace root; active members = crates/* + app, CLAP/LV2 hosts excluded
-# Status: Implemented.
-# Contract: Keep comments terse, declarative, and synchronized with code.
-# ==============================================================================
+# Author: Jeff
+# Date: 2026-07-11
+# Description: Geist DAW workspace root
+# Notes: Workspace membership and shared dependency versions are explicit
 
 [workspace]
 resolver = "2"
 members = [
-    "xtask",
-    "crates/*",
-    "app/geist-daw",
+    "crates/geist-app",
+    "crates/geist-core",
+    "crates/geist-dsp",
+    "crates/geist-offline",
+    "crates/geist-project",
 ]
-exclude = [
-    "crates/geist-clap-host",
-    "crates/geist-lv2-host",
-]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+version = "0.0.1"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+proptest = "1"

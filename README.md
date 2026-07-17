@@ -7,48 +7,61 @@ Notes: docs/README.md owns documentation authority; this file only orients
 
 # Geist DAW
 
-Geist is an original, Rust-first digital audio workstation in early development. The goal is a serious open-source tool for composing, recording, sound design, mixing, and live performance — with its own audio engine, render graph, project model, native devices, and VST3 hosting behind an isolated host boundary.
+Geist is an original, Rust-first digital audio workstation in early development. It targets electronic composition, recording, sound design, mixing, and live performance with an original engine, project model, native devices, and isolated VST3 hosting.
 
-## Honest state
+## Current state
 
-This repository is mid-way through a specification-first rebuild. Read `docs/status/STATUS.md` for the current verified state before believing any other status claim.
+The repository contains one clean implementation workspace. The earlier prototype and its plans, assets, CI, audits, and feature lanes were removed on 2026-07-12; committed history remains available through Git.
 
-In short:
+R0/R1 provides a tested musical kernel and versioned project envelope. A native interaction prototype makes the workspace launchable and reviewable. The first original instrument and effects now render through a deterministic offline chain, but live audio I/O, the editable/compiled graph, plugin hosting, and recording are not implemented. Read `docs/status/STATUS.md` before relying on any maturity claim.
 
-- The legacy prototype (`app/geist-daw` plus `crates/`) compiles and passes its automated tests on macOS, but its live audio path is a fixed-track engine; the compiled graph, automation, modular-rack, and stacksynth crates are unit-tested in isolation and not wired into the running application. No subsystem is release-qualified.
-- A forensic audit of the legacy code and documentation lives in `docs/audits/`.
-- Clean-room reference research and a musician workflow field study are in progress under `docs/02-reference-research/`.
-- The ground-up rebuild (new requirements-traced foundation) has **not** begun; the specification gate in the rebuild mandate is not yet satisfied.
+## Repository map
 
-## Where things live
-
-| Path | What it is |
+| Path | Purpose |
 |---|---|
-| `docs/README.md` | Documentation authority map — start here for any doc question |
-| `docs/status/` | Current verified state, next slices, validation evidence, subsystem ledger |
-| `docs/audits/` | Forensic audits of the legacy repository |
-| `docs/02-reference-research/` | Clean-room source ledger, product dossiers, workflow field study |
-| `docs/06-plans/current-milestone.md` | The single active rebuild milestone |
-| `app/geist-daw`, `crates/` | Legacy prototype workspace (active code, not the target architecture) |
-| `INITIAL_PLAN.md`, `PRODUCTION_PLAN.md`, `PROPOSED_FILE_TREE.md`, `HANDOFF.md` | Legacy planning documents — historical evidence, superseded for rebuild-lane authority by `docs/` |
+| `crates/geist-app/` | Native interaction prototype and renderer-neutral app model |
+| `crates/geist-core/` | IDs, time, tempo, transport, events, and parameter contracts |
+| `crates/geist-dsp/` | Realtime-safe native sources, instruments, effects, and process contracts |
+| `crates/geist-offline/` | Deterministic project-inspection harness and future offline-render seam |
+| `crates/geist-project/` | Versioned project envelope and validated decoding |
+| `docs/README.md` | Documentation authority and status vocabulary |
+| `docs/00-product/` | Accepted product direction |
+| `docs/01-requirements/` | Requirements, decisions, and traceability |
+| `docs/02-reference-research/` | Clean-room evidence and workflow research |
+| `docs/06-plans/` | Roadmap and active milestone |
+| `docs/status/` | Verified state and next slices |
 
-## Building the legacy prototype
+## Launch
+
+From the repository root:
 
 ```sh
-cargo check --locked --workspace --all-targets --all-features
-cargo test  --locked --workspace --all-features
+./geist
 ```
 
-Baseline results and known gate failures (formatting drift, strict-clippy diagnostics) are recorded in `docs/status/VALIDATION.md`.
+The first build downloads and compiles the native UI dependencies. Later launches reuse Cargo's build cache.
 
-## Working lanes
+The prototype exposes Arrange, Build, Shape, and Mix lenses, track selection and creation, transport interaction, a context shelf, and an in-app feedback box. Enter observations in **Prototype Feedback**, click **Copy feedback report**, and paste the resulting state-rich report into the next development conversation.
 
-Two lanes are deliberately kept separate:
+Run the launch target without opening a window:
 
-1. **Rebuild documentation lane** — audits, research, and specification work under `docs/`.
-2. **Legacy feature lanes** — modular rack (`AGENTS/changes/modular-rack/`) and stacksynth, continuing in the prototype workspace.
+```sh
+./geist --smoke-test
+```
 
-Do not mix commits across lanes.
+## Validate
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace
+```
+
+Run the deterministic project harness:
+
+```sh
+cargo run --locked -p geist-offline -- --self-test
+```
 
 ## Legal posture
 

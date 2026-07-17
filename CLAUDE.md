@@ -11,19 +11,20 @@ Notes: Project-local agent entrypoint; load before any implementation or review
 
 1. Read this file.
 2. Load `.claude/skills/geist-daw-working-context.md`.
-3. Load the domain skill that matches the files being touched.
-4. Use the narrowest `.claude/agents/*.md` agent for implementation or review.
+3. Read `docs/README.md`, `docs/status/STATUS.md`, and `docs/status/NEXT.md`.
+4. Load `geist-realtime-rust` for callback-adjacent Rust and `geist-validation-gates` before review.
 
 ## Non-negotiables
 
-- Follow `INITIAL_PLAN.md` phase order unless Jeff explicitly changes it.
-- Treat `PROPOSED_FILE_TREE.md` as intended architecture until implementation proves otherwise.
+- Follow the accepted authority order in `docs/README.md`.
+- Follow `docs/06-plans/rebuild-roadmap.md`; the repository root is the only implementation workspace.
 - Work in small validated slices.
 - Keep comments terse, information dense, and declarative.
 - Preserve Jeff's standard header block in every new source/doc file.
 - Run targeted validation before claiming completion.
 
-## Local indexes
+## Local skills
 
-- Skills: `.claude/skills/README.md`
-- Agents: `.claude/agents/README.md`
+- `.claude/skills/geist-daw-working-context.md`
+- `.claude/skills/geist-realtime-rust.md`
+- `.claude/skills/geist-validation-gates.md`

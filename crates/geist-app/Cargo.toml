@@ -1,0 +1,18 @@
+# Author: Jeff
+# Date: 2026-07-12
+# Description: Launchable Geist DAW interaction prototype
+# Notes: Native egui shell; audio engine and render graph remain intentionally absent
+
+[package]
+name = "geist-app"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+eframe = { version = "0.32.3", default-features = false, features = ["default_fonts", "glow"] }
+geist-core = { path = "../geist-core" }
+geist-dsp = { path = "../geist-dsp" }
+geist-project = { path = "../geist-project" }
+serde.workspace = true
+serde_json.workspace = true

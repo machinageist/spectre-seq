@@ -14,7 +14,7 @@ Notes: Mutable latest URL currently renders a guide labeled v5.3; this dossier d
 - **Decision authority:** Jeff
 - **Upstream sources:** `SRC-BITWIG-GUIDE-LATEST-WELCOME`; `docs/02-reference-research/methodology.md`
 - **Downstream dependents:** workflow field study, Geist requirements ledger, modular and UI specifications
-- **Supersedes:** none; legacy `docs/specs/bitwig-studio-clean-room-spec.md` remains historical evidence pending extraction
+- **Supersedes:** removed prototype-era Bitwig specification
 - **Superseded by:** none
 - **Open decisions:** current guide/product version alignment; depth of Grid and device-catalog extraction
 - **Known gaps:** guide version mismatch is unresolved; chapter contents, subsections, failure behavior, persistence, undo, timing, and cross-feature precedence remain unreviewed

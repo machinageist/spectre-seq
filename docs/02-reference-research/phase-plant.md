@@ -14,7 +14,7 @@ Notes: The official documentation page exposes no product/manual version or revi
 - **Decision authority:** Jeff
 - **Upstream sources:** `SRC-PHASE-PLANT-LIVE-DOCS`; `docs/02-reference-research/methodology.md`
 - **Downstream dependents:** sound-design workflow study, flagship-synth requirements, native-device specifications
-- **Supersedes:** none; relevant legacy material remains historical evidence pending extraction
+- **Supersedes:** removed prototype-era Phase Plant material
 - **Superseded by:** none
 - **Open decisions:** version scope and whether separate Snapins documentation is needed as a bounded reference
 - **Known gaps:** official page exposes no product/manual version or revision date; section-level claims, persistence, errors, commands, modulation rates, voice behavior, and cross-feature precedence remain unreviewed

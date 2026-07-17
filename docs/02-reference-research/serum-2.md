@@ -14,7 +14,7 @@ Notes: No complete public user manual was exposed through the inspected official
 - **Decision authority:** Jeff
 - **Upstream sources:** `SRC-SERUM2-PRODUCT-PAGE`; `SRC-SERUM2-WHATS-NEW-PDF`; `SRC-SERUM2-SUPPORT-CATEGORY`; `docs/02-reference-research/methodology.md`
 - **Downstream dependents:** sound-design workflow study, flagship-synth requirements, native-device specifications
-- **Supersedes:** none; legacy `docs/specs/serum-2-clean-room-spec.md` remains historical evidence pending extraction
+- **Supersedes:** removed prototype-era Serum specification
 - **Superseded by:** none
 - **Open decisions:** whether a legitimately available installed/customer guide can be reviewed without redistribution
 - **Known gaps:** no complete public official guide, build number, dated source scope, full command reference, complete parameter semantics, persistence schema, or exhaustive workflow documentation was exposed

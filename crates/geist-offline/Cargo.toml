@@ -1,0 +1,17 @@
+# Author: Jeff
+# Date: 2026-07-12
+# Description: Deterministic offline harness for Geist project and render contracts
+# Notes: R0 harness; audio rendering arrives with the R2 compiled graph
+
+[package]
+name = "geist-offline"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+geist-core = { path = "../geist-core" }
+geist-dsp = { path = "../geist-dsp" }
+geist-project = { path = "../geist-project" }
+serde.workspace = true
+serde_json.workspace = true

@@ -24,10 +24,8 @@ Every slice has four gates:
 ## Preflight gate
 
 Check before editing:
-- Which phase from `INITIAL_PLAN.md` applies.
-- Which files from `PROPOSED_FILE_TREE.md` apply.
+- Which milestone and requirement rows apply.
 - Which local skills apply.
-- Which agent should own implementation.
 - Whether the crate dependency direction stays legal.
 
 ## Build gate
@@ -40,8 +38,6 @@ Minimum commands:
 
 Prefer focused tests:
 - `cargo test -p geist-core` for primitives.
-- `cargo test -p geist-graph` for routing/topology.
-- `cargo test -p geist-dsp` for DSP correctness.
 - `cargo test -p geist-project` for persistence/migration.
 - `cargo test --workspace` before broad handoff.
 
@@ -50,7 +46,7 @@ Prefer focused tests:
 Confirm:
 - Jeff header block is present in new files.
 - Pseudocode comments were replaced or tightened as code landed.
-- `docs/architecture.md` or ADRs changed when architecture changed.
+- accepted requirements or plans changed when architecture changed.
 - No stale plan comments claim behavior that does not exist.
 - No unrelated file churn remains.
 

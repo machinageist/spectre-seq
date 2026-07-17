@@ -16,7 +16,9 @@ Notes: Research implications are not requirements, architecture decisions, prior
 - **Supersedes:** none
 - **Superseded by:** none
 - **Open decisions:** first release workflow boundary; native synthesis catalog; audio-interface backend/platform order; monitoring and latency target methodology
-- **Known gaps:** only three FL Studio observations have passed review; no genre-specific session, live-input recording session, interface setup session, independent friction discussion, or Geist prototype measurement has passed review
+- **Known gaps:** four FL Studio action-sequence observations have passed review; no
+  genre-specific session, interface failure/recovery session, independent friction
+  discussion, or Geist prototype measurement has passed review
 
 ## Interpretation boundary
 
@@ -65,12 +67,15 @@ The field study MUST now seek direct, authorized evidence for these bounded work
 
 ## Current evidence-backed implications
 
-The three admitted FL Studio observations support only provisional questions:
+The four admitted FL Studio action-sequence observations support only provisional questions:
 
 - `WF-FL-ARRANGE-001` and `WF-FL-PLAYLIST-002` show that rapid duplication, bounded audition loops, variation branching, and orientation-preserving organization deserve cross-product study.
 - `WF-FL-NICK-MIRA-003` shows a professional loop of sound selection, note entry, audition, transformation, arrangement, version branching, revision, and bounce. It also shows that a usable loop may be deliberately rejected in favor of further transformation.
 - The professional session moves repeatedly among host, plugin editor, note editor, Playlist, mixer, slicer, save flow, and render flow. Selection, focus, audition position, and undo confidence across comparable Geist lenses therefore require direct study.
 - Saving a new project version before substantial layering is observed once as revision-risk management. It is not yet a frequency or default-workflow claim.
+- `WF-FL-RECORD-004` establishes one prepared success path through interface selection,
+  permissions, input choice, monitoring, arming, capture, and routing; it does not establish
+  latency, compatibility, failure recovery, or media-salvage behavior.
 
 ## Candidate first-class scenarios
 

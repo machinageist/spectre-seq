@@ -12,7 +12,7 @@ Notes: Application and guide versions are intentionally represented separately
 - **Last verified:** 2026-07-11
 - **Scope:** REAPER recording, editing, routing, mixing, rendering, customization, command, and project workflows documented by official public sources
 - **Decision authority:** Jeff
-- **Upstream sources:** `SRC-REAPER7.75B-USER-GUIDE`; `docs/02-reference-research/methodology.md`
+- **Upstream sources:** `SRC-REAPER-USER-GUIDE-775B`; `docs/02-reference-research/methodology.md`
 - **Downstream dependents:** DAW workflow study, command ontology, recording/editing/routing requirements
 - **Supersedes:** none
 - **Superseded by:** none

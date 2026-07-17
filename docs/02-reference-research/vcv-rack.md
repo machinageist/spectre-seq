@@ -14,7 +14,7 @@ Notes: User behavior and plugin-development documentation are deliberately separ
 - **Decision authority:** Jeff
 - **Upstream sources:** `SRC-VCV-RACK2-MANUAL-INDEX`; `docs/02-reference-research/methodology.md`
 - **Downstream dependents:** modular workflow field study, modular-routing requirements, graph/device architecture
-- **Supersedes:** none; legacy `docs/modular_rack_spec.md` remains historical evidence pending extraction
+- **Supersedes:** removed prototype-era modular-rack specification
 - **Superseded by:** none
 - **Open decisions:** whether selected public plugin-development contracts are useful architecture comparisons
 - **Known gaps:** no point-version or manual-revision marker was exposed; chapter contents, errors, persistence, undo, feedback/cycle behavior, and real workflow evidence remain unreviewed
@@ -64,7 +64,7 @@ Undocumented engine behavior remains a `SOURCE-GAP`; it MUST NOT be inferred fro
 
 ## Legacy-spec correction controls
 
-The legacy modular-rack specification mixes VCV observations, Geist limits, UI choices, and implementation details. During extraction:
+The removed prototype-era modular-rack specification mixed VCV observations, Geist limits, UI choices, and implementation details. This dossier retains only source-grounded observations:
 
 1. VCV claims move only into atomic sourced observations.
 2. Geist product choices move only into the requirements ledger after review.

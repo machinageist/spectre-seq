@@ -1,201 +1,123 @@
 // Author: Jeff
-// Date: 2026-05-27
-// Description: Transport state, tempo mapping, and audio-thread-readable transport snapshots.
-// Notes: App thread mutates transport; audio reads immutable or atomic snapshots.
+// Date: 2026-07-11
+// Description: Deterministic transport state machine with half-open loop wrap (TIME-002, TIME-005)
+// Notes: Pure data; testable without an audio device; loop region is [start, end)
 
-use std::sync::atomic::{fence, AtomicU32, AtomicU64, Ordering};
+use crate::time::{SampleDuration, SampleTime};
+use serde::{Deserialize, Serialize};
 
-// Conservative defaults used before a project sets real values
-pub const DEFAULT_TEMPO_BPM: f64 = 120.0;
-pub const DEFAULT_TIME_SIG_NUM: u16 = 4;
-pub const DEFAULT_TIME_SIG_DEN: u16 = 4;
-
-// Seconds in one minute; tempo math reads in beats per minute
-const SECONDS_PER_MINUTE: f64 = 60.0;
-
-// High-level transport run state
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+// Playback state independent of loop configuration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransportState {
     Stopped,
     Playing,
     Recording,
-    Paused,
 }
 
-impl TransportState {
-    // Encode as a u8 for atomic publication
-    #[inline]
-    const fn to_u8(self) -> u8 {
-        match self {
-            TransportState::Stopped => 0,
-            TransportState::Playing => 1,
-            TransportState::Recording => 2,
-            TransportState::Paused => 3,
+// Half-open loop region [start, end)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LoopRegion {
+    pub start: SampleTime,
+    pub end: SampleTime,
+}
+
+impl LoopRegion {
+    // Construct a validated region; end must exceed start
+    pub fn new(start: SampleTime, end: SampleTime) -> Option<Self> {
+        if end.0 > start.0 {
+            Some(Self { start, end })
+        } else {
+            None
         }
     }
 
-    // Decode from a published u8, defaulting to Stopped
-    #[inline]
-    const fn from_u8(v: u8) -> Self {
-        match v {
-            1 => TransportState::Playing,
-            2 => TransportState::Recording,
-            3 => TransportState::Paused,
-            _ => TransportState::Stopped,
-        }
+    // Half-open membership test
+    pub fn contains(&self, pos: SampleTime) -> bool {
+        pos.0 >= self.start.0 && pos.0 < self.end.0
+    }
+
+    // Region length in samples
+    pub fn len(&self) -> SampleDuration {
+        let samples = (i128::from(self.end.0) - i128::from(self.start.0)) as u64;
+        SampleDuration::new(samples)
+    }
+
+    // Emptiness is impossible by construction
+    pub fn is_empty(&self) -> bool {
+        false
     }
 }
 
-// Block-stable transport readout consumed by the audio thread
-// Copy and self-contained so a node never reaches back into shared state
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub struct TransportSnapshot {
+// Commands the control layer may issue
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TransportCommand {
+    Play,
+    Stop,
+    Record,
+    Seek(SampleTime),
+    SetLoop(Option<LoopRegion>),
+}
+
+// Transport position plus state plus loop configuration
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Transport {
     pub state: TransportState,
-    pub sample_pos: u64,
-    pub tempo_bpm: f64,
-    pub time_sig_num: u16,
-    pub time_sig_den: u16,
+    pub position: SampleTime,
+    pub loop_region: Option<LoopRegion>,
     pub loop_enabled: bool,
-    pub loop_start: u64,
-    pub loop_end: u64,
-    pub sample_rate_hz: u32,
 }
 
-impl TransportSnapshot {
-    // Build a stopped snapshot at the origin for the given sample rate
-    pub fn stopped(sample_rate_hz: u32) -> Self {
+impl Transport {
+    // Construct a stopped transport at zero
+    pub fn new() -> Self {
         Self {
             state: TransportState::Stopped,
-            sample_pos: 0,
-            tempo_bpm: DEFAULT_TEMPO_BPM,
-            time_sig_num: DEFAULT_TIME_SIG_NUM,
-            time_sig_den: DEFAULT_TIME_SIG_DEN,
+            position: SampleTime(0),
+            loop_region: None,
             loop_enabled: false,
-            loop_start: 0,
-            loop_end: 0,
-            sample_rate_hz,
         }
     }
 
-    // Convert a sample count to beats at the snapshot tempo
-    #[inline]
-    pub fn samples_to_beats(&self, samples: u64) -> f64 {
-        samples as f64 * self.tempo_bpm / (SECONDS_PER_MINUTE * self.sample_rate_hz as f64)
+    // Apply one command deterministically
+    pub fn apply(&mut self, cmd: TransportCommand) {
+        match cmd {
+            TransportCommand::Play => self.state = TransportState::Playing,
+            TransportCommand::Record => self.state = TransportState::Recording,
+            TransportCommand::Stop => self.state = TransportState::Stopped,
+            TransportCommand::Seek(pos) => self.position = pos,
+            TransportCommand::SetLoop(region) => {
+                self.loop_region = region;
+                self.loop_enabled = region.is_some();
+            }
+        }
     }
 
-    // Convert beats to the nearest whole sample at the snapshot tempo
-    #[inline]
-    pub fn beats_to_samples(&self, beats: f64) -> u64 {
-        (beats * SECONDS_PER_MINUTE * self.sample_rate_hz as f64 / self.tempo_bpm).round() as u64
-    }
-
-    // Beat position of the current playhead
-    #[inline]
-    pub fn beat_position(&self) -> f64 {
-        self.samples_to_beats(self.sample_pos)
-    }
-
-    // Fold a sample position into the active loop region
-    // Leaves the position untouched when looping is off or the region is empty
-    pub fn wrap_position(&self, pos: u64) -> u64 {
-        if self.loop_enabled && self.loop_end > self.loop_start && pos >= self.loop_end {
-            let len = self.loop_end - self.loop_start;
-            self.loop_start + (pos - self.loop_start) % len
-        } else {
-            pos
+    // Advance by a block, wrapping inside an enabled loop; returns wrap count
+    pub fn advance(&mut self, samples: SampleDuration) -> u32 {
+        if self.state == TransportState::Stopped || samples.samples() == 0 {
+            return 0;
+        }
+        match (self.loop_enabled, self.loop_region) {
+            (true, Some(region)) if region.contains(self.position) => {
+                let start = region.start.0 as i128;
+                let length = region.end.0 as i128 - start;
+                let total = self.position.0 as i128 - start + i128::from(samples.samples());
+                let wraps = total / length;
+                self.position = SampleTime((start + total.rem_euclid(length)) as i64);
+                wraps.min(u32::MAX as i128) as u32
+            }
+            _ => {
+                self.position = self.position.saturating_add_duration(samples);
+                0
+            }
         }
     }
 }
 
-// Lock-free publication boundary between the app thread and the audio thread
-// Implemented as a seqlock over atomics; readers retry on a torn snapshot
-// One writer (app thread), many readers; no allocation, no unsafe, wait-free in practice
-#[derive(Debug)]
-pub struct AtomicTransport {
-    // Even value means stable, odd means a write is in progress
-    seq: AtomicU32,
-    state: AtomicU32,
-    sample_pos: AtomicU64,
-    tempo_bits: AtomicU64,
-    // num in the high 16 bits, den in the low 16 bits
-    time_sig: AtomicU32,
-    // 0 = looping off, 1 = looping on
-    loop_enabled: AtomicU32,
-    loop_start: AtomicU64,
-    loop_end: AtomicU64,
-    sample_rate_hz: AtomicU32,
-}
-
-impl AtomicTransport {
-    // Publish an initial snapshot
-    pub fn new(initial: TransportSnapshot) -> Self {
-        let this = Self {
-            seq: AtomicU32::new(0),
-            state: AtomicU32::new(0),
-            sample_pos: AtomicU64::new(0),
-            tempo_bits: AtomicU64::new(0),
-            time_sig: AtomicU32::new(0),
-            loop_enabled: AtomicU32::new(0),
-            loop_start: AtomicU64::new(0),
-            loop_end: AtomicU64::new(0),
-            sample_rate_hz: AtomicU32::new(0),
-        };
-        this.store(&initial);
-        this
-    }
-
-    // Publish a new snapshot from the single writer thread
-    pub fn store(&self, s: &TransportSnapshot) {
-        let begin = self.seq.load(Ordering::Relaxed).wrapping_add(1);
-        // Mark write in progress, then order field writes after the marker
-        self.seq.store(begin, Ordering::Relaxed);
-        fence(Ordering::Release);
-        self.state.store(s.state.to_u8() as u32, Ordering::Relaxed);
-        self.sample_pos.store(s.sample_pos, Ordering::Relaxed);
-        self.tempo_bits
-            .store(s.tempo_bpm.to_bits(), Ordering::Relaxed);
-        self.time_sig.store(
-            ((s.time_sig_num as u32) << 16) | s.time_sig_den as u32,
-            Ordering::Relaxed,
-        );
-        self.loop_enabled
-            .store(s.loop_enabled as u32, Ordering::Relaxed);
-        self.loop_start.store(s.loop_start, Ordering::Relaxed);
-        self.loop_end.store(s.loop_end, Ordering::Relaxed);
-        self.sample_rate_hz
-            .store(s.sample_rate_hz, Ordering::Relaxed);
-        // Order field writes before clearing the in-progress marker
-        fence(Ordering::Release);
-        self.seq.store(begin.wrapping_add(1), Ordering::Relaxed);
-    }
-
-    // Read a consistent snapshot; retries only while a write is mid-flight
-    pub fn load(&self) -> TransportSnapshot {
-        loop {
-            let s1 = self.seq.load(Ordering::Relaxed);
-            fence(Ordering::Acquire);
-            if s1 & 1 == 1 {
-                std::hint::spin_loop();
-                continue;
-            }
-            let time_sig = self.time_sig.load(Ordering::Relaxed);
-            let snap = TransportSnapshot {
-                state: TransportState::from_u8(self.state.load(Ordering::Relaxed) as u8),
-                sample_pos: self.sample_pos.load(Ordering::Relaxed),
-                tempo_bpm: f64::from_bits(self.tempo_bits.load(Ordering::Relaxed)),
-                time_sig_num: (time_sig >> 16) as u16,
-                time_sig_den: (time_sig & 0xFFFF) as u16,
-                loop_enabled: self.loop_enabled.load(Ordering::Relaxed) != 0,
-                loop_start: self.loop_start.load(Ordering::Relaxed),
-                loop_end: self.loop_end.load(Ordering::Relaxed),
-                sample_rate_hz: self.sample_rate_hz.load(Ordering::Relaxed),
-            };
-            fence(Ordering::Acquire);
-            if self.seq.load(Ordering::Relaxed) == s1 {
-                return snap;
-            }
-            std::hint::spin_loop();
-        }
+impl Default for Transport {
+    // Default matches new()
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -203,64 +125,89 @@ impl AtomicTransport {
 mod tests {
     use super::*;
 
-    #[test]
-    fn state_round_trips_through_u8() {
-        for state in [
-            TransportState::Stopped,
-            TransportState::Playing,
-            TransportState::Recording,
-            TransportState::Paused,
-        ] {
-            assert_eq!(TransportState::from_u8(state.to_u8()), state);
-        }
+    fn duration(samples: u64) -> SampleDuration {
+        SampleDuration::new(samples)
     }
 
+    // Loop end is exclusive: landing exactly on end wraps to start
     #[test]
-    fn beat_sample_conversions_round_trip() {
-        let mut snap = TransportSnapshot::stopped(48_000);
-        snap.tempo_bpm = 120.0;
-        // One beat at 120 BPM and 48 kHz is 24000 samples
-        assert_eq!(snap.beats_to_samples(1.0), 24_000);
-        assert!((snap.samples_to_beats(24_000) - 1.0).abs() < 1e-9);
-        snap.sample_pos = 48_000;
-        assert!((snap.beat_position() - 2.0).abs() < 1e-9);
+    fn loop_end_is_exclusive() {
+        let mut t = Transport::new();
+        t.apply(TransportCommand::SetLoop(LoopRegion::new(
+            SampleTime(100),
+            SampleTime(200),
+        )));
+        t.apply(TransportCommand::Seek(SampleTime(150)));
+        t.apply(TransportCommand::Play);
+        let wraps = t.advance(duration(50));
+        assert_eq!(wraps, 1);
+        assert_eq!(t.position, SampleTime(100));
     }
 
+    // Multiple wraps in one large block are counted
     #[test]
-    fn loop_wraps_position_inside_region() {
-        let mut snap = TransportSnapshot::stopped(48_000);
-        snap.loop_enabled = true;
-        snap.loop_start = 100;
-        snap.loop_end = 200;
-        assert_eq!(snap.wrap_position(150), 150);
-        assert_eq!(snap.wrap_position(200), 100);
-        assert_eq!(snap.wrap_position(250), 150);
+    fn large_block_wraps_multiple_times() {
+        let mut t = Transport::new();
+        t.apply(TransportCommand::SetLoop(LoopRegion::new(
+            SampleTime(0),
+            SampleTime(10),
+        )));
+        t.apply(TransportCommand::Play);
+        let wraps = t.advance(duration(35));
+        assert_eq!(wraps, 3);
+        assert_eq!(t.position, SampleTime(5));
     }
 
+    // Huge advances wrap in constant time and saturate the public wrap count
     #[test]
-    fn loop_disabled_leaves_position() {
-        let snap = TransportSnapshot::stopped(48_000);
-        assert_eq!(snap.wrap_position(9_999), 9_999);
+    fn huge_advance_over_tiny_loop_is_bounded() {
+        let mut t = Transport::new();
+        t.apply(TransportCommand::SetLoop(LoopRegion::new(
+            SampleTime(0),
+            SampleTime(1),
+        )));
+        t.apply(TransportCommand::Play);
+        assert_eq!(t.advance(duration(i64::MAX as u64)), u32::MAX);
+        assert_eq!(t.position, SampleTime(0));
     }
 
+    // Non-looping transport saturates rather than overflowing
     #[test]
-    fn atomic_transport_round_trips_snapshot() {
-        let mut snap = TransportSnapshot::stopped(44_100);
-        snap.state = TransportState::Recording;
-        snap.sample_pos = 123_456;
-        snap.tempo_bpm = 174.0;
-        snap.time_sig_num = 7;
-        snap.time_sig_den = 8;
-        snap.loop_enabled = true;
-        snap.loop_start = 10;
-        snap.loop_end = 20;
+    fn non_looping_advance_saturates_at_sample_limit() {
+        let mut t = Transport::new();
+        t.apply(TransportCommand::Seek(SampleTime(i64::MAX - 5)));
+        t.apply(TransportCommand::Play);
+        assert_eq!(t.advance(duration(10)), 0);
+        assert_eq!(t.position, SampleTime(i64::MAX));
+    }
 
-        let shared = AtomicTransport::new(snap);
-        assert_eq!(shared.load(), snap);
+    // Outside the loop region playback does not wrap
+    #[test]
+    fn no_wrap_outside_region() {
+        let mut t = Transport::new();
+        t.apply(TransportCommand::SetLoop(LoopRegion::new(
+            SampleTime(100),
+            SampleTime(200),
+        )));
+        t.apply(TransportCommand::Seek(SampleTime(300)));
+        t.apply(TransportCommand::Play);
+        assert_eq!(t.advance(duration(50)), 0);
+        assert_eq!(t.position, SampleTime(350));
+    }
 
-        let mut next = snap;
-        next.sample_pos = 999;
-        shared.store(&next);
-        assert_eq!(shared.load(), next);
+    // Stopped transport does not move
+    #[test]
+    fn stopped_transport_holds_position() {
+        let mut t = Transport::new();
+        t.apply(TransportCommand::Seek(SampleTime(42)));
+        assert_eq!(t.advance(duration(512)), 0);
+        assert_eq!(t.position, SampleTime(42));
+    }
+
+    // Degenerate loop regions are unrepresentable
+    #[test]
+    fn degenerate_loop_rejected() {
+        assert!(LoopRegion::new(SampleTime(5), SampleTime(5)).is_none());
+        assert!(LoopRegion::new(SampleTime(9), SampleTime(5)).is_none());
     }
 }

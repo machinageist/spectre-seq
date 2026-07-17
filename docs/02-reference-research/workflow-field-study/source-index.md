@@ -26,14 +26,14 @@ Notes: The machine-readable source ledger is authoritative for individual source
 
 | Product | Research role | Verified source state | Version evidence | Coverage | Immediate gap |
 |---|---|---|---|---|---|
-| Ableton Live | substantive DAW reference | official versioned manual welcome page and rendered top-level navigation inspected | manual identifies Version 12 and URL is versioned `/12/` | inventory-only | inspect all top-level chapters and capture section-level matrix |
-| Bitwig Studio | substantive DAW reference | official mutable `latest` guide welcome page inspected twice; two official artist interviews fully inspected with documented extraction shortfall | rendered guide navigation and change section both identify v5.3 (2026-07-11) | inventory-only | verify 5.3 against an official release notice; obtain visible-session video evidence — interviews yielded preference/friction statements without action sequences |
+| Ableton Live | substantive DAW reference | versioned manual navigation plus ten chapter families inspected and extracted | manual identifies Version 12 and URL is versioned `/12/` | claims-extracted | atomize and spot-verify numeric/default/precedence claims; continue uncovered chapters |
+| Bitwig Studio | substantive DAW reference | mutable `latest` guide identifies 5.3; four chapter families plus Grid signals extracted; two artist interviews yielded self-report only | rendered guide navigation and change section identify v5.3 (2026-07-11) | claims-extracted | verify 5.3 against an official release notice; obtain visible-session workflow evidence |
 | REAPER | substantive DAW reference | official guide landing page, direct PDF identity, bounded dossier, rendered official-video index, and initial workflow candidates recorded | guide filename identifies 7.75b; site advertised application 7.77 on 2026-07-11; individual video versions vary or are unknown | inventory-only | review/timestamp candidate videos and inventory PDF TOC when source processing is available |
 | VCV Rack | substantive modular reference | official manual index inspected | official navigation identifies Rack 2; no manual revision exposed | inventory-only | inspect user chapters and distinguish Rack behavior from plugin-development material |
 | FL Studio | substantive DAW reference | official online manual entry, navigation, title page, title artwork, and bounded dossier recorded | title artwork identifies FL Studio 26; live paths are unversioned | inventory-only | capture a deterministic TOC and direct shortcut-source identity |
 | Logic Pro | substantive DAW reference | official online guide, selected version, PDF links, main 1324-page PDF identity/TOC, and bounded dossier recorded | online guide selects 12.3; PDF does not independently print 12.3 | inventory-only | classify complete TOC and separately inventory instruments/effects/control-surfaces guides |
 | Cubase Pro | substantive DAW reference | official Steinberg Webhelp metadata, TOC, New Features entry, footer, and bounded dossier recorded | version branch 15.0; rendered content includes 15.0.20 | inventory-only | capture deterministic TOC; branch URL is not patch-pinned |
-| Phase Plant | substantive sound-design reference | complete rendered official documentation page inspected; bounded dossier created | no product/manual version or revision date shown | inventory-only | resolve version scope before completeness claims and classify sections |
+| Phase Plant | substantive sound-design reference | complete rendered official documentation page inspected and claims extracted | no product/manual version or revision date shown | claims-extracted | resolve version scope and atomize high-risk numeric/latency claims |
 | Serum 2 | substantive sound-design reference | official product page, change-guide PDF endpoint, full displayed support-category list, and source-gap dossier recorded | version 2 only; build/date unknown | blocked-source-gap | no complete public user manual was exposed by inspected official entry points |
 | VST3 | compatibility target | official developer portal, 3.8.x interface docs, SDK tag 3.8.0 build 66, and licensing guidance inspected | tag v3.8.0_build_66; full commit/submodule identities not yet pinned | inventory-only | audit exact tagged tree, submodule licenses, host contracts, and selected Rust binding before decision |
 
@@ -41,7 +41,11 @@ Notes: The machine-readable source ledger is authoritative for individual source
 
 Four FL Studio sources have passed extraction: two official tutorials, one independent educator tutorial, and professional long-form session `WF-FL-NICK-MIRA-003`. `WF-FL-RECORD-004` adds an interface-input/mixer-recording success path but no measured latency or failure/recovery evidence.
 
-Two Ableton Live sources have passed extraction: official Input/Output interviews supporting `WF-ABLETON-LUSTWERK-005` and `WF-ABLETON-TSURUTA-006`. Both are first-person self-reports admitted at `low` confidence; they establish stated habits, one concrete automation-drawing binding, and live-performance latency constraints, but no visible action sequences. No command-frequency, ergonomic, convergence, or priority claim follows from the current corpus.
+Two Ableton Live official interviews have passed thematic self-report extraction:
+`WF-ABLETON-LUSTWERK-005` and `WF-ABLETON-TSURUTA-006`. They establish stated
+habits, one reported automation-drawing binding, and reported live-performance latency
+constraints, but they are not action-sequence observations. No sequence, gesture,
+frequency, ergonomic, convergence, or priority claim follows from them.
 
 Direct-source discovery includes 10 Ableton Live candidates, 10 Bitwig Studio candidates, 12 FL Studio candidates, and 12 REAPER candidates. These counts describe review queues, not evidence saturation: only four FL sources have admitted timestamped action sequences. Candidate details and limitations live in `workflow-corpus.md`.
 

@@ -1,26 +1,17 @@
-# ==============================================================================
-# File: crates/geist-core/Cargo.toml
-# Layer: core primitives
-# Purpose: Define Cargo responsibilities and integration boundaries.
-# Status: Pseudocode scaffold; implementation intentionally pending.
-# Contract: Keep comments terse, declarative, and synchronized with code.
-# ==============================================================================
-
-# Pseudocode plan:
-# - Declare responsibility: Define Cargo responsibilities and integration boundaries.
-# - Define public types before behavior.
-# - Separate real-time-safe paths from UI/app paths.
-# - Prefer explicit errors over implicit panics.
-# - Add tests beside behavior once implementation begins.
-# - Keep crate dependency-free inside workspace.
-# - Use newtypes for IDs; avoid primitive leakage.
-# - Expose minimal prelude through lib.rs.
-# - Keep config explicit and reproducible.
-# - Document each non-default setting inline.
+# Author: Jeff
+# Date: 2026-07-11
+# Description: Deterministic musical kernel: IDs, time, tempo, transport, events, parameters
+# Notes: No I/O, no allocation-sensitive realtime code yet; pure data and math
 
 [package]
 name = "geist-core"
-version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
 
 [dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+serde_json.workspace = true
