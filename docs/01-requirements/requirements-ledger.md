@@ -8,7 +8,7 @@ Notes: Seeded with foundation requirements for R0-R1; grows only with provenance
 # Requirements Ledger
 
 - **Status:** accepted
-- **Last verified:** 2026-07-16
+- **Last verified:** 2026-07-17
 - **Scope:** accepted-for-work normative requirements; each row carries provenance and required evidence
 - **Decision authority:** Jeff
 - **Upstream sources:** `docs/00-product/vision.md`; `docs/01-requirements/decision-gates.md`; `docs/02-reference-research/*observations*.md`
@@ -43,16 +43,16 @@ Statuses: `proposed`, `accepted`, `implemented`, `verified`.
 
 | ID | Requirement | Provenance | Acceptance evidence | Status |
 |---|---|---|---|---|
-| CORE-001 | Every user-visible object (track, clip, device, parameter, marker…) MUST have a stable 64-bit ID unique within its project, preserved across save/load, undo, reorder, and migration. | mandate §8.1; gate 4 | ID-stability tests across round-trip and mutation sequences | implemented |
+| CORE-001 | Every user-visible object (track, clip, device, parameter, marker…) MUST have a stable 64-bit ID unique within its project, preserved across save/load, undo, reorder, and migration. | mandate §8.1; gate 4 | ID-stability tests across round-trip and mutation sequences. R1 disposition (2026-07-17): save/load and undo identity are evidenced; reorder evidence is gated on the first persisted object collection (R4 intake) and migration evidence on the first real schema migration (R5). Not verifiable before then. | implemented |
 | CORE-002 | Parameters MUST carry stable identity, typed range, default, display mapping, and unit; normalized value semantics are defined once in geist-core. | mandate §8.2 device model; OBS-BW53-AUTO-* (override model needs identity) | parameter descriptor unit tests + API review | implemented |
 | CORE-003 | The project envelope MUST carry an explicit schema version from the first byte written; unknown newer fields MUST be preserved on rewrite where feasible. | accepted project-safety contract | round-trip fixtures incl. newer-schema preservation test | verified |
-| CORE-004 | Saves MUST be atomic (write-new + rename) with no partially written project ever observable. | mandate §12.6; vision project-safety pillar | crash-injection save tests at R5; API design review at R1 | proposed |
+| CORE-004 | Saves MUST be atomic (write-new + rename) with no partially written project ever observable. | mandate §12.6; vision project-safety pillar | crash-injection save tests at R5; API design review at R1 — completed 2026-07-17 via the accepted [project-persistence contract](../03-architecture/project-persistence.md) (boundaries, save algorithm, failure vocabulary, target-state guarantees, test seam) | accepted |
 
 ## GRAPH — render graph (R2 intake, seeded now)
 
 | ID | Requirement | Provenance | Acceptance evidence | Status |
 |---|---|---|---|---|
-| GRAPH-001 | The editable graph and the compiled render plan MUST be distinct types; the callback executes only immutable compiled plans. | accepted graph and realtime contract | type-level separation + integration test that the app path uses the plan | accepted |
+| GRAPH-001 | The editable graph and the compiled render plan MUST be distinct types; the callback executes only immutable compiled plans. | accepted graph and realtime contract | type-level separation + integration test that the app path uses the plan | implemented |
 | GRAPH-002 | Feedback edges MUST be explicit and priced with exactly one render-quantum delay; implicit cycles MUST fail graph validation with a diagnostic. | gate 7; OBS-VCV-VOLT-006, OBS-PP-ARCH-002 (one-sample-delay precedents, adapted to block scope with rationale) | validation unit tests + cycle fixtures | proposed |
 
 ## PROD — product-level

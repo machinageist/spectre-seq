@@ -1,13 +1,13 @@
 // Author: Jeff
 // Date: 2026-07-12
-// Description: Deterministic offline project-inspection harness
-// Notes: R0 validates project input; R2 extends this seam with compiled-plan audio rendering
+// Description: Deterministic offline project-inspection and compiled-plan render harness
+// Notes: R0 validates project input; R2 renders the native fixture through geist-graph
 
 use geist_core::{IdGen, TempoMap, Transport};
 use geist_dsp::{
-    AudioProcessor, Gain, NoteEvent, NoteEventKind, ProcessContext, PulseInstrument, Saturator,
-    Waveform,
+    AudioProcessor, Gain, NoteEvent, NoteEventKind, PulseInstrument, Saturator, Waveform,
 };
+use geist_graph::{Connection, EditableGraph, NodeId, PlanNoteInput};
 use geist_project::{from_bytes, ProjectDoc, ProjectEnvelope, SCHEMA_VERSION};
 use serde::Serialize;
 use serde_json::Map;
@@ -59,12 +59,9 @@ pub fn inspect_project(bytes: &[u8]) -> Result<OfflineReport, String> {
     })
 }
 
-// Render PulseInstrument -> Gain -> Saturator into an offline stereo fixture
-pub fn render_vertical_slice(sample_rate: f64, frames: usize) -> Result<RenderReport, String> {
-    if frames < 2 {
-        return Err("render requires at least two frames".into());
-    }
-    let events = [
+// Fixture note events: one held note released on the final frame
+pub fn fixture_events(frames: usize) -> [NoteEvent; 2] {
+    [
         NoteEvent {
             frame_offset: 0,
             sequence: 0,
@@ -85,46 +82,66 @@ pub fn render_vertical_slice(sample_rate: f64, frames: usize) -> Result<RenderRe
                 velocity: 0.0,
             },
         },
-    ];
-    let instrument_context =
-        ProcessContext::new(sample_rate, frames, &events).map_err(|error| format!("{error:?}"))?;
-    let effect_context =
-        ProcessContext::new(sample_rate, frames, &[]).map_err(|error| format!("{error:?}"))?;
+    ]
+}
 
-    let mut instrument = PulseInstrument::new(Waveform::Saw, 0.3).map_err(ToString::to_string)?;
-    let mut gain = Gain::new(0.7).map_err(ToString::to_string)?;
-    let mut saturator = Saturator::new(2.5, 0.35).map_err(ToString::to_string)?;
-    let mut synth_left = vec![0.0; frames];
-    let mut synth_right = vec![0.0; frames];
-    let mut gain_left = vec![0.0; frames];
-    let mut gain_right = vec![0.0; frames];
-    let mut final_left = vec![0.0; frames];
-    let mut final_right = vec![0.0; frames];
+// Compile the fixture graph and render `events` through the plan
+fn render_plan(
+    sample_rate: f64,
+    frames: usize,
+    events: &[NoteEvent],
+) -> Result<RenderReport, String> {
+    let mut ids = IdGen::new(0x0000_5245_4e44_4552);
+    let pulse = NodeId::new(ids.next_id());
+    let gain = NodeId::new(ids.next_id());
+    let saturator = NodeId::new(ids.next_id());
 
-    instrument
-        .process(
-            &instrument_context,
-            &[],
-            &mut [&mut synth_left, &mut synth_right],
-        )
-        .map_err(|error| format!("{error:?}"))?;
-    gain.process(
-        &effect_context,
-        &[&synth_left, &synth_right],
-        &mut [&mut gain_left, &mut gain_right],
+    let mut graph = EditableGraph::new();
+    graph
+        .add_node(pulse, PulseInstrument::new(Waveform::Saw, 0.3)?.io())
+        .map_err(|error| error.to_string())?;
+    graph
+        .add_node(gain, Gain::new(0.7)?.io())
+        .map_err(|error| error.to_string())?;
+    graph
+        .add_node(saturator, Saturator::new(2.5, 0.35)?.io())
+        .map_err(|error| error.to_string())?;
+    for (from, to) in [(pulse, gain), (gain, saturator)] {
+        graph
+            .connect(Connection {
+                from,
+                from_bus: 0,
+                to,
+                to_bus: 0,
+            })
+            .map_err(|error| error.to_string())?;
+    }
+
+    let mut plan = graph
+        .compile(saturator, frames, &mut |node| {
+            if node == pulse {
+                Ok(Box::new(PulseInstrument::new(Waveform::Saw, 0.3)?))
+            } else if node == gain {
+                Ok(Box::new(Gain::new(0.7)?))
+            } else {
+                Ok(Box::new(Saturator::new(2.5, 0.35)?))
+            }
+        })
+        .map_err(|error| error.to_string())?;
+    plan.process(
+        sample_rate,
+        frames,
+        &[PlanNoteInput {
+            node: pulse,
+            events,
+        }],
     )
-    .map_err(|error| format!("{error:?}"))?;
-    saturator
-        .process(
-            &effect_context,
-            &[&gain_left, &gain_right],
-            &mut [&mut final_left, &mut final_right],
-        )
-        .map_err(|error| format!("{error:?}"))?;
+    .map_err(|error| error.to_string())?;
 
+    let output = plan.last_output().expect("quantum just rendered");
     let mut peak = 0.0_f32;
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-    for sample in final_left.iter().chain(final_right.iter()) {
+    for sample in output[0].iter().chain(output[1].iter()) {
         peak = peak.max(sample.abs());
         for byte in sample.to_bits().to_le_bytes() {
             hash ^= u64::from(byte);
@@ -137,4 +154,20 @@ pub fn render_vertical_slice(sample_rate: f64, frames: usize) -> Result<RenderRe
         peak,
         hash,
     })
+}
+
+// Render PulseInstrument -> Gain -> Saturator through the compiled graph plan
+pub fn render_vertical_slice(sample_rate: f64, frames: usize) -> Result<RenderReport, String> {
+    if frames < 2 {
+        return Err("render requires at least two frames".into());
+    }
+    render_plan(sample_rate, frames, &fixture_events(frames))
+}
+
+// Render the same fixture chain with no notes; silence must stay exact silence
+pub fn render_silence(sample_rate: f64, frames: usize) -> Result<RenderReport, String> {
+    if frames < 2 {
+        return Err("render requires at least two frames".into());
+    }
+    render_plan(sample_rate, frames, &[])
 }

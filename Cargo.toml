@@ -9,6 +9,7 @@ members = [
     "crates/geist-app",
     "crates/geist-core",
     "crates/geist-dsp",
+    "crates/geist-graph",
     "crates/geist-offline",
     "crates/geist-project",
 ]

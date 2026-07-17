@@ -687,11 +687,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "geist-graph"
+version = "0.0.1"
+dependencies = [
+ "geist-core",
+ "geist-dsp",
+]
+
+[[package]]
 name = "geist-offline"
 version = "0.0.1"
 dependencies = [
  "geist-core",
  "geist-dsp",
+ "geist-graph",
  "geist-project",
  "serde",
  "serde_json",

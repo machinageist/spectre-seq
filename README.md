@@ -22,6 +22,7 @@ R0/R1 provides a tested musical kernel and versioned project envelope. A native 
 | `crates/geist-app/` | Native interaction prototype and renderer-neutral app model |
 | `crates/geist-core/` | IDs, time, tempo, transport, events, and parameter contracts |
 | `crates/geist-dsp/` | Realtime-safe native sources, instruments, effects, and process contracts |
+| `crates/geist-graph/` | Editable device graph and immutable compiled render plan |
 | `crates/geist-offline/` | Deterministic project-inspection harness and future offline-render seam |
 | `crates/geist-project/` | Versioned project envelope and validated decoding |
 | `docs/README.md` | Documentation authority and status vocabulary |

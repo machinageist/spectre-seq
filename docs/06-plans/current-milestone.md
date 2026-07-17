@@ -1,42 +1,44 @@
 <!--
 Author: Jeff
-Date: 2026-07-12
+Date: 2026-07-17
 Description: The single active Geist DAW milestone
 Notes: Exactly one milestone is active; the roadmap owns ordering
 -->
 
-# Current Milestone — R0/R1 Foundation
+# Current Milestone — R2 Offline Graph
 
 - **Status:** accepted
-- **Last verified:** 2026-07-16
-- **Scope:** R0 completion and R1 musical-kernel exit
+- **Last verified:** 2026-07-17
+- **Scope:** editable graph → validated compiled plan → deterministic offline render
 - **Decision authority:** Jeff
-- **Upstream sources:** `rebuild-roadmap.md`, accepted requirements and decisions
+- **Upstream sources:** `rebuild-roadmap.md`, GRAPH-001..002, DSP device I/O contract
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
-- **Supersedes:** all removed prototype plans
-- **Superseded by:** none
-- **Open decisions:** none that block the next code slice
-- **Known gaps:** R1 identity/API disposition plus the R2 editable/compiled graph
+- **Supersedes:** the R0/R1 foundation milestone, exited 2026-07-17
+- **Open decisions:** input-bus summing semantics and explicit feedback pricing at their intake
+- **Known gaps:** app parameter-snapshot publication; fixture migration and the four render gates closed 2026-07-17
+
+## R0/R1 exit record
+
+R0/R1 exited 2026-07-17 with all exit evidence passing: formatting, strict Clippy, and the full workspace test suite; tempo/time/transport/event/ID/persistence property coverage; the deterministic offline harness; and traceability matching implementation. CORE-004's atomic-save design is accepted with implementation at R4; CORE-001's reorder/migration evidence is explicitly gated to R4/R5.
 
 ## Current evidence
 
-The root workspace contains a deterministic musical kernel plus the first R2/R4 vertical slice. `geist-dsp` defines borrowed planar buffers, bounded note events, immutable layouts, backend parameter descriptors, Pulse, Gain, Saturator, and a deterministic source. `geist-offline` renders the native device chain without a compiled graph. `geist-app` derives its Build and Shape surfaces from those backend contracts. This early vertical slice shortens feedback cycles but does not satisfy the editable/compiled graph or live-engine milestones.
+`geist-graph` implements the GRAPH-001 split: an app-thread `EditableGraph` with stereo-bus semantics and single-feed inputs, and an immutable `CompiledPlan` built through validated compilation (ancestor inclusion, missing-input rejection, implicit-cycle diagnostics, factory layout verification, deterministic ordering, preallocated planar buffers). Plan execution is allocation-free and lock-free with take/restore buffer handoff. Seven behavioral tests cover editing, compilation, and execution.
 
-The accepted R1 JSON and 960-PPQ decisions now have checked-in fixture evidence. TIME-003 is verified against signed pre-roll, exact and fractional piecewise boundaries, 24-hour positions, round-once accumulation, and honest nearest-tick quantization bounds. R1 exit still requires requirement-by-requirement identity and atomic-save API disposition.
+The offline Pulse → Gain → Saturator fixture renders through the compiled plan, bit-identical to a hand-wired chain, with the silence, impulse, allocation, and deterministic-hash gates passing on that path.
 
 ## Requirements in scope
 
-CORE-001..004, TIME-001..005, RT-001 as workspace policy, and the GRAPH-001 type seam.
+GRAPH-001 (implemented; app-path integration evidence outstanding), GRAPH-002 intake, RT-001 as workspace policy.
 
 ## Non-goals
 
-Audio I/O, production UI, devices, DSP, VST3, recording, and broad graph implementation. The launchable interaction prototype is exploratory evidence, not completion of these outcomes.
+Live audio I/O, callback bridge, MIDI ingress, latency compensation, VST3, recording, and buffer-reuse optimization.
 
 ## Exit evidence
 
-- `cargo fmt --all -- --check` passes.
-- `cargo clippy --locked --workspace --all-targets -- -D warnings` passes.
-- `cargo test --locked --workspace` passes.
-- Tempo, time, transport, event, ID, and persistence properties are covered.
-- The deterministic offline harness exists.
+- ~~The offline fixture renders through the compiled plan, not a hand-wired chain~~ — done 2026-07-17.
+- ~~Silence, impulse, allocation, and deterministic-hash tests pass on the plan path~~ — done 2026-07-17.
+- App-model device parameters publish to the offline plan (NEXT slice 6).
+- `cargo fmt`, strict Clippy, and the full workspace suite stay green.
 - Traceability and status match the implementation.

@@ -8,7 +8,7 @@ Notes: Milestones close on demonstrable capability, not compilation alone
 # Rebuild Roadmap
 
 - **Status:** accepted
-- **Last verified:** 2026-07-12
+- **Last verified:** 2026-07-17
 - **Scope:** milestone order, outcomes, and exit gates
 - **Decision authority:** Jeff
 - **Upstream sources:** accepted vision and requirements
@@ -36,4 +36,4 @@ The repository root is the sole implementation workspace.
 | R11 — Geist identity | Original modular surface, flagship synth, deep MIDI, effect catalog | identity intake | identity-layer QA |
 | R12 — release qualification | Performance/soak, accessibility, recovery, packaging, documentation | release intake | published release gates |
 
-Reordering requires documented dependency reasoning. R0/R1 is active.
+Reordering requires documented dependency reasoning. R2 is active; R0/R1 exited 2026-07-17.

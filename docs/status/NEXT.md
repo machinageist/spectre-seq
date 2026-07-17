@@ -8,8 +8,8 @@ Notes: Only active-milestone slices belong here
 # Next
 
 - **Status:** accepted
-- **Last verified:** 2026-07-16
-- **Scope:** immediately actionable R1 and R2-intake slices
+- **Last verified:** 2026-07-17
+- **Scope:** immediately actionable R2 slices; R1 rows retained as exit record
 - **Decision authority:** Jeff
 - **Upstream sources:** `STATUS.md`, `../06-plans/current-milestone.md`
 - **Downstream dependents:** implementation sessions
@@ -22,9 +22,9 @@ Notes: Only active-milestone slices belong here
 
 1. ~~Close the accepted JSON project-codec decision~~ — verified 2026-07-16 with a checked-in canonical fixture, exact rewrite/round trip, schema and semantic rejection, and unknown-field preservation.
 2. ~~Close the accepted fixed-point `BeatTicks` decision~~ — verified 2026-07-16 at 960 PPQ with checked overflow and transparent signed-integer serialization evidence.
-3. Complete the R1 exit disposition for CORE-001 reorder/migration scope and CORE-004 atomic-save API design; mark only fully evidenced requirements verified.
-4. Implement the R2 editable-graph/compiled-plan split around the accepted DSP I/O contract.
-5. Move the existing Pulse → Gain → Saturator fixture onto the compiled plan and add silence/impulse/hash gates.
+3. ~~Complete the R1 exit disposition for CORE-001 reorder/migration scope and CORE-004 atomic-save API design~~ — dispositioned 2026-07-17: CORE-004 design accepted via the persistence contract; CORE-001 stays implemented with reorder evidence gated to R4 and migration evidence to R5.
+4. ~~Implement the R2 editable-graph/compiled-plan split around the accepted DSP I/O contract~~ — landed 2026-07-17 as `geist-graph` (EditableGraph/CompiledPlan, validated compilation, allocation-free execution, seven behavioral tests, graph-compilation contract).
+5. ~~Move the existing Pulse → Gain → Saturator fixture onto the compiled plan and add silence/impulse/hash gates~~ — landed 2026-07-17: fixture renders through the plan bit-identically to the hand-wired chain; silence, impulse, allocation, and hash gates pass.
 6. Publish device parameter snapshots from the app model to the offline plan before live audio work.
 7. Convert feedback copied from `./geist` into narrow, testable interaction slices without implying live audio capability.
 
