@@ -4,6 +4,10 @@
 # macOS finder metadata
 .DS_Store
 
+# Editor/IDE local state
+.vscode/
+.idea/
+
 # Claude Code per-machine settings (project skills/agents stay tracked)
 .claude/settings.local.json
 

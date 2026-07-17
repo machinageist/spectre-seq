@@ -66,3 +66,7 @@ cargo run --locked -p geist-offline -- --self-test
 ## Legal posture
 
 Geist uses original code, DSP, design, names, and content. Public documentation for other products informs behavioral requirements only, under the clean-room methodology in `docs/02-reference-research/methodology.md`. Trademarks appear only in research and compatibility contexts.
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your option. See `CONTRIBUTING.md` for the contribution workflow and `SECURITY.md` for vulnerability reporting.

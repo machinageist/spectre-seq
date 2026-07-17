@@ -1,0 +1,49 @@
+# ==============================================================================
+# File: .github/workflows/ci.yml
+# Layer: CI
+# Purpose: enforce the documented Validate commands from README.md on push/PR
+# Status: active
+# Contract: keep steps identical to README's "## Validate" section; single
+#   ubuntu-latest job is a deliberate minimum, not a platform coverage claim
+# ==============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install native UI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked --workspace
+
+      - name: Offline deterministic self-test
+        run: cargo run --locked -p geist-offline -- --self-test
