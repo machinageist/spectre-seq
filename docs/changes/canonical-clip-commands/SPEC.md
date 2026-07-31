@@ -37,6 +37,8 @@ A clip entity owns:
 - visible musical duration in `MusicalTime`;
 - kind-specific region data or a reference to independently owned content.
 
+The first structural entity slice may establish only identity, owner, placement, duration, and ordered membership. Such a content-free shell is not yet a complete project clip and cannot enter create/delete command history until the kind-specific ownership checkpoint is resolved.
+
 Consequences:
 
 - One `ClipId` appears on exactly one track at exactly one position.

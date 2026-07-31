@@ -63,6 +63,8 @@ Design:
 - Preserve ordered track membership for deterministic rendering and undo.
 - Keep existing sample-based playback structures behind a compatibility boundary.
 
+This slice establishes the structural entity shell only: identity, owner, musical placement, and ordered membership. Kind-specific content is deliberately excluded until Slice B2 and no create/delete command may ship against a content-free project clip.
+
 RED tests:
 
 - Duplicate IDs are rejected atomically.
@@ -73,6 +75,19 @@ RED tests:
 - Restoring at an original order index reproduces the prior arrangement.
 
 Stop before command implementation if canonical entity ownership requires persistence or engine changes.
+
+## Slice B2 — Clip content ownership checkpoint
+
+Interview and specify before implementation:
+
+- audio region ownership: shared immutable asset identity versus per-clip source range, gain, and future warp state;
+- MIDI ownership: deep-copied pattern content versus explicit linked-pattern identity;
+- automation ownership: target identity, curve coordinates, and behavior when the target disappears;
+- duplication behavior for each clip kind;
+- exact payload captured by create/delete undo;
+- compatibility projection from legacy arena-backed `Clip` content.
+
+Extend `ClipEntity` with the approved typed content payload or content reference before implementing create/delete commands.
 
 ## Slice C — Typed edit result and history semantics
 

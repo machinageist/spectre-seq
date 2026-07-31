@@ -10,6 +10,7 @@
 #![deny(unsafe_code)]
 
 pub mod arena;
+pub mod arrangement;
 pub mod clip;
 pub mod commands;
 pub mod identity;
@@ -23,6 +24,9 @@ pub mod transport;
 // Stable surface for the timeline model
 pub mod prelude {
     pub use crate::arena::{Arena, Index};
+    pub use crate::arrangement::{
+        Arrangement, ArrangementError, ArrangementTrack, ClipEntity, ClipLocation, RemovedClip,
+    };
     pub use crate::clip::{AudioClip, AutomationClip, Breakpoint, Clip, MidiClip};
     pub use crate::commands::{
         AddTrack, Command, MoveClip, PlaceClip, RemoveClip, SetTrackMute, UndoStack,
