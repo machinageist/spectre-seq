@@ -24,6 +24,8 @@ pub struct StudioResponse {
     // The user clicked Save or Load this frame; the app owns the file I/O
     pub save_requested: bool,
     pub load_requested: bool,
+    // The timeline explicitly selected, deselected, or manipulated a clip
+    pub timeline_selection_changed: bool,
 }
 
 // Draw the full studio shell into the given root Ui (eframe hands one per frame)
@@ -99,7 +101,7 @@ pub fn draw_studio(
     let main_pressed = egui::CentralPanel::default()
         .frame(pane_frame(state.focused_pane() == WorkspacePane::Main))
         .show_inside(ui, |ui| {
-            central(ui, state, session, &mut out.intents);
+            out.timeline_selection_changed = central(ui, state, session, &mut out.intents);
             pointer_pressed_in(ui)
         })
         .inner;
@@ -409,13 +411,28 @@ fn central(
     state: &UIState,
     session: &mut SessionModel,
     intents: &mut Vec<CommandIntent>,
-) {
+) -> bool {
     match state.active_lens() {
-        LensId::Mix => views::mixer::draw(ui, &mut session.mixer, intents),
-        LensId::Shape => views::plugin_rack::draw(ui, &mut session.rack, intents),
-        LensId::Build => views::node_graph::draw(ui, &mut session.graph, intents),
-        LensId::Browser => views::browser::draw(ui, &mut session.browser, intents),
-        LensId::Modulation => views::modulation::draw(ui, &session.graph),
+        LensId::Mix => {
+            views::mixer::draw(ui, &mut session.mixer, intents);
+            false
+        }
+        LensId::Shape => {
+            views::plugin_rack::draw(ui, &mut session.rack, intents);
+            false
+        }
+        LensId::Build => {
+            views::node_graph::draw(ui, &mut session.graph, intents);
+            false
+        }
+        LensId::Browser => {
+            views::browser::draw(ui, &mut session.browser, intents);
+            false
+        }
+        LensId::Modulation => {
+            views::modulation::draw(ui, &session.graph);
+            false
+        }
         LensId::Arrange => {
             // One musical editor at a time: piano roll, step sequencer, or timeline
             use crate::model::ArrangeTab;
@@ -436,10 +453,12 @@ fn central(
             let playhead = Some(session.transport.position_beats as f32);
             match session.arrange_tab {
                 ArrangeTab::PianoRoll => {
-                    views::piano_roll::draw(ui, &mut session.piano, playhead, intents)
+                    views::piano_roll::draw(ui, &mut session.piano, playhead, intents);
+                    false
                 }
                 ArrangeTab::StepSequencer => {
-                    views::step_sequencer::draw(ui, &mut session.step_seq, playhead, intents)
+                    views::step_sequencer::draw(ui, &mut session.step_seq, playhead, intents);
+                    false
                 }
                 ArrangeTab::Timeline => {
                     views::arrangement::draw(ui, &mut session.timeline, &session.transport, intents)

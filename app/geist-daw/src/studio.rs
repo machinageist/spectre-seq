@@ -22,7 +22,7 @@ use geist_ui::model::{
     ParamSpec, Port, RackModel, SessionModel, StepPattern, StepSequencerModel, TimelineModel,
 };
 use geist_ui::shell::draw_studio;
-use geist_ui::state::UIState;
+use geist_ui::state::{SelectedObject, UIState};
 use geist_ui::theme::{self, SignalKind};
 use geist_ui::widgets::{KeyEvent, Keyboard, Taper};
 
@@ -241,6 +241,8 @@ pub struct StudioApp {
     piano_clip: Option<u64>,
     // Last-synced timeline clip placements, for diffing to the engine
     timeline_mirror: Vec<Clip>,
+    // Stable selected clip id last published to UIState
+    timeline_selection_mirror: Option<u64>,
     // Monotonic allocator for engine clip ids (new view clips arrive as id 0)
     next_clip_id: u64,
     // Active MIDI recorder while recording; None otherwise
@@ -290,6 +292,7 @@ impl StudioApp {
             clip_notes_mirror: HashMap::new(),
             piano_clip: None,
             timeline_mirror: Vec::new(),
+            timeline_selection_mirror: None,
             next_clip_id: 1,
             recorder: None,
             record_target: None,
@@ -1307,6 +1310,13 @@ impl eframe::App for StudioApp {
         self.emit_engine_diff();
         self.sync_rack();
         self.sync_timeline();
+        let selected_clip = selected_timeline_clip_id(&self.session.timeline);
+        sync_timeline_selection(
+            &mut self.state,
+            selected_clip,
+            &mut self.timeline_selection_mirror,
+            response.timeline_selection_changed,
+        );
         self.sync_clip_notes();
         self.sync_steps();
 
@@ -1323,6 +1333,13 @@ impl eframe::App for StudioApp {
             match session::load(&fallback) {
                 Ok(loaded) => {
                     let offline = self.apply_session(loaded);
+                    let selected_clip = selected_timeline_clip_id(&self.session.timeline);
+                    sync_timeline_selection(
+                        &mut self.state,
+                        selected_clip,
+                        &mut self.timeline_selection_mirror,
+                        true,
+                    );
                     self.status = if offline == 0 {
                         "Loaded session".to_string()
                     } else {
@@ -1579,6 +1596,31 @@ fn same_note(a: &Note, b: &Note) -> bool {
     a.pitch == b.pitch && (a.start_beats - b.start_beats).abs() < 1e-3
 }
 
+// Resolve a view-local selection index without exposing it as object identity
+fn selected_timeline_clip_id(timeline: &TimelineModel) -> Option<u64> {
+    timeline.selected_clip().map(|clip| clip.id)
+}
+
+// Publish timeline selection transitions only after clips have stable ids
+fn sync_timeline_selection(
+    state: &mut UIState,
+    selected_clip: Option<u64>,
+    mirror: &mut Option<u64>,
+    selection_interacted: bool,
+) {
+    if selected_clip == *mirror && !selection_interacted {
+        return;
+    }
+    *mirror = selected_clip;
+    match selected_clip.filter(|id| *id != 0) {
+        Some(id) => state.select_object(SelectedObject::Clip(id.to_string())),
+        None if matches!(state.selected_object(), Some(SelectedObject::Clip(_))) => {
+            state.clear_selection();
+        }
+        None => {}
+    }
+}
+
 // Build the four ParamSpecs for an envelope slot from [a, d, s, r]
 fn env_params(env: [f32; 4]) -> Vec<ParamSpec> {
     vec![
@@ -1695,6 +1737,94 @@ fn spectrum_into(samples: &[f32], bins: &mut Vec<f32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stable_timeline_selection_is_published_to_the_inspector() {
+        let mut state = UIState::new();
+        let mut mirror = None;
+
+        sync_timeline_selection(&mut state, Some(42), &mut mirror, false);
+
+        assert_eq!(
+            state.selected_object(),
+            Some(&SelectedObject::Clip("42".to_string()))
+        );
+        assert_eq!(mirror, Some(42));
+    }
+
+    #[test]
+    fn provisional_timeline_id_is_never_published() {
+        let mut state = UIState::new();
+        let mut mirror = None;
+
+        sync_timeline_selection(&mut state, Some(0), &mut mirror, true);
+
+        assert_eq!(state.selected_object(), None);
+    }
+
+    #[test]
+    fn invalid_timeline_selection_does_not_retarget_the_inspector() {
+        let mut timeline = TimelineModel::default();
+        timeline.selected = Some(99);
+
+        assert_eq!(selected_timeline_clip_id(&timeline), None);
+    }
+
+    #[test]
+    fn timeline_deselect_clears_only_a_clip_selection() {
+        let mut state = UIState::new();
+        state.select_object(SelectedObject::Clip("7".to_string()));
+        let mut mirror = Some(7);
+        sync_timeline_selection(&mut state, None, &mut mirror, true);
+        assert_eq!(state.selected_object(), None);
+
+        state.select_object(SelectedObject::Track("track-1".to_string()));
+        mirror = Some(8);
+        sync_timeline_selection(&mut state, None, &mut mirror, true);
+        assert_eq!(
+            state.selected_object(),
+            Some(&SelectedObject::Track("track-1".to_string()))
+        );
+    }
+
+    #[test]
+    fn unchanged_empty_timeline_selection_preserves_other_selection() {
+        let mut state = UIState::new();
+        state.select_object(SelectedObject::Node("node-3".to_string()));
+        let mut mirror = None;
+
+        sync_timeline_selection(&mut state, None, &mut mirror, false);
+
+        assert_eq!(
+            state.selected_object(),
+            Some(&SelectedObject::Node("node-3".to_string()))
+        );
+    }
+
+    #[test]
+    fn repeated_clip_interaction_reclaims_global_selection() {
+        let mut state = UIState::new();
+        state.select_object(SelectedObject::Track("track-1".to_string()));
+        let mut mirror = Some(7);
+
+        sync_timeline_selection(&mut state, Some(7), &mut mirror, true);
+
+        assert_eq!(
+            state.selected_object(),
+            Some(&SelectedObject::Clip("7".to_string()))
+        );
+    }
+
+    #[test]
+    fn project_load_reconciles_a_stale_clip_with_an_empty_mirror() {
+        let mut state = UIState::new();
+        state.select_object(SelectedObject::Clip("old-project-clip".to_string()));
+        let mut mirror = None;
+
+        sync_timeline_selection(&mut state, None, &mut mirror, true);
+
+        assert_eq!(state.selected_object(), None);
+    }
 
     #[test]
     fn mirror_matches_initial_session_so_first_diff_is_quiet() {

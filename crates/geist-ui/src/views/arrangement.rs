@@ -41,7 +41,8 @@ pub fn draw(
     timeline: &mut TimelineModel,
     transport: &Transport,
     _intents: &mut Vec<CommandIntent>,
-) {
+) -> bool {
+    let mut selection_interacted = false;
     let lane_count = timeline.lanes.len();
     let lanes = lane_count.max(1) as f32;
     let content = vec2(
@@ -76,7 +77,7 @@ pub fn draw(
             let x = beat_x(bar_beat);
             painter.line_segment(
                 [pos2(x, rect.top()), pos2(x, rect.bottom())],
-                Stroke::new(1.0, theme::STROKE),
+                Stroke::new(1.0_f32, theme::STROKE),
             );
             painter.text(
                 pos2(x + 3.0, rect.top() + 2.0),
@@ -105,7 +106,7 @@ pub fn draw(
             );
             painter.line_segment(
                 [pos2(grid_left, top), pos2(rect.right(), top)],
-                Stroke::new(1.0, theme::STROKE),
+                Stroke::new(1.0_f32, theme::STROKE),
             );
         }
 
@@ -128,7 +129,7 @@ pub fn draw(
             painter.rect_stroke(
                 clip_rect,
                 theme::RADIUS_CONTROL,
-                Stroke::new(if selected { 2.0 } else { 1.0 }, color),
+                Stroke::new(if selected { 2.0_f32 } else { 1.0_f32 }, color),
                 StrokeKind::Inside,
             );
             painter.text(
@@ -151,6 +152,7 @@ pub fn draw(
             if handle.dragged() {
                 let new_right = handle.interact_pointer_pos().map(|p| p.x).unwrap_or(clip_rect.right());
                 timeline.selected = Some(index);
+                selection_interacted = true;
                 timeline.clips[index].len_beats = (x_beat(new_right) - clip.start_beats).max(0.25);
             }
             if handle.drag_stopped() {
@@ -162,9 +164,11 @@ pub fn draw(
             let body = ui.interact(clip_rect, ui.id().with(("clip_body", index)), Sense::click_and_drag());
             if body.clicked() {
                 timeline.selected = Some(index);
+                selection_interacted = true;
             }
             if body.dragged() {
                 timeline.selected = Some(index);
+                selection_interacted = true;
                 let dx = body.drag_delta().x / PX_PER_BEAT;
                 timeline.clips[index].start_beats = (clip.start_beats + dx).max(0.0);
                 if let Some(p) = body.interact_pointer_pos() {
@@ -182,6 +186,7 @@ pub fn draw(
         if let Some(index) = remove {
             timeline.clips.remove(index);
             timeline.selected = None;
+            selection_interacted = true;
         }
 
         // Double-click an empty lane to create a clip; a bare click deselects
@@ -212,18 +217,21 @@ pub fn draw(
                             kind: crate::theme::SignalKind::Note,
                         });
                         timeline.selected = Some(timeline.clips.len() - 1);
+                        selection_interacted = true;
                     }
                 }
             }
         } else if bg.clicked() {
             timeline.selected = None;
+            selection_interacted = true;
         }
 
         // Playhead
         let x = beat_x(transport.position_beats as f32);
         painter.line_segment(
             [pos2(x, rect.top()), pos2(x, rect.bottom())],
-            Stroke::new(1.5, theme::ACCENT),
+            Stroke::new(1.5_f32, theme::ACCENT),
         );
     });
+    selection_interacted
 }
