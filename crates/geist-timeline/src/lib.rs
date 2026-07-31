@@ -12,6 +12,7 @@
 pub mod arena;
 pub mod clip;
 pub mod commands;
+pub mod identity;
 pub mod pattern;
 pub mod playhead;
 pub mod tempo;
@@ -26,6 +27,7 @@ pub mod prelude {
     pub use crate::commands::{
         AddTrack, Command, MoveClip, PlaceClip, RemoveClip, SetTrackMute, UndoStack,
     };
+    pub use crate::identity::{ClipId, IdentityAllocator, TrackId};
     pub use crate::pattern::{Note, Pattern};
     pub use crate::playhead::{LoopRegion, Playhead};
     pub use crate::tempo::TempoMap;

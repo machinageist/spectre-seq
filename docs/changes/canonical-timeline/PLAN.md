@@ -62,7 +62,8 @@ Expected outcomes:
 
 ## Slice 3 — Stable canonical identity
 
-- Add `TrackId` and `ClipId` newtypes.
+- Specialize the shared `geist-core` `TrackId` and `ClipId` newtypes as nonzero canonical IDs.
+- Add checked timeline-owned allocation without creating a second ID family.
 - Separate persistent IDs from generational arena handles.
 - Define allocation, load restoration, deletion, and collision behavior.
 - Keep Inspector selection stable across projection rebuilds.
