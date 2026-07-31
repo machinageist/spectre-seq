@@ -4,7 +4,7 @@
 // Notes: Renderers read UI state and emit commands; they do not own DAW truth.
 
 use crate::commands::UICommand;
-use crate::state::{SelectedObject, UIState};
+use crate::state::{SelectedObject, UIState, WorkspacePane};
 use geist_config::schema::{Density, LensId, PanelEdge, PanelId};
 
 // Swappable renderer boundary for egui now and wgpu later
@@ -19,6 +19,7 @@ pub struct RenderFrame {
     pub density: Density,
     pub transport_edge: PanelEdge,
     pub active_lens: LensId,
+    pub focused_pane: WorkspacePane,
     pub lens_tabs: Vec<LensTab>,
     pub panels: Vec<PanelPlacement>,
     pub main_view: ViewPlan,
@@ -63,6 +64,7 @@ pub fn frame_from_state(state: &UIState) -> RenderFrame {
         density: layout.density,
         transport_edge: layout.transport,
         active_lens: state.active_lens(),
+        focused_pane: state.focused_pane(),
         lens_tabs: state
             .visible_lenses()
             .iter()
@@ -164,6 +166,7 @@ mod tests {
 
         assert_eq!(frame.workflow_id, "modular");
         assert_eq!(frame.active_lens, LensId::Build);
+        assert_eq!(frame.focused_pane, WorkspacePane::Main);
         assert_eq!(frame.lens_tabs.len(), 3);
         assert_eq!(frame.lens_tabs[0].lens, LensId::Build);
         assert!(frame.lens_tabs[0].active);

@@ -10,8 +10,21 @@ use geist_config::schema::{LayoutConfig, LensId, WorkflowProfile};
 pub struct UIState {
     workflow: WorkflowProfile,
     active_lens: LensId,
+    focused_pane: WorkspacePane,
+    left_panel_open: bool,
+    right_panel_open: bool,
     selected_object: Option<SelectedObject>,
     command_palette_open: bool,
+}
+
+// Stable keyboard-focus targets in the tiled studio shell
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WorkspacePane {
+    Transport,
+    Left,
+    Main,
+    Right,
+    Monitor,
 }
 
 // UI-only selection anchor used to choose contextual actions
@@ -51,9 +64,14 @@ impl UIState {
     // Build UI state from a validated workflow profile
     pub fn from_workflow(workflow: WorkflowProfile) -> Self {
         let active_lens = workflow.startup_lens;
+        let left_panel_open = workflow.layout.left_panel.is_some();
+        let right_panel_open = workflow.layout.right_panel.is_some();
         Self {
             workflow,
             active_lens,
+            focused_pane: WorkspacePane::Main,
+            left_panel_open,
+            right_panel_open,
             selected_object: None,
             command_palette_open: false,
         }
@@ -62,6 +80,9 @@ impl UIState {
     // Replace the active workflow and move to its startup lens
     pub fn apply_workflow(&mut self, workflow: WorkflowProfile) {
         self.active_lens = workflow.startup_lens;
+        self.left_panel_open = workflow.layout.left_panel.is_some();
+        self.right_panel_open = workflow.layout.right_panel.is_some();
+        self.focused_pane = WorkspacePane::Main;
         self.workflow = workflow;
     }
 
@@ -80,6 +101,59 @@ impl UIState {
 
     pub fn active_lens(&self) -> LensId {
         self.active_lens
+    }
+
+    pub fn focused_pane(&self) -> WorkspacePane {
+        self.focused_pane
+    }
+
+    pub fn focus_pane(&mut self, pane: WorkspacePane) {
+        self.focused_pane = pane;
+    }
+
+    pub fn left_panel_open(&self) -> bool {
+        self.left_panel_open
+    }
+
+    pub fn right_panel_open(&self) -> bool {
+        self.right_panel_open
+    }
+
+    pub fn toggle_left_panel(&mut self) {
+        self.left_panel_open = self.layout().left_panel.is_some() && !self.left_panel_open;
+        if !self.left_panel_open && self.focused_pane == WorkspacePane::Left {
+            self.focused_pane = WorkspacePane::Main;
+        }
+    }
+
+    pub fn toggle_right_panel(&mut self) {
+        self.right_panel_open = self.layout().right_panel.is_some() && !self.right_panel_open;
+        if !self.right_panel_open && self.focused_pane == WorkspacePane::Right {
+            self.focused_pane = WorkspacePane::Main;
+        }
+    }
+
+    pub fn focus_horizontally(&mut self, right: bool) {
+        self.focused_pane = match (self.focused_pane, right) {
+            (WorkspacePane::Main, false) if self.left_panel_open => WorkspacePane::Left,
+            (WorkspacePane::Main, true) if self.right_panel_open => WorkspacePane::Right,
+            (WorkspacePane::Left, true) | (WorkspacePane::Right, false) => WorkspacePane::Main,
+            (pane, _) => pane,
+        };
+    }
+
+    // Move through the current vertical tile stack without depending on pixels
+    pub fn cycle_pane_focus(&mut self, forward: bool) {
+        self.focused_pane = match (self.focused_pane, forward) {
+            (WorkspacePane::Transport, true) | (WorkspacePane::Monitor, false) => {
+                WorkspacePane::Main
+            }
+            (WorkspacePane::Main, true) => WorkspacePane::Monitor,
+            (WorkspacePane::Monitor, true) => WorkspacePane::Transport,
+            (WorkspacePane::Transport, false) => WorkspacePane::Monitor,
+            (WorkspacePane::Main, false) => WorkspacePane::Transport,
+            (WorkspacePane::Left | WorkspacePane::Right, _) => WorkspacePane::Main,
+        };
     }
 
     pub fn visible_lenses(&self) -> &[LensId] {
@@ -173,5 +247,29 @@ mod tests {
             Err(UIStateError::HiddenLens(LensId::Build))
         );
         assert_eq!(state.active_lens(), LensId::Arrange);
+    }
+
+    #[test]
+    fn pane_focus_cycles_through_the_vertical_tile_stack() {
+        let mut state = UIState::new();
+        assert_eq!(state.focused_pane(), WorkspacePane::Main);
+        state.cycle_pane_focus(true);
+        assert_eq!(state.focused_pane(), WorkspacePane::Monitor);
+        state.cycle_pane_focus(true);
+        assert_eq!(state.focused_pane(), WorkspacePane::Transport);
+        state.cycle_pane_focus(false);
+        assert_eq!(state.focused_pane(), WorkspacePane::Monitor);
+    }
+
+    #[test]
+    fn side_panels_focus_and_collapse_without_stranding_focus() {
+        let mut state = UIState::new();
+        state.focus_horizontally(false);
+        assert_eq!(state.focused_pane(), WorkspacePane::Left);
+        state.toggle_left_panel();
+        assert!(!state.left_panel_open());
+        assert_eq!(state.focused_pane(), WorkspacePane::Main);
+        state.focus_horizontally(true);
+        assert_eq!(state.focused_pane(), WorkspacePane::Right);
     }
 }
