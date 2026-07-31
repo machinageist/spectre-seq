@@ -235,3 +235,116 @@ pub fn draw(
     });
     selection_interacted
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Lane;
+    use crate::theme::SignalKind;
+    use egui::{Event, Modifiers, PointerButton, RawInput};
+
+    fn timeline() -> TimelineModel {
+        TimelineModel {
+            lanes: vec![Lane {
+                name: "Track 1".to_string(),
+            }],
+            clips: vec![Clip {
+                id: 7,
+                lane: 0,
+                name: "Clip 1".to_string(),
+                start_beats: 1.0,
+                len_beats: 4.0,
+                kind: SignalKind::Note,
+            }],
+            length_beats: 16.0,
+            selected: Some(0),
+        }
+    }
+
+    fn frame(ctx: &egui::Context, timeline: &mut TimelineModel, events: Vec<Event>) -> bool {
+        let raw = RawInput {
+            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 200.0))),
+            events,
+            ..Default::default()
+        };
+        let mut changed = false;
+        let _ = ctx.run_ui(raw, |ui| {
+            changed = draw(
+                ui,
+                timeline,
+                &Transport::default(),
+                &mut Vec::new(),
+            );
+        });
+        changed
+    }
+
+    #[test]
+    fn passive_frame_does_not_report_selection_interaction() {
+        let ctx = egui::Context::default();
+        let mut timeline = timeline();
+
+        assert!(!frame(&ctx, &mut timeline, Vec::new()));
+        assert_eq!(timeline.selected, Some(0));
+    }
+
+    #[test]
+    fn clicking_an_already_selected_clip_reports_selection_interaction() {
+        let ctx = egui::Context::default();
+        let mut timeline = timeline();
+        let clip_center = pos2(LABEL_W + PX_PER_BEAT * 2.0, RULER_H + LANE_H * 0.5);
+
+        assert!(!frame(
+            &ctx,
+            &mut timeline,
+            vec![Event::PointerMoved(clip_center)],
+        ));
+        assert!(!frame(
+            &ctx,
+            &mut timeline,
+            vec![
+                Event::PointerMoved(clip_center),
+                Event::PointerButton {
+                    pos: clip_center,
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                },
+            ],
+        ));
+        assert!(frame(
+            &ctx,
+            &mut timeline,
+            vec![
+                Event::PointerMoved(clip_center),
+                Event::PointerButton {
+                    pos: clip_center,
+                    button: PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Modifiers::NONE,
+                },
+            ],
+        ));
+        assert_eq!(timeline.selected, Some(0));
+    }
+
+    #[test]
+    fn deleting_the_selected_clip_reports_selection_interaction() {
+        let ctx = egui::Context::default();
+        let mut timeline = timeline();
+
+        assert!(frame(
+            &ctx,
+            &mut timeline,
+            vec![Event::Key {
+                key: egui::Key::Delete,
+                physical_key: Some(egui::Key::Delete),
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            }],
+        ));
+        assert!(timeline.clips.is_empty());
+        assert_eq!(timeline.selected, None);
+    }
+}
