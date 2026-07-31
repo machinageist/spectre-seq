@@ -11,6 +11,8 @@
 
 use geist_core::transport::{DEFAULT_TIME_SIG_DEN, DEFAULT_TIME_SIG_NUM};
 
+use crate::time::{MusicalTime, MAX_EXACT_F64_INTEGER};
+
 // Seconds in one minute; tempo math reads in beats per minute
 const SECONDS_PER_MINUTE: f64 = 60.0;
 
@@ -47,7 +49,7 @@ impl TempoMap {
     // Build a constant-tempo map in common time
     pub fn new(sample_rate_hz: u32, bpm: f64) -> Self {
         Self {
-            sample_rate: sample_rate_hz as f64,
+            sample_rate: sample_rate_hz.max(1) as f64,
             tempos: vec![TempoPoint {
                 beat: 0.0,
                 bpm: bpm.clamp(MIN_BPM, MAX_BPM),
@@ -154,11 +156,33 @@ impl TempoMap {
         }
         self.tempos.last().map(|p| p.beat).unwrap_or(0.0)
     }
+
+    // Convert canonical musical time to a rounded absolute sample position
+    pub fn musical_time_to_samples(&self, time: MusicalTime) -> Option<u64> {
+        rounded_exact_u64(self.beats_to_samples(time.try_as_beats()?))
+    }
+
+    // Convert an absolute sample position to canonical musical time
+    pub fn samples_to_musical_time(&self, sample: u64) -> Option<MusicalTime> {
+        if sample > MAX_EXACT_F64_INTEGER {
+            return None;
+        }
+        MusicalTime::try_from_beats(self.samples_to_beats(sample as f64))
+    }
+}
+
+// Round a scalar only where every integer is exactly representable by f64
+fn rounded_exact_u64(value: f64) -> Option<u64> {
+    if !value.is_finite() || value < 0.0 || value > MAX_EXACT_F64_INTEGER as f64 {
+        return None;
+    }
+    Some(value.round() as u64)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::time::{MusicalTime, MAX_EXACT_MUSICAL_TIME_TICKS};
 
     const SR: u32 = 48_000;
 
@@ -227,7 +251,11 @@ mod tests {
         for bpm in 100..200 {
             map.set_tempo(0.0, bpm as f64);
         }
-        assert_eq!(map.tempos.len(), 1, "origin tempo must be replaced, not appended");
+        assert_eq!(
+            map.tempos.len(),
+            1,
+            "origin tempo must be replaced, not appended"
+        );
         assert!(close(map.tempo_at(0.0), 199.0));
     }
 
@@ -251,5 +279,77 @@ mod tests {
         let s16 = map.beats_to_samples(16.0);
         let s24 = map.beats_to_samples(24.0);
         assert!(s8 < s16 && s16 < s24);
+    }
+
+    #[test]
+    fn musical_time_converts_at_constant_tempo() {
+        let map = TempoMap::new(SR, 120.0);
+        assert_eq!(
+            map.musical_time_to_samples(MusicalTime::from_ticks(960)),
+            Some(24_000)
+        );
+        assert_eq!(
+            map.samples_to_musical_time(96_000),
+            Some(MusicalTime::from_ticks(3_840))
+        );
+    }
+
+    #[test]
+    fn musical_time_conversion_integrates_tempo_changes() {
+        let mut map = TempoMap::new(SR, 120.0);
+        map.set_tempo(4.0, 60.0);
+        let beat_eight = MusicalTime::from_ticks(8 * 960);
+        assert_eq!(map.musical_time_to_samples(beat_eight), Some(288_000));
+        assert_eq!(map.samples_to_musical_time(288_000), Some(beat_eight));
+    }
+
+    #[test]
+    fn musical_time_sample_round_trip_is_within_one_tick() {
+        let map = TempoMap::new(SR, 137.0);
+        let original = MusicalTime::from_ticks(12_345);
+        let samples = map.musical_time_to_samples(original).unwrap();
+        let recovered = map.samples_to_musical_time(samples).unwrap();
+        assert!(original.ticks().abs_diff(recovered.ticks()) <= 1);
+    }
+
+    #[test]
+    fn zero_sample_rate_is_not_used_as_a_divisor() {
+        let map = TempoMap::new(0, 120.0);
+        assert_eq!(
+            map.musical_time_to_samples(MusicalTime::from_ticks(960)),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn unrepresentable_conversions_are_rejected() {
+        let sample_heavy = TempoMap::new(u32::MAX, 1.0);
+        assert_eq!(sample_heavy.musical_time_to_samples(MusicalTime::MAX), None);
+
+        let tick_heavy = TempoMap::new(1, 1_000.0);
+        assert_eq!(tick_heavy.samples_to_musical_time(u64::MAX), None);
+    }
+
+    #[test]
+    fn conversion_enforces_sample_and_musical_precision_boundaries() {
+        let identity = TempoMap::new(1_920, 120.0);
+        let tick_boundary = MusicalTime::from_ticks(MAX_EXACT_MUSICAL_TIME_TICKS);
+        let above_tick_boundary = MusicalTime::from_ticks(MAX_EXACT_MUSICAL_TIME_TICKS + 1);
+
+        assert_eq!(
+            identity.musical_time_to_samples(tick_boundary),
+            Some(MAX_EXACT_MUSICAL_TIME_TICKS)
+        );
+        assert_eq!(identity.musical_time_to_samples(above_tick_boundary), None);
+
+        let two_samples_per_tick = TempoMap::new(3_840, 120.0);
+        assert_eq!(
+            two_samples_per_tick.samples_to_musical_time(MAX_EXACT_F64_INTEGER),
+            Some(tick_boundary)
+        );
+        assert_eq!(
+            two_samples_per_tick.samples_to_musical_time(MAX_EXACT_F64_INTEGER + 1),
+            None
+        );
     }
 }

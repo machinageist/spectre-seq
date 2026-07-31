@@ -15,6 +15,7 @@ pub mod commands;
 pub mod pattern;
 pub mod playhead;
 pub mod tempo;
+pub mod time;
 pub mod track;
 pub mod transport;
 
@@ -28,6 +29,7 @@ pub mod prelude {
     pub use crate::pattern::{Note, Pattern};
     pub use crate::playhead::{LoopRegion, Playhead};
     pub use crate::tempo::TempoMap;
+    pub use crate::time::{MusicalTime, MAX_EXACT_MUSICAL_TIME_TICKS, TICKS_PER_QUARTER};
     pub use crate::track::{ClipPlacement, Timeline, Track};
     pub use crate::transport::Transport;
 }
