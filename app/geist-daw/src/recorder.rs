@@ -97,6 +97,19 @@ pub fn write_wav(path: &Path, audio: &RecordedAudio) -> Result<(), hound::Error>
     writer.finalize()
 }
 
+// Read a 32-bit float WAV back into interleaved f32 samples and its format,
+// reconstructing a take saved earlier by `write_wav` for engine playback
+pub fn read_wav(path: &Path) -> Result<RecordedAudio, hound::Error> {
+    let mut reader = hound::WavReader::open(path)?;
+    let spec = reader.spec();
+    let samples: Result<Vec<f32>, _> = reader.samples::<f32>().collect();
+    Ok(RecordedAudio {
+        samples: samples?,
+        channels: spec.channels,
+        sample_rate_hz: spec.sample_rate,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,5 +146,22 @@ mod tests {
         let read: Vec<f32> = reader.samples::<f32>().map(|s| s.unwrap()).collect();
         std::fs::remove_file(&path).ok();
         assert_eq!(read, audio.samples);
+    }
+
+    #[test]
+    fn read_wav_recovers_samples_and_format() {
+        let path = std::env::temp_dir().join(format!("geist-read-{}.wav", std::process::id()));
+        let audio = RecordedAudio {
+            samples: vec![0.1, -0.2, 0.3, -0.4],
+            channels: 2,
+            sample_rate_hz: 44_100,
+        };
+        write_wav(&path, &audio).unwrap();
+        let back = read_wav(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+        assert_eq!(back.samples, audio.samples);
+        assert_eq!(back.channels, 2);
+        assert_eq!(back.sample_rate_hz, 44_100);
+        assert_eq!(back.frames(), 2);
     }
 }

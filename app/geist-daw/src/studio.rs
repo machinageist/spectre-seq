@@ -34,7 +34,8 @@ use crate::engine::{
     DEFAULT_OSC_MIX, MAX_AUDIO_ASSETS, NUM_TRACKS, SEQ_ROWS, SEQ_STEPS, TRACK_BASE_MIDI,
 };
 use crate::recorder::AudioRecorder;
-use crate::session::{self, ClipSession, NoteSession, StudioSession, TrackSession};
+use crate::session::{self, AudioClipSession, ClipSession, NoteSession, StudioSession, TrackSession};
+use std::path::PathBuf;
 
 // On-screen keyboard spans two octaves from C3
 const KEYBOARD_BASE_MIDI: u8 = 48;
@@ -211,6 +212,15 @@ impl MidiRecorder {
     }
 }
 
+// App-thread backing state for one engine audio clip
+#[derive(Clone, Debug)]
+struct AudioClipRuntime {
+    wav_path: PathBuf,
+    asset_slot: Option<usize>,
+    verified: bool,
+    asset_ref: Option<geist_project::prelude::AssetRef>,
+}
+
 // Studio front-end: the lens shell over the engine, played live
 pub struct StudioApp {
     // Held so the audio stream stays open for the window's lifetime
@@ -243,6 +253,8 @@ pub struct StudioApp {
     record_start_beat: f32,
     // Monotonic allocator for engine audio-asset slots
     next_asset_slot: usize,
+    // Backing WAV and engine asset slot for each placed audio clip
+    audio_clips: HashMap<u64, AudioClipRuntime>,
     // Last-synced step patterns, mirroring the engine grids for diffing
     step_mirror: Vec<StepPattern>,
     // Per-key held state for the on-screen keyboard and the computer keyboard
@@ -284,6 +296,7 @@ impl StudioApp {
             audio_recorder,
             record_start_beat: 0.0,
             next_asset_slot: 0,
+            audio_clips: HashMap::new(),
             step_mirror,
             kb_held: vec![false; KEYBOARD_KEYS],
             computer_held: [false; COMPUTER_KEYS.len()],
@@ -302,13 +315,12 @@ impl StudioApp {
                     .get(track)
                     .map(gates_of)
                     .unwrap_or_default();
-                // This track's placed clips with their note content (skip unassigned)
+                // This track's placed MIDI clips with their note content (skip unassigned)
                 let clips = self
                     .session
                     .timeline
                     .clips
                     .iter()
-                    // Audio clips persist via assets (a follow-up); skip them here
                     .filter(|c| c.lane == track && c.id != 0 && c.kind != SignalKind::Audio)
                     .map(|c| ClipSession {
                         id: c.id,
@@ -330,6 +342,25 @@ impl StudioApp {
                             .unwrap_or_default(),
                     })
                     .collect();
+
+                // This track's placed audio clips, referencing their recorded take
+                let audio_clips = self
+                    .session
+                    .timeline
+                    .clips
+                    .iter()
+                    .filter(|c| c.lane == track && c.id != 0 && c.kind == SignalKind::Audio)
+                    .filter_map(|c| {
+                        self.audio_clips.get(&c.id).map(|runtime| AudioClipSession {
+                            id: c.id,
+                            start_beats: c.start_beats,
+                            len_beats: c.len_beats,
+                            wav_path: runtime.wav_path.clone(),
+                            verified: runtime.verified,
+                            asset_ref: runtime.asset_ref.clone(),
+                        })
+                    })
+                    .collect();
                 TrackSession {
                     level: self.mirror.track_level[track],
                     pan: self.mirror.track_pan[track],
@@ -349,6 +380,7 @@ impl StudioApp {
                     filter_env: self.mirror.filter_env[track],
                     gates,
                     clips,
+                    audio_clips,
                 }
             })
             .collect();
@@ -361,7 +393,7 @@ impl StudioApp {
 
     // Apply a loaded session to the engine, the session model, and the mirrors so
     // the next frame's diffs are quiet.
-    fn apply_session(&mut self, loaded: StudioSession) {
+    fn apply_session(&mut self, loaded: StudioSession) -> usize {
         // Transport tempo and master gain are the only global macros
         self.control.send(EngineCommand::SetBpm(loaded.bpm));
         self.control.send(EngineCommand::SetGain(loaded.gain));
@@ -454,7 +486,11 @@ impl StudioApp {
         self.session.timeline.selected = None;
         self.clip_notes.clear();
         self.clip_notes_mirror.clear();
+        // Fresh asset budget: the reload repopulates the engine's slots
+        self.audio_clips.clear();
+        self.next_asset_slot = 0;
         let mut max_id = 0u64;
+        let mut offline_audio = 0usize;
         for (track, state) in loaded.tracks.iter().enumerate().take(NUM_TRACKS) {
             let t = track as u8;
             for clip in &state.clips {
@@ -497,6 +533,49 @@ impl StudioApp {
                 max_id = max_id.max(clip.id);
             }
         }
+
+        // Restore verified takes into the engine; preserve unavailable takes as
+        // silent offline clips so arrangement structure remains visible.
+        for (track, state) in loaded.tracks.iter().enumerate().take(NUM_TRACKS) {
+            for clip in &state.audio_clips {
+                let audio = clip
+                    .verified
+                    .then(|| crate::recorder::read_wav(&clip.wav_path))
+                    .transpose();
+                let Ok(Some(audio)) = audio else {
+                    self.session.timeline.clips.push(Clip {
+                        id: clip.id,
+                        lane: track,
+                        name: "Audio — OFFLINE".to_string(),
+                        start_beats: clip.start_beats,
+                        len_beats: clip.len_beats,
+                        kind: SignalKind::Audio,
+                    });
+                    self.audio_clips.insert(
+                        clip.id,
+                        AudioClipRuntime {
+                            wav_path: clip.wav_path.clone(),
+                            asset_slot: None,
+                            verified: false,
+                            asset_ref: clip.asset_ref.clone(),
+                        },
+                    );
+                    offline_audio += 1;
+                    max_id = max_id.max(clip.id);
+                    continue;
+                };
+                self.place_audio_clip(
+                    track,
+                    clip.id,
+                    clip.start_beats,
+                    clip.len_beats,
+                    audio,
+                    clip.wav_path.clone(),
+                );
+                max_id = max_id.max(clip.id);
+            }
+        }
+
         self.timeline_mirror = self.session.timeline.clips.clone();
         self.next_clip_id = max_id + 1;
         self.piano_clip = None;
@@ -506,6 +585,7 @@ impl StudioApp {
         let shown = self.session.mixer.selected.min(NUM_TRACKS - 1);
         self.session.rack = self.track_racks[shown].clone();
         self.rack_track = shown;
+        offline_audio
     }
 
     // Send one note transition to the engine on the mixer-selected track, and
@@ -594,37 +674,56 @@ impl StudioApp {
         }
     }
 
-    // Place a captured audio buffer as an audio clip on `track`: register the
-    // asset out-of-band, then add the clip at the record-start beat.
+    // Place a captured audio buffer as an audio clip on `track`: write the take to
+    // a WAV, register the asset out-of-band, then add the clip at the record beat.
     fn commit_audio(&mut self, track: usize, audio: crate::recorder::RecordedAudio) {
         let frames = audio.frames();
         if frames == 0 || self.next_asset_slot >= MAX_AUDIO_ASSETS {
             return;
         }
-        let slot = self.next_asset_slot;
-        self.next_asset_slot += 1;
-        let channels = audio.channels.max(1);
         let sample_rate = audio.sample_rate_hz.max(1) as f32;
         // Length in beats from the captured frame count at the session tempo
         let bpm = self.session.transport.bpm.max(1.0);
         let len_beats = (frames as f32 / sample_rate) * (bpm / 60.0);
         let start = self.record_start_beat;
-
-        // Persist the take to a WAV next to the session for portability
-        let wav_path = session::recordings_dir().join(format!("take-{slot}.wav"));
-        match crate::recorder::write_wav(&wav_path, &audio) {
-            Ok(()) => self.status = format!("Recorded {}", wav_path.display()),
-            Err(err) => self.status = format!("WAV write failed: {err}"),
-        }
-
-        let samples: Arc<[f32]> = Arc::from(audio.samples);
-        self.control.send_asset(AudioAsset { slot, samples, channels });
         let id = self.next_clip_id;
         self.next_clip_id += 1;
+
+        // Persist the take to a WAV beside the session; the unique name keeps
+        // earlier takes from being clobbered across sessions.
+        let wav_path = session::recordings_dir().join(format!("take-{}.wav", take_token(id)));
+        if let Err(err) = crate::recorder::write_wav(&wav_path, &audio) {
+            self.status = format!("WAV write failed: {err}");
+            return;
+        }
+        self.status = format!("Recorded {}", wav_path.display());
+
+        self.place_audio_clip(track, id, start, len_beats, audio, wav_path);
+    }
+
+    // Register a take into an engine asset slot and place it as an audio clip on a
+    // track, recording its backing WAV path. No-op when no asset slot remains.
+    fn place_audio_clip(
+        &mut self,
+        track: usize,
+        id: u64,
+        start_beats: f32,
+        len_beats: f32,
+        audio: crate::recorder::RecordedAudio,
+        wav_path: PathBuf,
+    ) {
+        if self.next_asset_slot >= MAX_AUDIO_ASSETS {
+            return;
+        }
+        let slot = self.next_asset_slot;
+        self.next_asset_slot += 1;
+        let channels = audio.channels.max(1);
+        let samples: Arc<[f32]> = Arc::from(audio.samples);
+        self.control.send_asset(AudioAsset { slot, samples, channels });
         self.control.send(EngineCommand::AddAudioClip {
             track: track as u8,
             id,
-            start_beats: start,
+            start_beats,
             len_beats,
             slot,
         });
@@ -632,12 +731,73 @@ impl StudioApp {
             id,
             lane: track,
             name: "Audio".to_string(),
-            start_beats: start,
+            start_beats,
             len_beats,
-            kind: geist_ui::theme::SignalKind::Audio,
+            kind: SignalKind::Audio,
         };
         self.session.timeline.clips.push(clip.clone());
         self.timeline_mirror.push(clip);
+        self.audio_clips.insert(
+            id,
+            AudioClipRuntime {
+                wav_path,
+                asset_slot: Some(slot),
+                verified: true,
+                asset_ref: None,
+            },
+        );
+    }
+
+    // Restore one selected offline clip from an exact-hash file chosen by the user
+    fn relink_audio_clip(&mut self, id: u64, wav_path: PathBuf) -> Result<(), String> {
+        let expected = self
+            .audio_clips
+            .get(&id)
+            .and_then(|runtime| runtime.asset_ref.as_ref())
+            .ok_or_else(|| "selected clip has no offline asset reference".to_string())?;
+        if !session::asset_matches(&wav_path, expected) {
+            return Err("selected WAV does not match the missing take's hash and size".to_string());
+        }
+        if self.next_asset_slot >= MAX_AUDIO_ASSETS {
+            return Err("audio asset capacity reached".to_string());
+        }
+        let clip = self
+            .session
+            .timeline
+            .clips
+            .iter()
+            .find(|clip| clip.id == id)
+            .cloned()
+            .ok_or_else(|| "selected offline clip is no longer in the arrangement".to_string())?;
+        let audio = crate::recorder::read_wav(&wav_path)
+            .map_err(|err| format!("could not read selected WAV: {err}"))?;
+        let slot = self.next_asset_slot;
+        self.next_asset_slot += 1;
+        self.control.send_asset(AudioAsset {
+            slot,
+            samples: Arc::from(audio.samples),
+            channels: audio.channels.max(1),
+        });
+        self.control.send(EngineCommand::AddAudioClip {
+            track: clip.lane as u8,
+            id,
+            start_beats: clip.start_beats,
+            len_beats: clip.len_beats,
+            slot,
+        });
+        if let Some(runtime) = self.audio_clips.get_mut(&id) {
+            runtime.wav_path = wav_path;
+            runtime.asset_slot = Some(slot);
+            runtime.verified = true;
+            runtime.asset_ref = None;
+        }
+        if let Some(clip) = self.session.timeline.clips.iter_mut().find(|clip| clip.id == id) {
+            clip.name = "Audio".to_string();
+        }
+        if let Some(clip) = self.timeline_mirror.iter_mut().find(|clip| clip.id == id) {
+            clip.name = "Audio".to_string();
+        }
+        Ok(())
     }
 
     // Append one finalized recorded note to the record clip in the engine and the
@@ -753,22 +913,38 @@ impl StudioApp {
                 Some(prev) if prev.lane != clip.lane => {
                     // Lane change re-homes the clip on another track, notes and all
                     self.control.send(EngineCommand::RemoveClip { track: prev.lane as u8, id: clip.id });
-                    self.control.send(EngineCommand::AddClip {
-                        track: clip.lane as u8,
-                        id: clip.id,
-                        start_beats: clip.start_beats,
-                        len_beats: clip.len_beats,
-                    });
-                    if let Some(notes) = self.clip_notes.get(&clip.id).cloned() {
-                        for note in &notes {
-                            self.control.send(EngineCommand::AddClipNote {
+                    if clip.kind == SignalKind::Audio {
+                        if let Some(slot) = self
+                            .audio_clips
+                            .get(&clip.id)
+                            .and_then(|runtime| runtime.asset_slot)
+                        {
+                            self.control.send(EngineCommand::AddAudioClip {
                                 track: clip.lane as u8,
-                                clip: clip.id,
-                                pitch: note.pitch,
-                                start_beats: note.start_beats,
-                                len_beats: note.len_beats,
-                                velocity: note.velocity,
+                                id: clip.id,
+                                start_beats: clip.start_beats,
+                                len_beats: clip.len_beats,
+                                slot,
                             });
+                        }
+                    } else {
+                        self.control.send(EngineCommand::AddClip {
+                            track: clip.lane as u8,
+                            id: clip.id,
+                            start_beats: clip.start_beats,
+                            len_beats: clip.len_beats,
+                        });
+                        if let Some(notes) = self.clip_notes.get(&clip.id).cloned() {
+                            for note in &notes {
+                                self.control.send(EngineCommand::AddClipNote {
+                                    track: clip.lane as u8,
+                                    clip: clip.id,
+                                    pitch: note.pitch,
+                                    start_beats: note.start_beats,
+                                    len_beats: note.len_beats,
+                                    velocity: note.velocity,
+                                });
+                            }
                         }
                     }
                 }
@@ -798,6 +974,7 @@ impl StudioApp {
                 self.control.send(EngineCommand::RemoveClip { track: prev.lane as u8, id: prev.id });
                 self.clip_notes.remove(&prev.id);
                 self.clip_notes_mirror.remove(&prev.id);
+                self.audio_clips.remove(&prev.id);
                 if self.piano_clip == Some(prev.id) {
                     self.piano_clip = None;
                 }
@@ -1094,6 +1271,30 @@ impl eframe::App for StudioApp {
                 for ev in events {
                     self.note_event(ev);
                 }
+                let selected_offline = self
+                    .session
+                    .timeline
+                    .selected
+                    .and_then(|index| self.session.timeline.clips.get(index))
+                    .map(|clip| clip.id)
+                    .filter(|id| {
+                        self.audio_clips
+                            .get(id)
+                            .is_some_and(|runtime| !runtime.verified)
+                    });
+                if let Some(id) = selected_offline {
+                    if ui.button("Relink selected offline clip…").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("WAV audio", &["wav"])
+                            .pick_file()
+                        {
+                            self.status = match self.relink_audio_clip(id, path) {
+                                Ok(()) => "Relinked offline audio clip".to_string(),
+                                Err(err) => format!("Relink failed: {err}"),
+                            };
+                        }
+                    }
+                }
                 if !self.status.is_empty() {
                     ui.label(egui::RichText::new(&self.status).small().color(theme::TEXT_MUTED));
                 }
@@ -1121,8 +1322,12 @@ impl eframe::App for StudioApp {
             let fallback = self.to_session();
             match session::load(&fallback) {
                 Ok(loaded) => {
-                    self.apply_session(loaded);
-                    self.status = "Loaded session".to_string();
+                    let offline = self.apply_session(loaded);
+                    self.status = if offline == 0 {
+                        "Loaded session".to_string()
+                    } else {
+                        format!("Loaded session with {offline} offline audio clip(s)")
+                    };
                 }
                 Err(err) => self.status = format!("Load failed: {err}"),
             }
@@ -1130,6 +1335,16 @@ impl eframe::App for StudioApp {
 
         ctx.request_repaint();
     }
+}
+
+// Collision-resistant token for a take filename: wall-clock nanos plus the clip
+// id, unique within a run and stable enough across sessions to avoid clobbering
+fn take_token(id: u64) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{nanos}-{id}")
 }
 
 // Build the mirror session that backs the views, matching engine startup state

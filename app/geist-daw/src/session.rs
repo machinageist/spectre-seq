@@ -14,8 +14,8 @@
 use std::path::{Path, PathBuf};
 
 use geist_project::prelude::{
-    load_from_path, save_to_path, ClipEntry, ClipKind, NodeEntry, NoteEntry, ParamValue,
-    ProjectError, ProjectFile, TrackEntry,
+    hash_bytes, load_from_path, save_to_path, AssetMap, AssetRef, ClipEntry, ClipKind, NodeEntry,
+    NoteEntry, ParamValue, ProjectError, ProjectFile, TrackEntry,
 };
 
 use crate::engine::{NUM_TRACKS, SEQ_ROWS, SEQ_STEPS, TRACK_BASE_MIDI};
@@ -70,6 +70,21 @@ pub struct ClipSession {
     pub notes: Vec<NoteSession>,
 }
 
+// One placed audio clip: its id, position, length, and the absolute path to the
+// recorded take. On disk the take is referenced by a project asset (relative
+// path plus content hash); the runtime keeps the resolved absolute path.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AudioClipSession {
+    pub id: u64,
+    pub start_beats: f32,
+    pub len_beats: f32,
+    pub wav_path: PathBuf,
+    // True only when the file exists and matches its persisted content hash
+    pub verified: bool,
+    // Original persisted reference retained so offline clips can be saved losslessly
+    pub asset_ref: Option<AssetRef>,
+}
+
 // One track's persisted state: its full instrument patch, its effects chain,
 // mix flags, step gates, and clip notes. Every synth/fx macro is per-track.
 #[derive(Clone, Debug, PartialEq)]
@@ -96,6 +111,8 @@ pub struct TrackSession {
     pub gates: Vec<(u8, u8)>,
     // Placed timeline clips on this track
     pub clips: Vec<ClipSession>,
+    // Placed audio clips on this track, referencing recorded takes
+    pub audio_clips: Vec<AudioClipSession>,
 }
 
 // The whole studio session, independent of the on-disk encoding. Only the
@@ -108,10 +125,32 @@ pub struct StudioSession {
 }
 
 impl StudioSession {
-    // Encode this session as a project file
-    fn to_project(&self) -> ProjectFile {
+    // Encode this session and package its takes beside `project_path`.
+    fn to_project(&self, project_path: &Path) -> Result<ProjectFile, ProjectError> {
+        let base_dir = base_dir_of(project_path);
         let mut project = ProjectFile::new("Geist Studio Session");
         project.meta.tempo_bpm = self.bpm as f64;
+
+        // Seed the registry with unavailable references so arrangement edits can
+        // be saved without discarding or rewriting offline media metadata.
+        let offline_assets = self
+            .tracks
+            .iter()
+            .flat_map(|track| &track.audio_clips)
+            .filter(|clip| !clip.verified)
+            .filter_map(|clip| {
+                clip.asset_ref.as_ref().map(|asset| {
+                    let mut preserved = asset.clone();
+                    if !Path::new(&preserved.relative_path).is_absolute()
+                        && base_dir.join(&preserved.relative_path) != clip.wav_path
+                    {
+                        preserved.relative_path = clip.wav_path.to_string_lossy().into_owned();
+                    }
+                    preserved
+                })
+            })
+            .collect();
+        let mut assets = AssetMap::from_refs(offline_assets);
 
         // Macros node: master gain plus a full per-track patch and fx block
         let mut params = vec![ParamValue { id: PARAM_GAIN, value: self.gain }];
@@ -182,6 +221,42 @@ impl StudioSession {
                     kind: ClipKind::Midi { notes },
                 });
             }
+            // Package verified takes; preserve unavailable references unchanged.
+            for clip in &state.audio_clips {
+                let asset_index = if clip.verified {
+                    let bytes = std::fs::read(&clip.wav_path)?;
+                    let relative = take_relative_path(project_path, &hash_bytes(&bytes));
+                    let destination = base_dir.join(&relative);
+                    let already_packaged =
+                        matches!(std::fs::read(&destination), Ok(existing) if existing == bytes);
+                    if !already_packaged {
+                        if let Some(parent) = destination.parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
+                        std::fs::write(&destination, &bytes)?;
+                    }
+                    assets.register(relative.to_string_lossy(), &bytes)
+                } else {
+                    let asset = clip.asset_ref.as_ref().ok_or_else(|| {
+                        ProjectError::Io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("offline take has no asset reference: {}", clip.wav_path.display()),
+                        ))
+                    })?;
+                    assets.index_of_hash(&asset.content_hash).ok_or_else(|| {
+                        ProjectError::Io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("offline take asset is not indexed: {}", clip.wav_path.display()),
+                        ))
+                    })?
+                };
+                clips.push(ClipEntry {
+                    id: clip.id,
+                    start_ticks: beats_to_ticks(clip.start_beats),
+                    length_ticks: beats_to_ticks(clip.len_beats),
+                    kind: ClipKind::Audio { asset_index, offset_ticks: 0, gain_db: 0.0 },
+                });
+            }
             project.tracks.push(TrackEntry {
                 id: index as u64,
                 name: format!("Track {}", index + 1),
@@ -190,11 +265,19 @@ impl StudioSession {
                 clips,
             });
         }
-        project
+        project.assets = assets.as_refs().to_vec();
+        Ok(project)
     }
 
-    // Decode a session from a project file, falling back to `defaults` per field
-    fn from_project(project: &ProjectFile, defaults: &StudioSession) -> StudioSession {
+    // Decode a session from a project file, falling back to `defaults` per field.
+    // `base_dir` is the directory the project file lives in; asset references
+    // resolve against it into absolute take paths.
+    fn from_project(
+        project: &ProjectFile,
+        defaults: &StudioSession,
+        project_path: &Path,
+    ) -> StudioSession {
+        let base_dir = base_dir_of(project_path);
         let mut session = defaults.clone();
         session.bpm = project.meta.tempo_bpm as f32;
 
@@ -245,36 +328,60 @@ impl StudioSession {
                 }
             }
             state.clips.clear();
+            state.audio_clips.clear();
             state.gates.clear();
             let base = base_midi(index);
             for clip in &entry.clips {
-                let ClipKind::Midi { notes } = &clip.kind else {
-                    continue;
-                };
-                if clip.id == STEP_CLIP_ID {
-                    for note in notes {
-                        let row = note.pitch.saturating_sub(base);
-                        let step = (note.start_ticks / STEP_TICKS) as u8;
-                        if (row as usize) < SEQ_ROWS && (step as usize) < SEQ_STEPS {
-                            state.gates.push((row, step));
+                match &clip.kind {
+                    ClipKind::Midi { notes } if clip.id == STEP_CLIP_ID => {
+                        for note in notes {
+                            let row = note.pitch.saturating_sub(base);
+                            let step = (note.start_ticks / STEP_TICKS) as u8;
+                            if (row as usize) < SEQ_ROWS && (step as usize) < SEQ_STEPS {
+                                state.gates.push((row, step));
+                            }
                         }
                     }
-                } else {
-                    let clip_notes = notes
-                        .iter()
-                        .map(|note| NoteSession {
-                            pitch: note.pitch,
-                            start_beats: ticks_to_beats(note.start_ticks),
-                            len_beats: ticks_to_beats(note.length_ticks),
-                            velocity: vel_to_f32(note.velocity),
-                        })
-                        .collect();
-                    state.clips.push(ClipSession {
-                        id: clip.id,
-                        start_beats: ticks_to_beats(clip.start_ticks),
-                        len_beats: ticks_to_beats(clip.length_ticks),
-                        notes: clip_notes,
-                    });
+                    ClipKind::Midi { notes } => {
+                        let clip_notes = notes
+                            .iter()
+                            .map(|note| NoteSession {
+                                pitch: note.pitch,
+                                start_beats: ticks_to_beats(note.start_ticks),
+                                len_beats: ticks_to_beats(note.length_ticks),
+                                velocity: vel_to_f32(note.velocity),
+                            })
+                            .collect();
+                        state.clips.push(ClipSession {
+                            id: clip.id,
+                            start_beats: ticks_to_beats(clip.start_ticks),
+                            len_beats: ticks_to_beats(clip.length_ticks),
+                            notes: clip_notes,
+                        });
+                    }
+                    // Resolve the asset reference to an absolute take path; a
+                    // missing or dangling reference drops the clip.
+                    ClipKind::Audio { asset_index, .. } => {
+                        let Some(asset) = project.assets.get(*asset_index) else {
+                            continue;
+                        };
+                        let expected_path = base_dir.join(&asset.relative_path);
+                        let wav_path = if asset_matches(&expected_path, asset) {
+                            expected_path
+                        } else {
+                            find_matching_take(project_path, asset).unwrap_or(expected_path)
+                        };
+                        let verified = asset_matches(&wav_path, asset);
+                        state.audio_clips.push(AudioClipSession {
+                            id: clip.id,
+                            start_beats: ticks_to_beats(clip.start_ticks),
+                            len_beats: ticks_to_beats(clip.length_ticks),
+                            wav_path,
+                            verified,
+                            asset_ref: Some(asset.clone()),
+                        });
+                    }
+                    ClipKind::Automation { .. } => {}
                 }
             }
         }
@@ -314,6 +421,49 @@ fn bool_to_f32(flag: bool) -> f32 {
     }
 }
 
+// Relative directory containing one project's external assets
+fn project_assets_dir_name(project_path: &Path) -> String {
+    let stem = project_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("geist-project");
+    format!("{stem}.assets")
+}
+
+// Content-addressed path for one packaged WAV take
+fn take_relative_path(project_path: &Path, content_hash: &str) -> PathBuf {
+    PathBuf::from(project_assets_dir_name(project_path))
+        .join("Takes")
+        .join(format!("{content_hash}.wav"))
+}
+
+// Verify one candidate without accepting a same-name or same-size substitute
+pub fn asset_matches(path: &Path, asset: &AssetRef) -> bool {
+    std::fs::read(path).is_ok_and(|bytes| {
+        (asset.size_bytes == 0 || bytes.len() as u64 == asset.size_bytes)
+            && hash_bytes(&bytes) == asset.content_hash
+    })
+}
+
+// Search only this project's managed asset tree for a moved exact-hash match
+fn find_matching_take(project_path: &Path, asset: &AssetRef) -> Option<PathBuf> {
+    let root = base_dir_of(project_path).join(project_assets_dir_name(project_path));
+    let mut pending = vec![root];
+    while let Some(dir) = pending.pop() {
+        let mut entries: Vec<_> = std::fs::read_dir(dir).ok()?.filter_map(Result::ok).collect();
+        entries.sort_by_key(|entry| entry.path());
+        for entry in entries {
+            let file_type = entry.file_type().ok()?;
+            if file_type.is_dir() {
+                pending.push(entry.path());
+            } else if file_type.is_file() && asset_matches(&entry.path(), asset) {
+                return Some(entry.path());
+            }
+        }
+    }
+    None
+}
+
 // Path to the studio session slot, in the home directory when available
 pub fn session_path() -> PathBuf {
     let dir = std::env::var_os("HOME")
@@ -322,19 +472,24 @@ pub fn session_path() -> PathBuf {
     dir.join(SESSION_FILE)
 }
 
-// Directory for recorded audio takes, created on demand beside the session
+// Directory for recorded audio takes owned by the studio session
 pub fn recordings_dir() -> PathBuf {
-    let dir = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("geist-recordings");
+    let path = session_path();
+    let dir = base_dir_of(&path)
+        .join(project_assets_dir_name(&path))
+        .join("Takes");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
 
+// Directory a project file lives in, for resolving relative asset paths
+fn base_dir_of(path: &Path) -> &Path {
+    path.parent().unwrap_or_else(|| Path::new("."))
+}
+
 // Write a session to an explicit path
 pub fn save_to(session: &StudioSession, path: &Path) -> Result<(), ProjectError> {
-    save_to_path(&session.to_project(), path)
+    save_to_path(&session.to_project(path)?, path)
 }
 
 // Read a session from an explicit path, falling back to `defaults` per field
@@ -343,7 +498,7 @@ pub fn load_from(
     path: &Path,
 ) -> Result<StudioSession, ProjectError> {
     let project = load_from_path(path)?;
-    Ok(StudioSession::from_project(&project, defaults))
+    Ok(StudioSession::from_project(&project, defaults, path))
 }
 
 // Save to the studio slot, returning the written path
@@ -382,6 +537,7 @@ mod tests {
             filter_env: [0.01, 0.2, 0.3, 0.3],
             gates: Vec::new(),
             clips: Vec::new(),
+            audio_clips: Vec::new(),
         }
     }
 
@@ -451,5 +607,137 @@ mod tests {
     fn missing_file_is_an_error_not_a_panic() {
         let path = PathBuf::from("/no/such/dir/geist-studio-missing.gproj");
         assert!(load_from(&defaults(), &path).is_err());
+    }
+
+    #[test]
+    fn audio_clip_is_packaged_beside_the_project() {
+        let root = std::env::temp_dir().join(format!("geist-audio-project-{}", std::process::id()));
+        let source_dir = root.join("capture");
+        let project_dir = root.join("project");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let wav = source_dir.join("take.wav");
+        std::fs::write(&wav, b"riff-take-bytes").unwrap();
+        let path = project_dir.join("song.gproj");
+
+        let mut session = defaults();
+        session.tracks[0].audio_clips = vec![AudioClipSession {
+            id: 5,
+            start_beats: 4.0,
+            len_beats: 2.5,
+            wav_path: wav.clone(),
+            verified: true,
+            asset_ref: None,
+        }];
+
+        save_to(&session, &path).unwrap();
+        let loaded = load_from(&defaults(), &path).unwrap();
+
+        let loaded_clip = &loaded.tracks[0].audio_clips[0];
+        assert_ne!(loaded_clip.wav_path, wav);
+        assert!(loaded_clip.wav_path.starts_with(&project_dir));
+        assert!(loaded_clip.verified);
+        assert_eq!(std::fs::read(&loaded_clip.wav_path).unwrap(), b"riff-take-bytes");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn missing_audio_take_fails_save() {
+        let root = std::env::temp_dir().join(format!("geist-missing-take-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("song.gproj");
+        let mut session = defaults();
+        session.tracks[0].audio_clips = vec![AudioClipSession {
+            id: 9,
+            start_beats: 0.0,
+            len_beats: 1.0,
+            wav_path: root.join("missing.wav"),
+            verified: true,
+            asset_ref: None,
+        }];
+
+        assert!(save_to(&session, &path).is_err());
+        assert!(!path.exists());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn changed_audio_take_loads_as_offline() {
+        let root = std::env::temp_dir().join(format!("geist-changed-take-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.wav");
+        let project_path = root.join("song.gproj");
+        std::fs::write(&source, b"original-audio").unwrap();
+        let mut session = defaults();
+        session.tracks[0].audio_clips = vec![AudioClipSession {
+            id: 10,
+            start_beats: 2.0,
+            len_beats: 4.0,
+            wav_path: source,
+            verified: true,
+            asset_ref: None,
+        }];
+        save_to(&session, &project_path).unwrap();
+        let loaded = load_from(&defaults(), &project_path).unwrap();
+        let packaged = loaded.tracks[0].audio_clips[0].wav_path.clone();
+        std::fs::write(&packaged, b"changed-audio").unwrap();
+
+        let mut changed = load_from(&defaults(), &project_path).unwrap();
+        assert_eq!(changed.tracks[0].audio_clips.len(), 1);
+        assert!(!changed.tracks[0].audio_clips[0].verified);
+        let original_ref = changed.tracks[0].audio_clips[0].asset_ref.clone();
+
+        changed.bpm = 123.0;
+        save_to(&changed, &project_path).unwrap();
+        let resaved = load_from(&defaults(), &project_path).unwrap();
+        assert_eq!(resaved.bpm, 123.0);
+        assert!(!resaved.tracks[0].audio_clips[0].verified);
+        assert_eq!(resaved.tracks[0].audio_clips[0].asset_ref, original_ref);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn moved_take_is_recovered_by_hash_inside_project_assets() {
+        let root = std::env::temp_dir().join(format!("geist-moved-take-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.wav");
+        let project_path = root.join("song.gproj");
+        std::fs::write(&source, b"recoverable-audio").unwrap();
+        let mut session = defaults();
+        session.tracks[0].audio_clips = vec![AudioClipSession {
+            id: 11,
+            start_beats: 1.0,
+            len_beats: 2.0,
+            wav_path: source,
+            verified: true,
+            asset_ref: None,
+        }];
+        save_to(&session, &project_path).unwrap();
+        let packaged = load_from(&defaults(), &project_path).unwrap().tracks[0].audio_clips[0]
+            .wav_path
+            .clone();
+        let recovered = root.join("song.assets/Recovered/moved.wav");
+        std::fs::create_dir_all(recovered.parent().unwrap()).unwrap();
+        std::fs::rename(&packaged, &recovered).unwrap();
+
+        let loaded = load_from(&defaults(), &project_path).unwrap();
+        assert!(loaded.tracks[0].audio_clips[0].verified);
+        assert_eq!(loaded.tracks[0].audio_clips[0].wav_path, recovered);
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn relink_candidate_requires_exact_size_and_hash() {
+        let path = std::env::temp_dir().join(format!("geist-relink-candidate-{}", std::process::id()));
+        std::fs::write(&path, b"candidate-audio").unwrap();
+        let asset = AssetRef {
+            relative_path: "missing.wav".to_string(),
+            content_hash: hash_bytes(b"candidate-audio"),
+            size_bytes: b"candidate-audio".len() as u64,
+        };
+        assert!(asset_matches(&path, &asset));
+        std::fs::write(&path, b"wrong-candidate").unwrap();
+        assert!(!asset_matches(&path, &asset));
+        std::fs::remove_file(path).ok();
     }
 }

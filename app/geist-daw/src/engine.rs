@@ -327,15 +327,23 @@ impl Arrangement {
 
     // Move a clip's start position
     fn move_clip(&mut self, id: u64, start_beats: f32) {
+        let start_beats = start_beats.max(0.0);
         if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
-            clip.start_beats = start_beats.max(0.0);
+            clip.start_beats = start_beats;
+        }
+        if let Some(clip) = self.audio.iter_mut().find(|c| c.id == id) {
+            clip.start_beats = start_beats;
         }
     }
 
     // Resize a clip's length
     fn resize_clip(&mut self, id: u64, len_beats: f32) {
+        let len_beats = len_beats.max(0.0);
         if let Some(clip) = self.clips.iter_mut().find(|c| c.id == id) {
-            clip.len_beats = len_beats.max(0.0);
+            clip.len_beats = len_beats;
+        }
+        if let Some(clip) = self.audio.iter_mut().find(|c| c.id == id) {
+            clip.len_beats = len_beats;
         }
     }
 
@@ -1142,6 +1150,18 @@ mod tests {
         // Beat well past the clip's one-beat span mixes nothing
         arr.mix_audio(&snap, 10.0, &mut scratch, 4, 1, &assets);
         assert!(scratch.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn audio_clip_move_and_resize_follow_arrangement_edits() {
+        let mut arr = Arrangement::new();
+        arr.add_audio_clip(7, 1.0, 2.0, 0);
+
+        arr.move_clip(7, 4.0);
+        arr.resize_clip(7, 8.0);
+
+        assert_eq!(arr.audio[0].start_beats, 4.0);
+        assert_eq!(arr.audio[0].len_beats, 8.0);
     }
 
     #[test]

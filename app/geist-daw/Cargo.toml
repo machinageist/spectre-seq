@@ -36,3 +36,5 @@ geist-ui = { path = "../../crates/geist-ui" }
 geist-config = { path = "../../crates/geist-config" }
 # WAV encoding for recorded audio clips
 hound = "3.5"
+# Native/portal file picker for manually relinking offline takes
+rfd = "0.17.2"
