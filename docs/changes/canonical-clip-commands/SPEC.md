@@ -9,9 +9,11 @@ Notes: Stable identity precedes command migration; UI and persistence migration 
 
 ## Status
 
-Approved to proceed using the recommended independent-region model after the ownership checkpoint timed out without a response.
+Slice A (stable track/clip identity) and Slice B (structural arrangement entities) are complete.
 
-This decision is intentionally revisitable before persistence migration.
+Slice B2 and subsequent commands are paused. The accepted launcher, warp, MPE, tuning, hybrid-track, and durable-target requirements expose missing prerequisites in this earlier arrangement-only content model. `docs/product/PRODUCT_VISION.md` and `docs/product/ROADMAP.md` now govern its replacement with dependency-safe sub-specifications.
+
+The content sections below preserve the pre-audit proposal for review history. They are not approved implementation instructions.
 
 ## Problem
 
@@ -48,6 +50,62 @@ Consequences:
 - MIDI duplicates deep-copy pattern content initially.
 - Linked clip instances are deferred until their propagation, unlinking, persistence, and undo semantics are explicitly designed.
 
+## Canonical content ownership
+
+`ClipEntity` owns one typed content payload. Content is independent per visible clip except that audio clips reference shared immutable project assets.
+
+### Audio regions
+
+An audio payload owns:
+
+- stable nonzero `AssetId`;
+- source start in samples;
+- nonzero source length in samples;
+- finite per-region gain in dB.
+
+The project asset registry maps `AssetId` to project-relative path, exact content hash, byte size, and verified/offline state. Path, vector position, and filename are not asset identity. Duplicating an audio clip preserves `AssetId` and deep-copies its independent region state without copying media bytes.
+
+Fades, warp markers, and time-stretch modes are deferred. If visible musical duration exceeds available source playback, no implicit stretching occurs.
+
+### MIDI regions
+
+A MIDI payload directly owns its note entities. Each note owns:
+
+- stable nonzero `NoteId`;
+- clip-relative start in `MusicalTime`;
+- nonzero duration in `MusicalTime`;
+- MIDI channel and pitch;
+- normalized velocity.
+
+Ordinary clip duplication deep-copies every note while allocating fresh `NoteId` values. Notes are not linked between duplicate clips. Right-edge clip resize is non-destructive: notes outside the visible clip duration remain stored and are masked from rendering and playback.
+
+`NoteId` is unique across the arrangement, not merely within one MIDI clip. MIDI notes render and iterate deterministically by clip-relative start and then `NoteId`. Duplicate note IDs are rejected atomically.
+
+### Automation regions
+
+An automation payload owns one typed target and its clip-relative curve. Initial target variants are:
+
+- track parameter: `TrackId` plus `ParamId`;
+- graph or plugin parameter: `NodeId` plus `ParamId`.
+
+Breakpoint positions use clip-relative `MusicalTime`. Values are normalized to the inclusive `0.0..=1.0` range; parameter metadata maps normalized values to native and display units. Segment shape reuses `geist_automation::CurveShape`; the canonical timeline does not define another equivalent curve enum.
+
+Points remain sorted by position with at most one point at each tick. Setting an existing position replaces its normalized value and outgoing segment shape. The last point's outgoing shape is retained for round-trip fidelity but has no evaluation effect until a later point exists.
+
+When a target disappears, the automation clip remains visible and saveable with its target identity and complete curve. It is unresolved and cannot drive the engine until explicitly relinked. Right-edge resize preserves and masks out-of-bound points rather than deleting or scaling them.
+
+Resolved versus unresolved is derived from the current target registry and is not persisted as a second source of truth. Moving an automation clip across tracks preserves its exact target; retargeting is a separate explicit command.
+
+### Offline and unresolved duplication
+
+Offline audio and unresolved automation clips may be duplicated. Duplication preserves the complete payload and offline/unresolved state; it never substitutes empty content or requires temporary resolution.
+
+### Identity allocation
+
+`AssetId` and `NoteId` join the shared opaque ID vocabulary in `geist-core`. Both reject zero. Note allocation is monotonic, checked, and timeline-owned. Asset allocation is monotonic, checked, and project-registry-owned. Loading observes stored IDs so future allocation cannot collide. Exhausting one identity domain does not exhaust another.
+
+MIDI duplication reserves all required note IDs as one checked batch. If the complete batch is unavailable, duplication fails before advancing the note allocator or mutating arrangement content. Successful reservation may produce monotonic gaps only if a later fully validated operation is abandoned; IDs are never reused.
+
 ## Stable identity
 
 - `TrackId` and `ClipId` are opaque nonzero `u64` newtypes.
@@ -78,6 +136,7 @@ The target canonical shape is:
 - Left-edge trim is excluded from the first command slice because it must define source-offset conversion separately for native-rate audio and MIDI content.
 - Audio source start and source length remain sample-domain region data.
 - No resize or trim implies time-stretch.
+- Right-edge resize never destructively edits MIDI notes or automation points outside the new visible boundary.
 
 ## Command contract
 
@@ -146,6 +205,14 @@ This policy will receive a separate UI checkpoint before command routing is impl
 - Introduce one-entity-per-region representation.
 - Add exact stable-ID lookup and ordered track membership.
 - Retain compatibility projection or adapters for existing sample-based emission until playback migration.
+
+### Slice B2 — Canonical clip content
+
+- Add stable `AssetId` and `NoteId` identities with domain-owned allocation.
+- Add typed audio, MIDI, and automation payloads to `ClipEntity`.
+- Enforce nonzero source/note lengths, finite gain, normalized automation/velocity values, and checked coordinates.
+- Preserve content losslessly when clips are removed, restored, duplicated offline, or temporarily masked by resize.
+- Do not migrate persistence, UI, engine snapshots, or legacy playback authority.
 
 ### Slice C — Typed reversible commands
 

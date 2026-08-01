@@ -78,6 +78,8 @@ Stop before command implementation if canonical entity ownership requires persis
 
 ## Slice B2 — Clip content ownership checkpoint
 
+Status: paused and superseded as an implementation unit by `docs/product/ROADMAP.md` Milestones 1, 2, 3, and 5. Do not implement the steps below as one slice. The text is retained as pre-audit design history until replacement sub-specifications land.
+
 Interview and specify before implementation:
 
 - audio region ownership: shared immutable asset identity versus per-clip source range, gain, and future warp state;
@@ -88,6 +90,42 @@ Interview and specify before implementation:
 - compatibility projection from legacy arena-backed `Clip` content.
 
 Extend `ClipEntity` with the approved typed content payload or content reference before implementing create/delete commands.
+
+Decisions:
+
+- Audio clips share immutable media through stable `AssetId`; each clip independently owns sample-based source start/length and finite gain dB.
+- The project registry owns asset path, exact hash, byte size, and verified/offline state.
+- Fades, warp state, and automatic stretching remain deferred.
+- MIDI clips directly own notes with stable `NoteId`, clip-relative `MusicalTime`, channel, pitch, normalized velocity, and nonzero duration.
+- MIDI duplication deep-copies notes with newly allocated note IDs.
+- Automation uses a typed track-parameter or graph-node-parameter target and clip-relative musical breakpoints.
+- Automation values are normalized to `0.0..=1.0`; segment shape reuses `geist_automation::CurveShape`.
+- Missing automation targets preserve an unresolved, saveable clip and curve.
+- Target resolution is derived rather than persisted, and cross-track movement never retargets implicitly.
+- Right resize masks rather than deletes out-of-bound MIDI notes and automation points.
+- Offline audio and unresolved automation duplicate losslessly.
+- Note IDs are arrangement-global; notes iterate by start then ID.
+- Automation points are unique by tick and sorted; replacement updates value and outgoing shape.
+
+Implementation slices:
+
+1. Add shared nonzero `AssetId` and `NoteId`; extend checked allocation in the owning timeline/project domains.
+2. Add validated typed content records and attach one payload to every `ClipEntity`.
+3. Add deep-copy helpers that preserve audio/automation references and allocate fresh MIDI note IDs atomically.
+4. Add legacy projection tests without changing current playback authority.
+
+RED tests:
+
+- Zero asset/note identities are rejected.
+- Source and note lengths are nonzero; coordinate addition cannot overflow.
+- Gain and normalized values reject NaN and infinities; normalized values reject out-of-range input.
+- Duplicate MIDI content has equal note values and disjoint note IDs.
+- Failed duplication leaves every allocator and collection coherent.
+- Batch note-ID exhaustion rejects duplication without advancing allocation state.
+- Offline/unresolved payloads round-trip exactly through structural remove/restore and duplication.
+- Right-resize masking does not mutate stored notes or automation points.
+
+Stop before implementation if stable asset allocation requires changing persistence or the current project registry. Persistence schema changes are not part of B2.
 
 ## Slice C — Typed edit result and history semantics
 
