@@ -63,7 +63,7 @@ pub fn draw_studio(
     let left_panel = state.layout().left_panel;
     if state.left_panel_open() {
         if let Some(panel) = left_panel {
-            let pressed = egui::Panel::left("geist_left_tile")
+            let pressed = egui::Panel::left("spectre_left_tile")
                 .resizable(true)
                 .default_size(260.0)
                 .size_range(180.0..=420.0)
@@ -82,7 +82,7 @@ pub fn draw_studio(
     let right_panel = state.layout().right_panel;
     if state.right_panel_open() {
         if let Some(panel) = right_panel {
-            let pressed = egui::Panel::right("geist_right_tile")
+            let pressed = egui::Panel::right("spectre_right_tile")
                 .resizable(true)
                 .default_size(260.0)
                 .size_range(180.0..=420.0)

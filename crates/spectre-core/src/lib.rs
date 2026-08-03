@@ -1,6 +1,6 @@
 // Author: Jeff
 // Date: 2026-05-27
-// Description: Public entrypoint for shared Geist DAW primitives.
+// Description: Public entrypoint for shared Spectre Seq primitives.
 // Notes: Keep this crate dependency-free inside the workspace.
 
 // Core primitives are pure and never need raw pointers

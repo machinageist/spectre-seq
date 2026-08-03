@@ -1,11 +1,11 @@
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Index for Geist DAW project-local agents
+Description: Index for Spectre Seq project-local agents
 Notes: Keep this list synchronized when adding, removing, or renaming local agents
 -->
 
-# Geist DAW Agents Index
+# Spectre Seq Agents Index
 
 Use the narrowest agent that owns the current slice.
 

@@ -27,9 +27,9 @@ const PARAM_REVERB: u32 = 6;
 const PARAM_REVERB_MIX: u32 = 7;
 
 // Node kind tag identifying the app's patch node in the project graph
-const PATCH_NODE_KIND: &str = "geist-patch";
+const PATCH_NODE_KIND: &str = "spectre-patch";
 // Single session slot filename
-const SESSION_FILE: &str = "geist-session.gproj";
+const SESSION_FILE: &str = "spectre-session.gproj";
 
 // Savable snapshot of the app's parameters
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -48,7 +48,7 @@ pub struct PatchState {
 impl PatchState {
     // Encode this patch as a project file
     fn to_project(self) -> ProjectFile {
-        let mut project = ProjectFile::new("Geist Session");
+        let mut project = ProjectFile::new("Spectre Session");
         project.meta.tempo_bpm = self.bpm as f64;
         project.graph.nodes.push(NodeEntry {
             id: 0,
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn patch_round_trips_through_a_project_file() {
-        let path = std::env::temp_dir().join(format!("geist-test-{}.gproj", std::process::id()));
+        let path = std::env::temp_dir().join(format!("spectre-test-{}.gproj", std::process::id()));
         let patch = sample();
         save_to(&patch, &path).unwrap();
         let loaded = load_from(&defaults(), &path).unwrap();
@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn missing_file_is_an_error_not_a_panic() {
-        let path = PathBuf::from("/no/such/dir/geist-missing.gproj");
+        let path = PathBuf::from("/no/such/dir/spectre-missing.gproj");
         assert!(load_from(&defaults(), &path).is_err());
     }
 }

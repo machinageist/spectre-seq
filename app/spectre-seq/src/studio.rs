@@ -1400,7 +1400,7 @@ impl eframe::App for StudioApp {
         self.sync_monitor();
 
         // Playable keyboard pinned to the very bottom, below the monitor strip
-        egui::Panel::bottom("geist_keyboard")
+        egui::Panel::bottom("spectre_keyboard")
             .resizable(false)
             .show_inside(ui, |ui| {
                 ui.add_space(4.0);
@@ -1693,7 +1693,7 @@ fn cable(from: u64, to: u64) -> spectre_ui::model::Cable {
 fn browser_catalog() -> BrowserModel {
     BrowserModel {
         items: vec![
-            BrowserItem::new("Geist Synth", "Instrument", SignalKind::Note),
+            BrowserItem::new("Spectre Synth", "Instrument", SignalKind::Note),
             BrowserItem::new("Filter", "Effect", SignalKind::Audio),
             BrowserItem::new("Delay", "Effect", SignalKind::Audio),
             BrowserItem::new("Reverb", "Effect", SignalKind::Audio),

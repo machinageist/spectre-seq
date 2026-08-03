@@ -238,7 +238,7 @@ impl SpectreApp {
     // Draw the transport row: demo toggle, panic, and stream info
     fn transport_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.heading("Geist DAW");
+            ui.heading("Spectre Seq");
             ui.separator();
             let transport_label = if self.playing { "⏸ Stop" } else { "▶ Play" };
             if ui.button(transport_label).clicked() {

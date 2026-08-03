@@ -1,11 +1,11 @@
 <!--
 Author: Jeff
 Date: 2026-06-08
-Description: Product UI/UX principles for Geist DAW.
+Description: Product UI/UX principles for Spectre Seq.
 Notes: Establishes interaction direction before Phase 8 implementation.
 -->
 
-# Geist DAW UI/UX Principles
+# Spectre Seq UI/UX Principles
 
 ## Product stance
 

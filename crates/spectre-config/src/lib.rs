@@ -1,6 +1,6 @@
 // Author: Jeff
 // Date: 2026-06-08
-// Description: Public entrypoint for Geist workflow configuration.
+// Description: Public entrypoint for Spectre workflow configuration.
 // Notes: Config is declarative; it binds UI shape to typed app commands.
 
 #![deny(unsafe_code)]

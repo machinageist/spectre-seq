@@ -1,11 +1,11 @@
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Index for Geist DAW project-local skills
+Description: Index for Spectre Seq project-local skills
 Notes: Keep this list synchronized when adding, removing, or renaming local skills
 -->
 
-# Geist DAW Skills Index
+# Spectre Seq Skills Index
 
 Load `spectre-seq-working-context` first for all repo work.
 

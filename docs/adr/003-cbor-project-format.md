@@ -31,7 +31,7 @@ What the prototype actually does today — all of it pre-v1, none of it binding:
 | Temp-sibling + rename atomic write | `crates/spectre-project/src/autosave.rs:29` |
 | 60 s background autosave to a `.geist-autosave` sidecar | `crates/spectre-project/src/autosave.rs:23` |
 | Flat `<name>.gproj` plus sibling `<stem>.assets/Takes/<blake3>.wav` | `app/spectre-seq/src/session.rs:425-438` |
-| Fixed session slot at `$HOME/geist-studio.gproj` | `app/spectre-seq/src/session.rs:24,468` |
+| Fixed session slot at `$HOME/spectre-studio.gproj` | `app/spectre-seq/src/session.rs:24,468` |
 
 Three of those contradict the accepted contract and are recorded here as
 implementation debt, not as precedent:

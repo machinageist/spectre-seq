@@ -1,11 +1,11 @@
 <!--
 Author: Jeff
 Date: 2026-06-08
-Description: Configurable UI and workflow model for Geist DAW.
+Description: Configurable UI and workflow model for Spectre Seq.
 Notes: Captures creator-owned workflows as a product requirement before Phase 8 implementation.
 -->
 
-# Geist DAW UI Configuration Model
+# Spectre Seq UI Configuration Model
 
 ## Creator-authored workflows
 
@@ -62,8 +62,8 @@ The `spectre-seq` binary resolves startup workflows before opening the audio str
 Workflow `templates` now feed the studio browser as searchable insert items. Double-clicking a template emits a typed `instantiate_template` intent with `name`, `kind`, and template args; project/audio mutation remains behind app command dispatch.
 
 Suggested files:
-- user/global: `~/.config/geist/workflows/*.toml`
-- project-local: `.geist/workflow.toml`
+- user/global: `~/.config/spectre/workflows/*.toml`
+- project-local: `.spectre/workflow.toml`
 - bundled defaults: `assets/workflows/default.toml`, `modular.toml`, `songwriting.toml`, `mixing.toml`, `performance.toml`
 
 Config is declarative. It describes desired layout, bindings, defaults, aliases, and templates. It does not run arbitrary code in the UI thread or audio callback.

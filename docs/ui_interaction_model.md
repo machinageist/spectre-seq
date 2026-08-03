@@ -1,11 +1,11 @@
 <!--
 Author: Jeff
 Date: 2026-06-08
-Description: Concrete UI interaction model for Geist DAW.
+Description: Concrete UI interaction model for Spectre Seq.
 Notes: Translates the VCV Rack, Ableton, Serum, and Phase Plant reference blend into buildable surfaces.
 -->
 
-# Geist DAW UI Interaction Model
+# Spectre Seq UI Interaction Model
 
 ## North star
 

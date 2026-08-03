@@ -1,6 +1,6 @@
 // Author: Jeff
 // Date: 2026-06-08
-// Description: Public entrypoint for Geist UI state, commands, renderer, views, and widgets.
+// Description: Public entrypoint for Spectre UI state, commands, renderer, views, and widgets.
 // Notes: UI renders state and emits commands; it does not own project or audio truth.
 
 #![deny(unsafe_code)]

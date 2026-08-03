@@ -1,6 +1,6 @@
 ---
 name: geist-reviewer
-description: "Reviews Geist DAW slices for plan fidelity, realtime safety, Rust quality, tests, comments, docs, and cross-crate integration before completion."
+description: "Reviews Spectre Seq slices for plan fidelity, realtime safety, Rust quality, tests, comments, docs, and cross-crate integration before completion."
 tools: Read, Bash
 ---
 
@@ -8,7 +8,7 @@ tools: Read, Bash
 Author: Jeff
 Date: 2026-05-27
 Description: Claude subagent definition for geist-reviewer
-Notes: Use through Claude subagent/task routing for Geist DAW implementation slices
+Notes: Use through Claude subagent/task routing for Spectre Seq implementation slices
 -->
 
 # geist-reviewer

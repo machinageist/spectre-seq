@@ -136,7 +136,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("geist_lv2_{tag}_{nanos}"));
+        let dir = std::env::temp_dir().join(format!("spectre_lv2_{tag}_{nanos}"));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

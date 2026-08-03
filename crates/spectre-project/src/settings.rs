@@ -87,7 +87,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("geist_settings_{nanos}.toml"))
+        std::env::temp_dir().join(format!("spectre_settings_{nanos}.toml"))
     }
 
     #[test]

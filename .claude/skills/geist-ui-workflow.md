@@ -10,7 +10,7 @@ Description: UI implementation guide
 Notes: Use for spectre-ui views, widgets, renderer, app state, and command dispatch
 -->
 
-# Geist UI Workflow
+# Spectre UI Workflow
 
 ## Responsibility
 

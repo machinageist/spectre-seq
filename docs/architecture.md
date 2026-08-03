@@ -1,11 +1,11 @@
 <!--
 Author: Jeff
 Date: 2026-08-01
-Description: System overview of the Geist DAW workspace as implemented — crates, dependency direction, and the app/audio thread split.
+Description: System overview of the Spectre Seq workspace as implemented — crates, dependency direction, and the app/audio thread split.
 Notes: Describes what runs today. Planned structure is marked planned; where code contradicts an older plan, the code wins.
 -->
 
-# Geist DAW Architecture
+# Spectre Seq Architecture
 
 ## Scope
 

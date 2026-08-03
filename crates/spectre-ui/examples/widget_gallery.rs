@@ -15,7 +15,7 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "Geist UI — Widget Gallery",
+        "Spectre UI — Widget Gallery",
         options,
         Box::new(|cc| {
             SpectreTheme::apply(&cc.egui_ctx);
@@ -57,7 +57,7 @@ impl eframe::App for Gallery {
         let meter_b = (0.5 + 0.5 * (self.phase * 0.7).cos()) * self.level_b + 0.05;
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.heading("Geist UI");
+            ui.heading("Spectre UI");
             ui.label(
                 egui::RichText::new("Tactile dark — VCV × Phase Plant").color(theme::TEXT_MUTED),
             );

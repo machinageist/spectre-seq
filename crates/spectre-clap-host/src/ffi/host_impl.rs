@@ -31,9 +31,9 @@ use clap_sys::id::clap_id;
 use clap_sys::version::CLAP_VERSION;
 
 // Host identity strings, NUL-terminated for the C ABI
-const HOST_NAME: &[u8] = b"Geist DAW\0";
-const HOST_VENDOR: &[u8] = b"Geist\0";
-const HOST_URL: &[u8] = b"https://geist.audio\0";
+const HOST_NAME: &[u8] = b"Spectre Seq\0";
+const HOST_VENDOR: &[u8] = b"Spectre\0";
+const HOST_URL: &[u8] = b"https://spectre.audio\0";
 const HOST_VERSION: &[u8] = b"0.1.0\0";
 
 // Shared stub host: identifies the host and exposes the log + params extensions
@@ -167,7 +167,7 @@ mod tests {
         let host = host();
         // SAFETY: host.name is the static NUL-terminated identity string
         let name = unsafe { CStr::from_ptr(host.name) };
-        assert_eq!(name.to_str().unwrap(), "Geist DAW");
+        assert_eq!(name.to_str().unwrap(), "Spectre Seq");
     }
 
     #[test]
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn unknown_extension_is_null() {
         let host = host();
-        let id = c"geist.not-an-extension";
+        let id = c"spectre.not-an-extension";
         // SAFETY: get_extension is set; id is a valid NUL-terminated string
         let ext = unsafe { host.get_extension.unwrap()(host, id.as_ptr()) };
         assert!(ext.is_null());

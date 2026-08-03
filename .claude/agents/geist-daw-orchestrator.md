@@ -8,7 +8,7 @@ tools: Read, Write, Edit, Bash
 Author: Jeff
 Date: 2026-05-27
 Description: Claude subagent definition for spectre-seq-orchestrator
-Notes: Use through Claude subagent/task routing for Geist DAW implementation slices
+Notes: Use through Claude subagent/task routing for Spectre Seq implementation slices
 -->
 
 # spectre-seq-orchestrator

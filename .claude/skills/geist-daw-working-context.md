@@ -1,16 +1,16 @@
 ---
 name: spectre-seq-working-context
-description: "Load first for any Geist DAW task. Establishes repository shape, implementation order, invariants, quality gates, and how agents should use the local skills and agents."
+description: "Load first for any Spectre Seq task. Establishes repository shape, implementation order, invariants, quality gates, and how agents should use the local skills and agents."
 ---
 
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Project working context for Geist DAW agents
-Notes: Load first for every Geist DAW implementation or review task
+Description: Project working context for Spectre Seq agents
+Notes: Load first for every Spectre Seq implementation or review task
 -->
 
-# Geist DAW Working Context
+# Spectre Seq Working Context
 
 ## Purpose
 

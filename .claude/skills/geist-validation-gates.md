@@ -1,12 +1,12 @@
 ---
 name: geist-validation-gates
-description: "Load before reviewing or declaring any Geist DAW slice complete. Defines preflight, implementation, review, and completion gates for faithful execution of the plan."
+description: "Load before reviewing or declaring any Spectre Seq slice complete. Defines preflight, implementation, review, and completion gates for faithful execution of the plan."
 ---
 
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Validation gates for Geist DAW slices
+Description: Validation gates for Spectre Seq slices
 Notes: Use for reviews, task handoffs, CI expectations, and stop/go decisions
 -->
 

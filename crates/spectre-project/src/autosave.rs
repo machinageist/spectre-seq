@@ -149,7 +149,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("geist_{tag}_{nanos}"));
+        let dir = std::env::temp_dir().join(format!("spectre_{tag}_{nanos}"));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn atomic_write_reloads_and_leaves_no_temp() {
         let dir = temp_dir("atomic");
-        let path = dir.join("proj.geist");
+        let path = dir.join("proj.spectre");
         atomic_write_cbor(&ProjectFile::new("atomic"), &path).unwrap();
 
         let back = load_from_path(&path).unwrap();
@@ -169,7 +169,7 @@ mod tests {
             .flatten()
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(names, vec!["proj.geist".to_string()]);
+        assert_eq!(names, vec!["proj.spectre".to_string()]);
 
         std::fs::remove_dir_all(&dir).ok();
     }

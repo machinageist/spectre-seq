@@ -69,7 +69,7 @@ fn run_gui(
         ..Default::default()
     };
     eframe::run_native(
-        "Geist DAW",
+        "Spectre Seq",
         options,
         Box::new(move |cc| {
             // Install the tactile-dark theme once before the first frame

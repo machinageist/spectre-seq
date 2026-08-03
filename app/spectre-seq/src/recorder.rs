@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn wav_round_trips_the_samples() {
-        let path = std::env::temp_dir().join(format!("geist-rec-{}.wav", std::process::id()));
+        let path = std::env::temp_dir().join(format!("spectre-rec-{}.wav", std::process::id()));
         let audio = RecordedAudio {
             samples: vec![0.0, 0.25, -0.5, 0.75],
             channels: 1,
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn read_wav_recovers_samples_and_format() {
-        let path = std::env::temp_dir().join(format!("geist-read-{}.wav", std::process::id()));
+        let path = std::env::temp_dir().join(format!("spectre-read-{}.wav", std::process::id()));
         let audio = RecordedAudio {
             samples: vec![0.1, -0.2, 0.3, -0.4],
             channels: 2,

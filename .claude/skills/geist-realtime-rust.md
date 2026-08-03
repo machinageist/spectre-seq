@@ -1,12 +1,12 @@
 ---
 name: geist-realtime-rust
-description: "Load before implementing or reviewing any Geist DAW Rust code that can touch the audio thread, process graph, DSP, plugin callbacks, transport snapshots, parameter updates, or lock-free communication."
+description: "Load before implementing or reviewing any Spectre Seq Rust code that can touch the audio thread, process graph, DSP, plugin callbacks, transport snapshots, parameter updates, or lock-free communication."
 ---
 
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Realtime-safe Rust rules for Geist DAW
+Description: Realtime-safe Rust rules for Spectre Seq
 Notes: Applies to audio-thread code, shared primitives, callbacks, graph processing, and DSP
 -->
 

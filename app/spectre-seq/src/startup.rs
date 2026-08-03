@@ -99,7 +99,7 @@ fn resolve_ui_state_from_paths(
     ];
 
     if let Some(home) = home {
-        let user = home.join(".config/geist/workflows/default.toml");
+        let user = home.join(".config/spectre/workflows/default.toml");
         if user.exists() {
             candidates.push((
                 WorkflowSource::UserProfile,
@@ -108,7 +108,7 @@ fn resolve_ui_state_from_paths(
         }
     }
 
-    let project = cwd.join(".geist/workflow.toml");
+    let project = cwd.join(".spectre/workflow.toml");
     if project.exists() {
         candidates.push((
             WorkflowSource::ProjectOverride,
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn invalid_project_workflow_keeps_bundled_default() {
         let root = temp_root("invalid-project-workflow");
-        let project_dir = root.join(".geist");
+        let project_dir = root.join(".spectre");
         fs::create_dir_all(&project_dir).unwrap();
         fs::write(
             project_dir.join("workflow.toml"),

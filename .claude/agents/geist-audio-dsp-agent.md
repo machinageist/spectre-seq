@@ -8,7 +8,7 @@ tools: Read, Write, Edit, Bash
 Author: Jeff
 Date: 2026-05-27
 Description: Claude subagent definition for geist-audio-dsp-agent
-Notes: Use through Claude subagent/task routing for Geist DAW implementation slices
+Notes: Use through Claude subagent/task routing for Spectre Seq implementation slices
 -->
 
 # geist-audio-dsp-agent

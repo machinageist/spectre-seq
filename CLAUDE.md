@@ -1,11 +1,11 @@
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Claude working instructions for Geist DAW
+Description: Claude working instructions for Spectre Seq
 Notes: Project-local agent entrypoint; load before any implementation or review
 -->
 
-# Geist DAW Claude Instructions
+# Spectre Seq Claude Instructions
 
 ## Load order
 

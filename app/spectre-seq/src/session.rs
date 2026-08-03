@@ -21,9 +21,9 @@ use spectre_project::prelude::{
 use crate::engine::{NUM_TRACKS, SEQ_ROWS, SEQ_STEPS, TRACK_BASE_MIDI};
 
 // Studio session slot filename, distinct from the classic patch slot
-const SESSION_FILE: &str = "geist-studio.gproj";
+const SESSION_FILE: &str = "spectre-studio.gproj";
 // Node tag carrying the global macros and per-track levels
-const MACROS_NODE_KIND: &str = "geist-macros";
+const MACROS_NODE_KIND: &str = "spectre-macros";
 
 // Master gain param id on the macros node (the one remaining global macro)
 const PARAM_GAIN: u32 = 2;
@@ -128,7 +128,7 @@ impl StudioSession {
     // Encode this session and package its takes beside `project_path`.
     fn to_project(&self, project_path: &Path) -> Result<ProjectFile, ProjectError> {
         let base_dir = base_dir_of(project_path);
-        let mut project = ProjectFile::new("Geist Studio Session");
+        let mut project = ProjectFile::new("Spectre Studio Session");
         project.meta.tempo_bpm = self.bpm as f64;
 
         // Seed the registry with unavailable references so arrangement edits can
@@ -694,7 +694,7 @@ mod tests {
 
     #[test]
     fn session_round_trips_through_a_project_file() {
-        let path = std::env::temp_dir().join(format!("geist-studio-{}.gproj", std::process::id()));
+        let path = std::env::temp_dir().join(format!("spectre-studio-{}.gproj", std::process::id()));
         let session = sample();
         save_to(&session, &path).unwrap();
         let loaded = load_from(&defaults(), &path).unwrap();
@@ -704,13 +704,13 @@ mod tests {
 
     #[test]
     fn missing_file_is_an_error_not_a_panic() {
-        let path = PathBuf::from("/no/such/dir/geist-studio-missing.gproj");
+        let path = PathBuf::from("/no/such/dir/spectre-studio-missing.gproj");
         assert!(load_from(&defaults(), &path).is_err());
     }
 
     #[test]
     fn audio_clip_is_packaged_beside_the_project() {
-        let root = std::env::temp_dir().join(format!("geist-audio-project-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("spectre-audio-project-{}", std::process::id()));
         let source_dir = root.join("capture");
         let project_dir = root.join("project");
         std::fs::create_dir_all(&source_dir).unwrap();
@@ -745,7 +745,7 @@ mod tests {
 
     #[test]
     fn missing_audio_take_fails_save() {
-        let root = std::env::temp_dir().join(format!("geist-missing-take-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("spectre-missing-take-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("song.gproj");
         let mut session = defaults();
@@ -765,7 +765,7 @@ mod tests {
 
     #[test]
     fn changed_audio_take_loads_as_offline() {
-        let root = std::env::temp_dir().join(format!("geist-changed-take-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("spectre-changed-take-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let source = root.join("source.wav");
         let project_path = root.join("song.gproj");
@@ -800,7 +800,7 @@ mod tests {
 
     #[test]
     fn moved_take_is_recovered_by_hash_inside_project_assets() {
-        let root = std::env::temp_dir().join(format!("geist-moved-take-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("spectre-moved-take-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let source = root.join("source.wav");
         let project_path = root.join("song.gproj");
@@ -831,7 +831,7 @@ mod tests {
     #[test]
     fn relink_candidate_requires_exact_size_and_hash() {
         let path =
-            std::env::temp_dir().join(format!("geist-relink-candidate-{}", std::process::id()));
+            std::env::temp_dir().join(format!("spectre-relink-candidate-{}", std::process::id()));
         std::fs::write(&path, b"candidate-audio").unwrap();
         let asset = AssetRef {
             relative_path: "missing.wav".to_string(),

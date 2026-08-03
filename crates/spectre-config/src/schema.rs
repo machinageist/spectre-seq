@@ -166,7 +166,7 @@ pub enum CableLabelPolicy {
 }
 
 impl WorkflowProfile {
-    // Strong default profile keeps Geist usable without user config
+    // Strong default profile keeps Spectre usable without user config
     pub fn default_profile() -> Self {
         Self {
             version: CURRENT_WORKFLOW_VERSION,

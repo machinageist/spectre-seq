@@ -18,7 +18,7 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "Geist DAW — Studio",
+        "Spectre Seq — Studio",
         options,
         Box::new(|cc| {
             SpectreTheme::apply(&cc.egui_ctx);
