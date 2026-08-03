@@ -71,7 +71,7 @@ geistdaw/
 │   │           ├── cycle_tests.rs
 │   │           └── routing_tests.rs
 │   │
-│   ├── geist-audio-backend/            # platform audio I/O abstraction
+│   ├── spectre-audio-backend/            # platform audio I/O abstraction
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs

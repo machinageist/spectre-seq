@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-audio-backend/src/stream.rs
+// File: crates/spectre-audio-backend/src/stream.rs
 // Layer: audio I/O
 // Purpose: StreamConfig and the lock-free XrunCounter
 // Status: Implemented.

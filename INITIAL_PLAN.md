@@ -36,7 +36,7 @@ Notes: Preserved as historical planning context; living product authority is lin
 
 ## Phase 2 — Audio Backend (Weeks 5–7, overlaps Phase 1)
 
-- `geist-audio-backend`: one trait, multiple platform impls hiding behind it
+- `spectre-audio-backend`: one trait, multiple platform impls hiding behind it
 - Wrap `cpal` (Apache 2.0) initially; the trait boundary means it can be replaced per-platform later
 - Platform priority: PipeWire (Linux) → JACK → ALSA; CoreAudio (macOS); WASAPI (Windows)
 - `AudioBackend::start()` takes ownership of the compiled `ProcessGraph` and drives it from the audio callback — no DAW logic on this thread

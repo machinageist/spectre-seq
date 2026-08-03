@@ -1,6 +1,6 @@
 ---
-name: geist-audio-backend
-description: "Load when implementing or reviewing `crates/geist-audio-backend`, device enumeration, stream negotiation, cpal/PipeWire/JACK wrappers, xrun reporting, callback wiring, or backend tests."
+name: spectre-audio-backend
+description: "Load when implementing or reviewing `crates/spectre-audio-backend`, device enumeration, stream negotiation, cpal/PipeWire/JACK wrappers, xrun reporting, callback wiring, or backend tests."
 ---
 
 <!--
@@ -14,7 +14,7 @@ Notes: Use for cpal, PipeWire, JACK, stream config, device selection, and callba
 
 ## Responsibility
 
-`geist-audio-backend` hides platform I/O behind a small trait and drives the compiled graph from the audio callback.
+`spectre-audio-backend` hides platform I/O behind a small trait and drives the compiled graph from the audio callback.
 
 ## Boundaries
 
@@ -43,6 +43,6 @@ Notes: Use for cpal, PipeWire, JACK, stream config, device selection, and callba
 
 ## Validation
 
-- `cargo check -p geist-audio-backend`.
+- `cargo check -p spectre-audio-backend`.
 - Unit tests for config validation and fake backend lifecycle.
 - Manual device test remains opt-in; CI must not require physical audio devices.

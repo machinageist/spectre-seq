@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-audio-backend/src/lib.rs
+// File: crates/spectre-audio-backend/src/lib.rs
 // Layer: audio I/O
 // Purpose: Platform audio I/O abstraction entrypoint
 // Status: Implemented; backend abstraction. cpal/JACK/PipeWire impls land next.

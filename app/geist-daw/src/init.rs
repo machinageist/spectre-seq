@@ -9,7 +9,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_audio_backend::prelude::{AudioBackend, BlockBridge, CpalBackend, StreamConfig};
+use spectre_audio_backend::prelude::{AudioBackend, BlockBridge, CpalBackend, StreamConfig};
 use spectre_core::config::{AudioConfig, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
 use spectre_core::errors::GeistResult;
 

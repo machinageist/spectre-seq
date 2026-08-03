@@ -1490,15 +1490,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "geist-audio-backend"
-version = "0.1.0"
-dependencies = [
- "cpal",
- "rtrb",
- "spectre-core",
-]
-
-[[package]]
 name = "geist-automation"
 version = "0.1.0"
 dependencies = [
@@ -1523,7 +1514,6 @@ name = "geist-daw"
 version = "0.1.0"
 dependencies = [
  "eframe",
- "geist-audio-backend",
  "geist-fx",
  "geist-synth",
  "geist-timeline",
@@ -1531,6 +1521,7 @@ dependencies = [
  "hound",
  "rfd",
  "rtrb",
+ "spectre-audio-backend",
  "spectre-config",
  "spectre-core",
  "spectre-graph",
@@ -3552,6 +3543,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "spectre-audio-backend"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "rtrb",
+ "spectre-core",
 ]
 
 [[package]]

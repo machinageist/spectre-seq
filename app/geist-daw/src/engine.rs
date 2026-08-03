@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use geist_audio_backend::prelude::{BlockProcessor, CpalBackend, Stream};
+use spectre_audio_backend::prelude::{BlockProcessor, CpalBackend, Stream};
 use spectre_core::context::ProcessContext;
 use spectre_core::events::NoteEvent;
 use spectre_core::transport::TransportSnapshot;

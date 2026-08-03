@@ -16,9 +16,9 @@ gaps are listed as gaps.
 There is exactly one callback path in the shipping app:
 
 ```
-cpal output callback closure           crates/geist-audio-backend/src/cpal_backend.rs:182
-  |- BlockBridge::render                crates/geist-audio-backend/src/bridge.rs:49
-      \- BlockProcessor::process_block   crates/geist-audio-backend/src/bridge.rs:17
+cpal output callback closure           crates/spectre-audio-backend/src/cpal_backend.rs:182
+  |- BlockBridge::render                crates/spectre-audio-backend/src/bridge.rs:49
+      \- BlockProcessor::process_block   crates/spectre-audio-backend/src/bridge.rs:17
           \- SynthProcessor::process_block   app/geist-daw/src/engine.rs:575
 ```
 
@@ -71,7 +71,7 @@ Every audio-thread buffer is sized once during construction and never grows:
 | `MAX_CLIPS_PER_TRACK` | 64 | `app/geist-daw/src/engine.rs:199` |
 | `MAX_CLIP_NOTES` | 256 | `app/geist-daw/src/engine.rs:197` |
 | `MAX_AUDIO_ASSETS` | 64 | `app/geist-daw/src/engine.rs:27` |
-| `CAPTURE_RING_CAPACITY` | 65536 | `crates/geist-audio-backend/src/stream.rs:15` |
+| `CAPTURE_RING_CAPACITY` | 65536 | `crates/spectre-audio-backend/src/stream.rs:15` |
 
 Each has a matching `Vec::with_capacity` at construction, and each write site
 checks the bound *before* pushing. `push_capped` (`engine.rs:167`) is the pattern:

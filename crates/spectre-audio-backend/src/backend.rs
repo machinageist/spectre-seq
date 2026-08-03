@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-audio-backend/src/backend.rs
+// File: crates/spectre-audio-backend/src/backend.rs
 // Layer: audio I/O
 // Purpose: AudioBackend trait
 // Status: Implemented; abstraction only. Platform impls (cpal, JACK) land next.

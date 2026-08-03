@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-audio-backend/src/cpal_backend.rs
+// File: crates/spectre-audio-backend/src/cpal_backend.rs
 // Layer: audio I/O
 // Purpose: cpal wrapper (all platforms, default)
 // Status: Implemented; output backend over cpal (CoreAudio/WASAPI/ALSA).

@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-audio-backend/src/device.rs
+// File: crates/spectre-audio-backend/src/device.rs
 // Layer: audio I/O
 // Purpose: AudioDevice, DeviceInfo
 // Status: Implemented.

@@ -21,7 +21,7 @@ Keep audio/DSP code deterministic, allocation-free in hot paths, benchmarkable, 
 
 - `.claude/skills/geist-daw-working-context.md`
 - `.claude/skills/geist-realtime-rust.md`
-- `.claude/skills/geist-audio-backend.md`
+- `.claude/skills/spectre-audio-backend.md`
 - `.claude/skills/spectre-dsp-and-plugins.md`
 - `.claude/skills/geist-validation-gates.md`
 

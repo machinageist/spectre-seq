@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-audio-backend/src/pipewire_backend.rs
+// File: crates/spectre-audio-backend/src/pipewire_backend.rs
 // Layer: audio I/O
 // Purpose: direct PipeWire (Linux, feature-gated)
 // Status: Pseudocode scaffold; implementation intentionally pending.

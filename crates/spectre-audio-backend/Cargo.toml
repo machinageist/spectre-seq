@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: crates/geist-audio-backend/Cargo.toml
+# File: crates/spectre-audio-backend/Cargo.toml
 # Layer: audio I/O
 # Purpose: Platform audio I/O abstraction plus the cpal backend implementation.
 # Status: Implemented; backend abstraction + cpal output backend.
@@ -7,7 +7,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-audio-backend"
+name = "spectre-audio-backend"
 version = "0.1.0"
 edition = "2021"
 

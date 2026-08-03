@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-audio-backend/src/bridge.rs
+// File: crates/spectre-audio-backend/src/bridge.rs
 // Layer: audio I/O
 // Purpose: BlockProcessor trait and BlockBridge size/layout adapter
 // Status: Implemented; output path. Duplex input bridging lands with capture.

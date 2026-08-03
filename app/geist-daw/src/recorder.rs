@@ -12,7 +12,7 @@
 
 use std::path::Path;
 
-use geist_audio_backend::prelude::CaptureConsumer;
+use spectre_audio_backend::prelude::CaptureConsumer;
 
 // A finished recording: interleaved samples plus their capture format
 pub struct RecordedAudio {
@@ -113,7 +113,7 @@ pub fn read_wav(path: &Path) -> Result<RecordedAudio, hound::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_audio_backend::prelude::capture_ring;
+    use spectre_audio_backend::prelude::capture_ring;
 
     #[test]
     fn recorder_accumulates_only_while_recording() {

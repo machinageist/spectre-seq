@@ -31,7 +31,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | `spectre-core` | Shared primitives: `AudioConfig`, `ProcessContext`, IDs, ports, events, params, signal, transport, errors | Implemented; zero workspace dependencies |
 | `spectre-graph` | Graph model, topology/scheduling, plan compilation, block executor, executor swap, built-in nodes | Implemented; not on the app's audio path (see below) |
 | `spectre-dsp` | Oscillators, filters, envelopes, LFOs, fx primitives, FFT, math/SIMD helpers, benches | Implemented incrementally |
-| `geist-audio-backend` | Backend abstraction, `BlockBridge`, cpal backend, capture ring, xrun counter | cpal implemented; JACK and PipeWire are scaffolds |
+| `spectre-audio-backend` | Backend abstraction, `BlockBridge`, cpal backend, capture ring, xrun counter | cpal implemented; JACK and PipeWire are scaffolds |
 | `geist-timeline` | Transport, tempo map, playhead, arena clips/patterns, legacy `Timeline`, canonical `Arrangement`/`ClipEntity`, identity | Mixed; see "Competing arrangement authorities" |
 | `geist-automation` | Curves, lanes, routes, modulation matrix, evaluator | Implemented; **no consumer in the app binary** |
 | `spectre-project` | On-disk project schema, CBOR serialize, TOML settings, blake3 asset map, migration, autosave | Implemented; **zero workspace dependencies** — a standalone serde DTO tree |
@@ -78,7 +78,7 @@ spectre-lv2-host    (no workspace deps)
 xtask             (no workspace deps)
 
 spectre-graph          -> spectre-core
-geist-audio-backend  -> spectre-core
+spectre-audio-backend  -> spectre-core
 geist-timeline       -> spectre-core
 geist-automation     -> spectre-core
 geist-ui             -> spectre-config
@@ -89,7 +89,7 @@ geist-synth          -> spectre-core, spectre-graph, spectre-dsp
 geist-fx             -> spectre-core, spectre-graph, spectre-dsp
 geist-modular        -> spectre-core, spectre-graph
 
-app/geist-daw        -> spectre-core, spectre-graph, geist-audio-backend,
+app/geist-daw        -> spectre-core, spectre-graph, spectre-audio-backend,
                         geist-synth, geist-fx, geist-timeline,
                         spectre-project, geist-ui, spectre-config
 ```
@@ -124,27 +124,27 @@ Four kinds of thread exist at runtime.
 | Thread | Owner | Work |
 | --- | --- | --- |
 | Main / app | eframe native event loop (`main.rs`) | UI, session state, project I/O, recorder drain, config, all mutation |
-| Audio output | cpal (`crates/geist-audio-backend/src/cpal_backend.rs:180`) | `BlockBridge::render` -> `SynthProcessor::process_block` |
-| Audio input | cpal (`crates/geist-audio-backend/src/cpal_backend.rs:237`) | Pushes interleaved capture frames into a lock-free ring |
+| Audio output | cpal (`crates/spectre-audio-backend/src/cpal_backend.rs:180`) | `BlockBridge::render` -> `SynthProcessor::process_block` |
+| Audio input | cpal (`crates/spectre-audio-backend/src/cpal_backend.rs:237`) | Pushes interleaved capture frames into a lock-free ring |
 | Autosave worker | `spectre_project::autosave::Autosaver` | 60 s snapshot writes; never touches audio state |
 
 The app thread owns mutation; the audio thread consumes bounded queues and
 publishes atomics. The primitives carrying that boundary:
 
 - `rtrb` SPSC rings — `EngineCommand` (256), `AudioAsset` (64), scope samples
-  (8192), input capture (`crates/geist-audio-backend/src/stream.rs`), and the
+  (8192), input capture (`crates/spectre-audio-backend/src/stream.rs`), and the
   graph-swap pair in `crates/spectre-graph/src/swap.rs`.
 - Latest-value atomics — `LevelMeter` (`AtomicU32` bit-cast `f32`,
   `app/geist-daw/src/control.rs:114`), `BeatClock` (`AtomicU64` bit-cast `f64`,
   `app/geist-daw/src/control.rs:137`), `XrunCounter` (`AtomicU64`,
-  `crates/geist-audio-backend/src/stream.rs:65`).
+  `crates/spectre-audio-backend/src/stream.rs:65`).
 
 `docs/realtime_rules.md` is the contract for what may run on the audio callback,
 including the places the current code breaks it.
 
 ### Block sizing
 
-`BlockBridge` (`crates/geist-audio-backend/src/bridge.rs`) adapts the backend's
+`BlockBridge` (`crates/spectre-audio-backend/src/bridge.rs`) adapts the backend's
 arbitrary interleaved callback size to a fixed channel-major block, carrying the
 remainder across callbacks. cpal is opened with `BufferSize::Default` because not
 every platform honors a fixed size. All bridge scratch is allocated once in
