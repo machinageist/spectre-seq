@@ -224,14 +224,14 @@ the central problem `docs/changes/project-document/SPEC.md` exists to fix.
 | Owner | Path | Consumers today |
 | --- | --- | --- |
 | `geist_timeline::Timeline` | `crates/geist-timeline/src/track.rs:91` | None outside its own crate; legacy arena handles, sample placement |
-| `geist_timeline::Arrangement` | `crates/geist-timeline/src/arrangement.rs` | None outside its own crate; canonical `ClipEntity` model, unwired |
+| `geist_document::Arrangement` | `crates/geist-document/src/arrangement.rs` | None yet; canonical `ClipEntity` model, unwired. Relocated out of `geist-timeline` by slice D1 and still re-exported from `geist_timeline::prelude` for the compatibility window |
 | `app::engine::Arrangement` | `app/geist-daw/src/engine.rs:259` | The audio thread; the only one that makes sound |
 | `geist_ui::model::TimelineModel` | `crates/geist-ui/src/model.rs:295` | Passed `&mut` into `views::arrangement`, so the view mutates it directly |
 | `app::session::StudioSession` | `app/geist-daw/src/session.rs` | The de-facto persistence model, in float beats |
 
 The app binary uses exactly one item from `geist-timeline`: `Transport`
-(`app/geist-daw/src/engine.rs:20`). Both arrangement models in that crate are
-currently unreachable from the running DAW.
+(`app/geist-daw/src/engine.rs:20`). Neither canonical arrangement model is
+reachable from the running DAW.
 
 Resolution is roadmap Milestone 2: `geist_document::arrangement::Arrangement`
 becomes the single authority, the other four become projections or are deleted, and

@@ -18,7 +18,7 @@ Notes: Execute and commit one independently validated slice at a time; blocking 
 
 ## Slice D1 — Crate skeleton and vocabulary relocation
 
-Covers acceptance criterion 11. No behavior change; this slice only moves code and adds an empty crate.
+**Landed 2026-08-03.** Covers acceptance criterion 11. No behavior change; this slice only moves code and adds an empty crate. Workspace tests: 646 passing before and after.
 
 Files:
 
@@ -36,14 +36,15 @@ Files:
 
 Tasks:
 
-1. [ ] Create `geist-document` with `#![deny(unsafe_code)]` and `geist-core` as its only dependency. The workspace `members` glob `crates/*` picks it up, so the root manifest needs no edit. Write a real manifest header matching `crates/geist-timeline/Cargo.toml`, not the pseudocode-scaffold header older manifests carry.
-2. [ ] Move `MusicalTime`, `TICKS_PER_QUARTER`, `MAX_EXACT_MUSICAL_TIME_TICKS`, and their tests from `geist-timeline` to `geist-core::time`; add them to the `geist-core` prelude.
-3. [ ] Move the `IdSequence` and `IdentityAllocator` machinery to `geist-document`. `ClipId` and `TrackId` already live in `geist-core::ids` and stay there; `crates/geist-timeline/src/identity.rs:14` only re-exports them.
-4. [ ] Move `Arrangement`, `ClipEntity`, `ArrangementTrack`, `ClipLocation`, `RemovedClip`, and `ArrangementError` to `geist-document::arrangement` with their tests.
-5. [ ] Re-export every moved item from `geist_timeline::prelude` for the compatibility window so no consumer breaks in this slice.
-6. [ ] Confirm the workspace test count did not drop; every moved test runs at its new home.
-7. [ ] Resolve independent spec and code review findings.
-8. [ ] Commit and push only after all findings are resolved.
+1. [x] Create `geist-document` with `#![deny(unsafe_code)]` and `geist-core` as its only dependency. The workspace `members` glob `crates/*` picks it up, so the root manifest needs no edit. Write a real manifest header matching `crates/geist-timeline/Cargo.toml`, not the pseudocode-scaffold header older manifests carry.
+2. [x] Move `MusicalTime`, `TICKS_PER_QUARTER`, `MAX_EXACT_MUSICAL_TIME_TICKS`, and their tests from `geist-timeline` to `geist-core::time`; add them to the `geist-core` prelude.
+3. [x] Move the `IdSequence` and `IdentityAllocator` machinery to `geist-document`. `ClipId` and `TrackId` already live in `geist-core::ids` and stay there; `crates/geist-timeline/src/identity.rs:14` only re-exports them.
+4. [x] Move `Arrangement`, `ClipEntity`, `ArrangementTrack`, `ClipLocation`, `RemovedClip`, and `ArrangementError` to `geist-document::arrangement` with their tests.
+5. [x] Re-export every moved item from `geist_timeline::prelude` for the compatibility window so no consumer breaks in this slice.
+6. [x] Add the durable nonzero ID family to `geist-core::ids` — `AssetId`, `SceneId`, `DeviceId`, `ParamKey`, `RouteId`, `NoteId`, `MappingId`, `AutomationTargetId`. Scope amendment: without it, D2 and the Wave 2 vocabulary slice both edit `crates/geist-core/src/lib.rs` concurrently. The `define_nonzero_id!` macro already exists, so this adds no behavior.
+7. [x] Confirm the workspace test count did not drop; every moved test runs at its new home.
+8. [x] Resolve independent spec and code review findings.
+9. [x] Commit only after all findings are resolved.
 
 Verification:
 

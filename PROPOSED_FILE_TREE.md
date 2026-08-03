@@ -31,7 +31,8 @@ geistdaw/
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── ids.rs                  # NodeId, PortId, ClipId, TrackId (newtype u64)
+│   │       ├── ids.rs                  # opaque newtypes; the durable family rejects zero
+│   │       ├── time.rs                 # MusicalTime, TICKS_PER_QUARTER (960 PPQ)
 │   │       ├── port.rs                 # PortType enum, PortDescriptor, PortDirection
 │   │       ├── signal.rs               # Signal enum (Audio, CV, Gate, NoteEvent, Parameter)
 │   │       ├── config.rs               # AudioConfig { sample_rate, block_size, channels }
@@ -40,6 +41,13 @@ geistdaw/
 │   │       ├── params.rs               # ParamId, ParamInfo, ParamValue, ParamRange
 │   │       ├── transport.rs            # AtomicTransport, TransportState, TempoMap
 │   │       └── errors.rs               # GeistError, GeistResult
+│   │
+│   ├── geist-document/                 # canonical app-thread project truth; depends only on geist-core
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── identity.rs             # IdSequence, IdentityAllocator; checked monotonic allocation
+│   │       └── arrangement.rs          # Arrangement, ClipEntity, ArrangementTrack, ClipLocation
 │   │
 │   ├── geist-graph/                    # audio process graph; depends on geist-core
 │   │   ├── Cargo.toml
@@ -50,7 +58,7 @@ geistdaw/
 │   │       ├── edge.rs                 # Edge { src: PortId, dst: PortId }, type validation
 │   │       ├── topology.rs             # topological sort, cycle detection, delay insertion
 │   │       ├── process_list.rs         # compiled flat Vec<ProcessStep>; what audio thread runs
-│   │       ├── swap.rs                 # ArcSwap<ProcessList> double-buffer mechanism
+│   │       ├── swap.rs                 # rtrb SPSC Executor ownership handoff; see ADR 002
 │   │       ├── channel.rs              # rtrb ring buffers for param changes + metering
 │   │       ├── nodes/
 │   │       │   ├── mod.rs
@@ -140,10 +148,10 @@ geistdaw/
 │   │       ├── instance.rs
 │   │       └── plugin_node.rs          # LV2PluginNode implements AudioNode
 │   │
-│   ├── geist-timeline/                 # arrangement, clips, transport
+│   ├── geist-timeline/                 # legacy arena timeline; D8 deletes what geist-document replaces
 │   │   ├── Cargo.toml
 │   │   └── src/
-│   │       ├── lib.rs
+│   │       ├── lib.rs                  # prelude re-exports the relocated document/core types
 │   │       ├── transport.rs            # play/pause/record/loop state machine
 │   │       ├── tempo.rs                # TempoMap: BPM automation, time signature changes
 │   │       ├── track.rs                # Track { id, clip_ids, armed, muted, soloed }
