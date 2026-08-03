@@ -1,12 +1,12 @@
 // =============================================================================
 // File: plugins/geist-fx/src/lib.rs
 // Layer: effects plugin
-// Purpose: Effects bundle; geist-dsp engines wrapped as graph AudioNodes
+// Purpose: Effects bundle; spectre-dsp engines wrapped as graph AudioNodes
 // Status: Implemented; delay, reverb, chorus, saturator, eq nodes.
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-// Node wrappers are pure safe Rust; the DSP lives in geist-dsp
+// Node wrappers are pure safe Rust; the DSP lives in spectre-dsp
 #![deny(unsafe_code)]
 
 pub mod chorus;

@@ -47,7 +47,7 @@ Notes: Preserved as historical planning context; living product authority is lin
 
 ## Phase 3 — DSP Primitives (Weeks 6–10)
 
-- `geist-dsp`: pure Rust, no FFI, no I/O — just math operating on `&mut [f32]` slices
+- `spectre-dsp`: pure Rust, no FFI, no I/O — just math operating on `&mut [f32]` slices
 - Implement per module, each independently testable and benchmarkable:
   - **Oscillators**: bandlimited saw/square/tri via PolyBLEP; wavetable engine with linear interp
   - **Filters**: state-variable filter (SVF) canonical implementation; Moog ladder approximation

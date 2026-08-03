@@ -57,7 +57,7 @@ Notes: Non-obvious context, design decisions
 1. Workspace and `spectre-core` primitives.
 2. `geist-graph` process graph and atomic graph swap.
 3. `geist-audio-backend` callback boundary.
-4. `geist-dsp` primitives and benchmarks.
+4. `spectre-dsp` primitives and benchmarks.
 5. CLAP host, then LV2 host.
 6. First-party plugins: synth, fx, modular utilities.
 7. Timeline, automation, modulation.
@@ -70,7 +70,7 @@ Notes: Non-obvious context, design decisions
 - Core IDs, ports, events, params, transport: load `geist-realtime-rust`.
 - Graph, topology, process list, channels: load `geist-graph-engine` and `geist-realtime-rust`.
 - Audio backends and callbacks: load `geist-audio-backend` and `geist-realtime-rust`.
-- DSP, synth, fx, modular utilities: load `geist-dsp-and-plugins` and `geist-realtime-rust`.
+- DSP, synth, fx, modular utilities: load `spectre-dsp-and-plugins` and `geist-realtime-rust`.
 - CLAP/LV2 hosting: load `geist-plugin-hosting` and `geist-realtime-rust`.
 - Timeline, automation, persistence: load `geist-project-timeline`.
 - UI work: load `geist-ui-workflow`.

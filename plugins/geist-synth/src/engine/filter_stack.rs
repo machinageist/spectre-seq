@@ -8,7 +8,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_dsp::prelude::{Svf, SvfMode};
+use spectre_dsp::prelude::{Svf, SvfMode};
 
 // How the two filters combine
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

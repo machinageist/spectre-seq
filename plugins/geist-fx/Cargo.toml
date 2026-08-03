@@ -1,7 +1,7 @@
 # ==============================================================================
 # File: plugins/geist-fx/Cargo.toml
 # Layer: effects plugin
-# Purpose: Effects bundle; geist-dsp engines wrapped as graph AudioNodes.
+# Purpose: Effects bundle; spectre-dsp engines wrapped as graph AudioNodes.
 # Status: Implemented incrementally; delay node first.
 # Contract: Keep comments terse, declarative, and synchronized with code.
 # ==============================================================================
@@ -12,6 +12,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-geist-dsp = { path = "../../crates/geist-dsp" }
+spectre-dsp = { path = "../../crates/spectre-dsp" }
 spectre-core = { path = "../../crates/spectre-core" }
 geist-graph = { path = "../../crates/geist-graph" }

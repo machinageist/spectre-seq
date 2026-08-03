@@ -1,0 +1,38 @@
+# ==============================================================================
+# File: crates/spectre-dsp/Cargo.toml
+# Layer: DSP primitives
+# Purpose: Pure DSP crate; no FFI, no I/O, no allocation in the hot path.
+# Status: Implemented incrementally; math primitives first.
+# Contract: Keep comments terse, declarative, and synchronized with code.
+# ==============================================================================
+
+[package]
+name = "spectre-dsp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# FFT for convolution reverb; pure Rust, isolates its own unsafe SIMD internally
+rustfft = "6"
+
+[dev-dependencies]
+criterion = "0.8"
+
+# Disable the libtest bench harness so criterion can own the CLI args
+[lib]
+bench = false
+
+[[bench]]
+name = "osc_bench"
+path = "src/benches/osc_bench.rs"
+harness = false
+
+[[bench]]
+name = "filter_bench"
+path = "src/benches/filter_bench.rs"
+harness = false
+
+[[bench]]
+name = "reverb_bench"
+path = "src/benches/reverb_bench.rs"
+harness = false

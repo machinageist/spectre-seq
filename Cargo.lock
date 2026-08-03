@@ -1545,20 +1545,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "geist-dsp"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "rustfft",
-]
-
-[[package]]
 name = "geist-fx"
 version = "0.1.0"
 dependencies = [
- "geist-dsp",
  "geist-graph",
  "spectre-core",
+ "spectre-dsp",
 ]
 
 [[package]]
@@ -1597,9 +1589,9 @@ dependencies = [
 name = "geist-synth"
 version = "0.1.0"
 dependencies = [
- "geist-dsp",
  "geist-graph",
  "spectre-core",
+ "spectre-dsp",
 ]
 
 [[package]]
@@ -3604,6 +3596,14 @@ dependencies = [
 [[package]]
 name = "spectre-core"
 version = "0.1.0"
+
+[[package]]
+name = "spectre-dsp"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "rustfft",
+]
 
 [[package]]
 name = "spirv"

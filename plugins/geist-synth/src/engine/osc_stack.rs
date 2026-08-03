@@ -10,7 +10,7 @@
 
 use core::f32::consts::TAU;
 
-use geist_dsp::prelude::{cents_to_ratio, lerp, midi_to_hz, Wavetable, WavetableOsc};
+use spectre_dsp::prelude::{cents_to_ratio, lerp, midi_to_hz, Wavetable, WavetableOsc};
 
 // Largest unison voice count per oscillator
 const MAX_UNISON: usize = 7;

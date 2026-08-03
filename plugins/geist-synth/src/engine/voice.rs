@@ -8,7 +8,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_dsp::prelude::{Adsr, SvfMode};
+use spectre_dsp::prelude::{Adsr, SvfMode};
 
 use crate::engine::filter_stack::FilterStack;
 use crate::engine::osc_stack::OscStack;

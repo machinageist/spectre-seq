@@ -84,7 +84,7 @@ geistdaw/
 │   │       └── tests/
 │   │           └── roundtrip_test.rs   # latency + xrun validation
 │   │
-│   ├── geist-dsp/                      # pure DSP; no FFI, no I/O, no allocations in hot path
+│   ├── spectre-dsp/                      # pure DSP; no FFI, no I/O, no allocations in hot path
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs

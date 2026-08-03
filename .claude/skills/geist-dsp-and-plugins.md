@@ -1,13 +1,13 @@
 ---
-name: geist-dsp-and-plugins
-description: "Load when implementing or reviewing `geist-dsp`, first-party synth/fx/modular plugins, oscillator/filter/envelope/LFO/effect engines, parameter definitions, voice allocation, or DSP benchmarks."
+name: spectre-dsp-and-plugins
+description: "Load when implementing or reviewing `spectre-dsp`, first-party synth/fx/modular plugins, oscillator/filter/envelope/LFO/effect engines, parameter definitions, voice allocation, or DSP benchmarks."
 ---
 
 <!--
 Author: Jeff
 Date: 2026-05-27
 Description: DSP and plugin suite implementation guide
-Notes: Use for geist-dsp, geist-synth, geist-fx, and geist-modular
+Notes: Use for spectre-dsp, geist-synth, geist-fx, and geist-modular
 -->
 
 # Geist DSP And Plugins

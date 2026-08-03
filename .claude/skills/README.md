@@ -15,7 +15,7 @@ Load `geist-daw-working-context` first for all repo work.
 - `geist-realtime-rust`: realtime audio Rust safety and comment rules.
 - `geist-graph-engine`: graph topology, routing, process-list compilation, atomic swap.
 - `geist-audio-backend`: platform audio I/O and callback boundary.
-- `geist-dsp-and-plugins`: pure DSP and first-party plugin suite.
+- `spectre-dsp-and-plugins`: pure DSP and first-party plugin suite.
 - `geist-plugin-hosting`: CLAP/LV2 host and FFI boundaries.
 - `geist-ui-workflow`: UI state, renderer, views, widgets, command flow.
 - `geist-project-timeline`: timeline, automation, modulation, persistence.

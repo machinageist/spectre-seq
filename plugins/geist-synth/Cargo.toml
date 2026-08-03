@@ -12,6 +12,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-geist-dsp = { path = "../../crates/geist-dsp" }
+spectre-dsp = { path = "../../crates/spectre-dsp" }
 spectre-core = { path = "../../crates/spectre-core" }
 geist-graph = { path = "../../crates/geist-graph" }
