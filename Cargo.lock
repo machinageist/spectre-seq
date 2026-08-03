@@ -1550,6 +1550,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "geist-document"
+version = "0.1.0"
+dependencies = [
+ "geist-core",
+]
+
+[[package]]
 name = "geist-dsp"
 version = "0.1.0"
 dependencies = [
@@ -1612,6 +1619,7 @@ name = "geist-timeline"
 version = "0.1.0"
 dependencies = [
  "geist-core",
+ "geist-document",
 ]
 
 [[package]]

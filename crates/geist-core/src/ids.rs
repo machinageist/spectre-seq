@@ -64,6 +64,22 @@ define_id!(ParamId);
 define_nonzero_id!(ClipId);
 // Identifies one canonical arrangement track
 define_nonzero_id!(TrackId);
+// Identifies one managed media asset independent of vector position
+define_nonzero_id!(AssetId);
+// Identifies one launcher scene row
+define_nonzero_id!(SceneId);
+// Identifies one durable device instance independent of compiled graph handles
+define_nonzero_id!(DeviceId);
+// Identifies one durable parameter within its owning device
+define_nonzero_id!(ParamKey);
+// Identifies one durable signal route between devices
+define_nonzero_id!(RouteId);
+// Identifies one MIDI note across edits and per-note expression
+define_nonzero_id!(NoteId);
+// Identifies one controller mapping
+define_nonzero_id!(MappingId);
+// Identifies one durable automation destination
+define_nonzero_id!(AutomationTargetId);
 // Identifies a top-level project
 define_id!(ProjectId);
 
