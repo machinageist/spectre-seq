@@ -38,7 +38,7 @@ Two facts changed the calculus:
   philosophy. The realtime hot path stays first-party IP rather than delegated to a
   higher-level hosting crate.
 - Each loaded plugin instance is a `VstPluginNode` implementing the existing
-  `geist-graph::AudioNode`, slotting into the process graph like any other node.
+  `spectre-graph::AudioNode`, slotting into the process graph like any other node.
 
 ## Consequences
 

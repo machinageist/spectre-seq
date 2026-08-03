@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/swap.rs
+// File: crates/spectre-graph/src/swap.rs
 // Layer: audio graph
 // Purpose: lock-free executor handoff between the app and audio threads
 // Status: Implemented; SPSC handoff. The executor is mutable, so an rtrb handoff

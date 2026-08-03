@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/nodes/mixer.rs
+// File: crates/spectre-graph/src/nodes/mixer.rs
 // Layer: audio graph
 // Purpose: n-input summing node
 // Status: Implemented.

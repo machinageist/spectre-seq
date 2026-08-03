@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/edge.rs
+// File: crates/spectre-graph/src/edge.rs
 // Layer: audio graph
 // Purpose: Edge { src: PortId, dst: PortId }, port specifications
 // Status: Implemented.

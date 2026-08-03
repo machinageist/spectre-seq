@@ -7,7 +7,7 @@ Notes: Filename keeps the superseded ArcSwap name because ADR numbers are stable
 
 # ADR 002 — rtrb SPSC executor handoff for graph swap
 
-- Status: **Accepted** (2026-08-01), recording behavior already implemented in `crates/geist-graph/src/swap.rs`
+- Status: **Accepted** (2026-08-01), recording behavior already implemented in `crates/spectre-graph/src/swap.rs`
 - Supersedes: `INITIAL_PLAN.md:29` (`Arc<ArcSwap<ProcessGraph>>`) and `PROPOSED_FILE_TREE.md:53` (`ArcSwap<ProcessList> double-buffer mechanism`)
 - Filename: `002-arcswap-graph-swap.md` is retained. ADR numbers and paths are stable, so the slug is now historical rather than descriptive. Read the title, not the filename.
 
@@ -17,7 +17,7 @@ The original plan compiled graphs on the app thread and handed them to the audio
 thread through `ArcSwap`. That plan predates the executor. It does not survive
 contact with the implemented one.
 
-`Executor` (`crates/geist-graph/src/process_list.rs:137`) is a mutable object,
+`Executor` (`crates/spectre-graph/src/process_list.rs:137`) is a mutable object,
 not immutable data. It owns:
 
 - `nodes: Vec<Box<dyn AudioNode>>` — every node's internal DSP state;
@@ -25,7 +25,7 @@ not immutable data. It owns:
 - `input_scratch: Vec<f32>` — the per-node input gather area.
 
 `Executor::process_block` takes `&mut self` and writes all three every block.
-`AudioNode::process` likewise takes `&mut self` (`crates/geist-graph/src/node.rs:17`).
+`AudioNode::process` likewise takes `&mut self` (`crates/spectre-graph/src/node.rs:17`).
 
 ArcSwap only lends shared references. `ArcSwap<Executor>::load()` yields a guard
 that derefs to `&Executor`, never `&mut Executor`. `Arc` grants unique access
@@ -48,7 +48,7 @@ argument is reached.
 ## Decision
 
 Graph publication is a **transfer of ownership across two lock-free SPSC rings**,
-implemented in `crates/geist-graph/src/swap.rs`:
+implemented in `crates/spectre-graph/src/swap.rs`:
 
 - `graph_swap(initial: Option<Executor>)` builds a `GraphPublisher` (app thread)
   and an `ActiveGraph` (audio thread) sharing two `rtrb` rings of
@@ -108,18 +108,18 @@ safe. It never degrades to a deallocation on the callback.
 - **Swaps are block-aligned.** Adoption happens between blocks, so a graph change
   never splits a block. Node state does not carry across a swap; the new
   executor's nodes start from their own prepared state.
-- **No `unsafe`.** `geist-graph` stays `#![deny(unsafe_code)]`.
+- **No `unsafe`.** `spectre-graph` stays `#![deny(unsafe_code)]`.
 
 ## Current wiring status
 
 This mechanism is implemented and tested, but it is **not on the running audio
 path**. `graph_swap` has exactly two consumers today:
 
-- `crates/geist-graph/src/swap.rs:107-136` — publish/adopt/reclaim unit tests;
-- `crates/geist-graph/benches/graph_bench.rs:53` — the `publish_and_swap_128` bench.
+- `crates/spectre-graph/src/swap.rs:107-136` — publish/adopt/reclaim unit tests;
+- `crates/spectre-graph/benches/graph_bench.rs:53` — the `publish_and_swap_128` bench.
 
 The shipping engine does not use it. `app/geist-daw/src/engine.rs` imports only
-`geist_graph::node::AudioNode` (line 18) and runs a hand-wired fixed three-track
+`spectre_graph::node::AudioNode` (line 18) and runs a hand-wired fixed three-track
 path; it never builds a `Graph`, calls `compile`, or holds an `Executor`. See
 `docs/architecture.md` for that gap in full.
 

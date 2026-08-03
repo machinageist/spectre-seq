@@ -13,4 +13,4 @@ edition = "2021"
 
 [dependencies]
 spectre-core = { path = "../../crates/spectre-core" }
-geist-graph = { path = "../../crates/geist-graph" }
+spectre-graph = { path = "../../crates/spectre-graph" }

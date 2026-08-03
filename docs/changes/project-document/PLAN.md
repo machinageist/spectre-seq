@@ -113,7 +113,7 @@ Provisional drag feedback stays disposable local state; pointer release submits 
 
 **Un-gated 2026-08-03.** The render-generation content boundary is settled by `docs/changes/typed-realtime-graph/SPEC.md`, accepted the same day. A generation carries a `RenderPlan`, its typed per-domain arenas, a sorted route index, and plan latency — **but not device instances**, which live in an audio-thread-owned `DeviceTable` (decision 8, ADR 005). Adoption gains one precondition: a generation declares `requires_control_sequence` and is adopted only once the audio thread has applied it.
 
-Reuse `crates/geist-graph/src/swap.rs` rather than inventing a second mechanism; it already refuses to drop on the callback. This slice is the same boundary as that plan's slice T2 and should be reviewed jointly with it.
+Reuse `crates/spectre-graph/src/swap.rs` rather than inventing a second mechanism; it already refuses to drop on the callback. This slice is the same boundary as that plan's slice T2 and should be reviewed jointly with it.
 
 Covers acceptance criteria 8, 9, and 10.
 

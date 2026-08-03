@@ -49,7 +49,7 @@ geistdaw/
 │   │       ├── identity.rs             # IdSequence, IdentityAllocator; checked monotonic allocation
 │   │       └── arrangement.rs          # Arrangement, ClipEntity, ArrangementTrack, ClipLocation
 │   │
-│   ├── geist-graph/                    # audio process graph; depends on spectre-core
+│   ├── spectre-graph/                    # audio process graph; depends on spectre-core
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs

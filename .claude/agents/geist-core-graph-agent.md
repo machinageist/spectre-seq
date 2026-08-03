@@ -1,6 +1,6 @@
 ---
 name: spectre-core-graph-agent
-description: "Implements and reviews spectre-core and geist-graph slices: IDs, ports, events, params, transport snapshots, graph topology, routing, process lists, and graph swap."
+description: "Implements and reviews spectre-core and spectre-graph slices: IDs, ports, events, params, transport snapshots, graph topology, routing, process lists, and graph swap."
 tools: Read, Write, Edit, Bash
 ---
 
@@ -21,7 +21,7 @@ Build the core vocabulary and graph engine without leaking app-thread mutation i
 
 - `.claude/skills/geist-daw-working-context.md`
 - `.claude/skills/geist-realtime-rust.md`
-- `.claude/skills/geist-graph-engine.md`
+- `.claude/skills/spectre-graph-engine.md`
 - `.claude/skills/geist-validation-gates.md`
 
 # Operating Rules

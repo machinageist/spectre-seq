@@ -10,7 +10,7 @@
 
 use spectre_core::config::AudioConfig;
 use spectre_core::context::ProcessContext;
-use geist_graph::node::AudioNode;
+use spectre_graph::node::AudioNode;
 
 use crate::eq::engine::ParametricEq;
 use crate::io::copy_input_to_output;

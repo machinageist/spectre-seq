@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/benches/graph_bench.rs
+// File: crates/spectre-graph/benches/graph_bench.rs
 // Layer: audio graph
 // Purpose: app-thread compile and swap timing for a 128-node graph
 // Status: Implemented; validates the under-1ms compile + swap target.
@@ -12,7 +12,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
 use spectre_core::config::AudioConfig;
 use spectre_core::port::PortType;
-use geist_graph::prelude::*;
+use spectre_graph::prelude::*;
 
 // Number of nodes the plan targets sorting and swapping within one millisecond
 const CHAIN_LEN: usize = 128;

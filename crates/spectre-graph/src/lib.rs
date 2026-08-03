@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/lib.rs
+// File: crates/spectre-graph/src/lib.rs
 // Layer: audio graph
 // Purpose: Public entrypoint for the audio process graph
 // Status: Implemented; graph model, topology, compilation, executor, swap, channels.

@@ -22,36 +22,36 @@ One checkpoint remains open and it blocks T6a, not the milestone: how control-ra
 
 - Product and architecture contract: `SPEC.md`, accepted.
 - The publication protocol half is `docs/changes/project-document/SPEC.md`; T2 must be reviewed jointly with its slice D5.
-- The durable graph model belongs to `geist_document::graph` (decision 17). `geist-graph` is compile-and-execute only. Do not add durable editing state to `geist-graph` in any slice.
-- `crates/geist-graph/src/swap.rs` is reused, not replaced. It already refuses to drop on the callback.
+- The durable graph model belongs to `geist_document::graph` (decision 17). `spectre-graph` is compile-and-execute only. Do not add durable editing state to `spectre-graph` in any slice.
+- `crates/spectre-graph/src/swap.rs` is reused, not replaced. It already refuses to drop on the callback.
 - Every slice keeps the app runnable and `#![deny(unsafe_code)]` intact.
 
 ## Slice T0a — Correct the stale feedback comments
 
-`crates/geist-graph/src/nodes/delay_node.rs:4` and `:16` claim `DelayNode` is auto-inserted by topology compilation. Nothing inserts it. `crates/geist-graph/src/process_list.rs:5` claims the file implements "feedback routing" without saying the routing is an implicit reordering.
+`crates/spectre-graph/src/nodes/delay_node.rs:4` and `:16` claim `DelayNode` is auto-inserted by topology compilation. Nothing inserts it. `crates/spectre-graph/src/process_list.rs:5` claims the file implements "feedback routing" without saying the routing is an implicit reordering.
 
 Comments only, no behavior change.
 
-Verification: `cargo test -p geist-graph`; `git diff` shows no changed line outside a comment.
+Verification: `cargo test -p spectre-graph`; `git diff` shows no changed line outside a comment.
 
 ## Slice T0b — Characterize current behavior before changing it
 
-The three test files under `crates/geist-graph/src/tests/` are pseudocode scaffolds with zero tests. Pin what the engine does today so the rewrite's diffs are legible:
+The three test files under `crates/spectre-graph/src/tests/` are pseudocode scaffolds with zero tests. Pin what the engine does today so the rewrite's diffs are legible:
 
 - cycle handling as implemented, including that `compile` never fails on a cycle;
-- fan-in rejection at `crates/geist-graph/src/graph.rs:106`;
+- fan-in rejection at `crates/spectre-graph/src/graph.rs:106`;
 - buffer assignment order and the contiguous-output-run invariant;
 - swap publish, adopt, and reclaim under repeated publication.
 
 These tests are expected to be inverted or deleted by later slices. Their value is proving the rewrite changed exactly what it intended to change.
 
-Verification: `cargo test -p geist-graph`; `cargo check --workspace`.
+Verification: `cargo test -p spectre-graph`; `cargo check --workspace`.
 
 ## Slice T1 — Descriptors and validation
 
 `spectre-core` only. `SignalDomain` (six variants; `Meter` is not among them), declared `SignalRate`, `BusLayout` with `Declared` parsed and compiler-rejected, `LaneSpec`, `FanInPolicy`, `EventCapacity`, and typed connection errors replacing `GeistError::Internal`. Normalized CV convention with the pitch-port octave relationship. `MAX_LANES = 32` lands here as a constant.
 
-The executor does not change; `geist-graph` is updated only enough to keep compiling.
+The executor does not change; `spectre-graph` is updated only enough to keep compiling.
 
 Verification: `cargo test -p spectre-core`; `cargo check --workspace`.
 
@@ -63,7 +63,7 @@ Review jointly with project-document slice D5; this is the slice where the two s
 
 Must prove: a graph edit that adds or removes an unrelated device leaves an existing device's filter state, delay line, and sounding voices intact.
 
-Verification: `cargo test -p geist-graph`; allocator guard under graph-swap stress; `cargo bench -p geist-graph`.
+Verification: `cargo test -p spectre-graph`; allocator guard under graph-swap stress; `cargo bench -p spectre-graph`.
 
 ## Slice T3 — Streams
 
@@ -71,7 +71,7 @@ Audio, CV, and gate arenas; control-rate buffers at `CONTROL_PERIOD_FRAMES = 8`;
 
 Must prove: the same project renders bit-identical output across processes and reloads, because contributor order is persisted rather than derived.
 
-Verification: `cargo test -p geist-graph`; bit-identity fixture across two processes.
+Verification: `cargo test -p spectre-graph`; bit-identity fixture across two processes.
 
 ## Slice T4 — Events
 
@@ -79,7 +79,7 @@ Note and MIDI arenas, per-route delivery, deterministic k-way merge, `NoteInstan
 
 Must prove: a note run saturated with note-ons still delivers every note-off, so overflow cannot produce a stuck note.
 
-Verification: `cargo test -p geist-graph`; `cargo test -p geist-synth`; overflow saturation test.
+Verification: `cargo test -p spectre-graph`; `cargo test -p geist-synth`; overflow saturation test.
 
 ## Slice T5 — Parameters
 
@@ -87,7 +87,7 @@ Verification: `cargo test -p geist-graph`; `cargo test -p geist-synth`; overflow
 
 Must prove: a control message sent before a swap is still applied to the right target after it.
 
-Verification: `cargo test -p geist-graph`; swap-during-control-traffic test.
+Verification: `cargo test -p spectre-graph`; swap-during-control-traffic test.
 
 ## Slice T5a — Single-track spike
 
@@ -99,9 +99,9 @@ Verification: `cargo run -p geist-daw -- --headless` produces audio through the 
 
 Feedback-break declaration, cycle rejection naming every participating node, `AudioFeedbackDelay` and `EventFeedbackDelay`, declared node latency, and compiler-inserted compensating delay with every insertion recorded in the plan. Inverts `feedback_cycle_compiles_with_one_block_delay` into a rejection test.
 
-This slice removes the silent one-block conversion at `crates/geist-graph/src/process_list.rs:54` and `crates/geist-graph/src/topology.rs:93,136`, and gives `topological_order` (`topology.rs:18`) its first real caller.
+This slice removes the silent one-block conversion at `crates/spectre-graph/src/process_list.rs:54` and `crates/spectre-graph/src/topology.rs:93,136`, and gives `topological_order` (`topology.rs:18`) its first real caller.
 
-Verification: `cargo test -p geist-graph`; the inverted feedback test; latency-report fixture.
+Verification: `cargo test -p spectre-graph`; the inverted feedback test; latency-report fixture.
 
 ## Slice T6a — Sub-block SCC scheduler
 
@@ -114,25 +114,25 @@ Scope once resolved: component detection, chunked iteration at the declared floo
 
 Must prove: a graph with no cycles produces identical output through both dispatch paths.
 
-Verification: `cargo test -p geist-graph`; dual-path equivalence test; `cargo bench -p geist-graph` with a large-SCC fixture.
+Verification: `cargo test -p spectre-graph`; dual-path equivalence test; `cargo bench -p spectre-graph` with a large-SCC fixture.
 
 ## Slice T7 — Buses
 
 Mono and stereo as first-class layouts; `MonoToStereo` defaulting to copy and `StereoToMono` defaulting to mean, both as adapter parameters; the `Declared` rejection path proven to round-trip through validation and persistence.
 
-Verification: `cargo test -p geist-graph`; layout round-trip fixture.
+Verification: `cargo test -p spectre-graph`; layout round-trip fixture.
 
 ## Slice T8 — Lanes
 
 Lane propagation and validation, lane-major layout at `MAX_LANES = 32`, and the `LaneSplit`, `LaneMerge`, `LaneReduce`, `LaneBroadcast` adapters. No implicit broadcast anywhere; the editor auto-inserts the adapter on an illegal drag.
 
-Verification: `cargo test -p geist-graph`; lane-resolution rejection tests.
+Verification: `cargo test -p spectre-graph`; lane-resolution rejection tests.
 
 ## Slice T9 — Meters and analysis
 
 Node-declared outlets, atomic and ring publication, reclaim. `Meter` is not a connectable domain, so this slice adds no edge type.
 
-Verification: `cargo test -p geist-graph`.
+Verification: `cargo test -p spectre-graph`.
 
 ## Slice T10 — Fixtures and gates
 
@@ -145,8 +145,8 @@ Verification: all fixtures green at both block sizes; allocator guard clean thro
 ## Standing verification for every slice
 
 - `cargo check -p <touched crate>` at minimum.
-- `cargo test -p spectre-core`, `cargo test -p geist-graph`, `cargo test --workspace`.
-- `cargo bench -p geist-graph` when the compiled plan or executor changes.
+- `cargo test -p spectre-core`, `cargo test -p spectre-graph`, `cargo test --workspace`.
+- `cargo bench -p spectre-graph` when the compiled plan or executor changes.
 - The debug allocator guard, once T2 lands, on every slice after it.
 - `git diff --check`.
 
@@ -161,6 +161,6 @@ Stop before a slice when:
 - the callback would allocate, deallocate, lock, or drop;
 - fan-in order would not be reproducible across a reload;
 - a bounded queue would saturate without a counter and an explicit reconciliation path;
-- durable graph editing state would land in `geist-graph` rather than `geist-document`;
+- durable graph editing state would land in `spectre-graph` rather than `geist-document`;
 - project-document Slice D5 has moved and this spec's protocol addition no longer composes with it;
 - independent review has unresolved findings.

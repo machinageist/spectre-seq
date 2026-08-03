@@ -12,7 +12,7 @@ Use the narrowest agent that owns the current slice.
 ## Agents
 
 - `geist-daw-orchestrator`: phase sequencing, task decomposition, final integration review.
-- `spectre-core-graph-agent`: `spectre-core` and `geist-graph` implementation/review.
+- `spectre-core-graph-agent`: `spectre-core` and `spectre-graph` implementation/review.
 - `geist-audio-dsp-agent`: audio backend, DSP, synth/fx/modular implementation/review.
 - `geist-plugin-host-agent`: CLAP/LV2 plugin host implementation/review.
 - `geist-ui-project-agent`: timeline, automation, persistence, UI implementation/review.

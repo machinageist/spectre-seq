@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/nodes/delay_node.rs
+// File: crates/spectre-graph/src/nodes/delay_node.rs
 // Layer: audio graph
 // Purpose: auto-inserted one-block delay for feedback loops
 // Status: Implemented.

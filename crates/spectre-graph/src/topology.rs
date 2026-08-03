@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/topology.rs
+// File: crates/spectre-graph/src/topology.rs
 // Layer: audio graph
 // Purpose: topological sort, cycle detection, and feedback-aware scheduling
 // Status: Implemented; feedback edges become a one-block delay during compilation.

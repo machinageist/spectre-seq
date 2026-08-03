@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/nodes/monitor.rs
+// File: crates/spectre-graph/src/nodes/monitor.rs
 // Layer: audio graph
 // Purpose: metering node; publishes latest block peak/RMS to the UI
 // Status: Implemented; atomic latest-value cell. Sample-stream rings land with channels.

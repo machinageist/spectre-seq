@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/graph.rs
+// File: crates/spectre-graph/src/graph.rs
 // Layer: audio graph
 // Purpose: Graph struct: nodes, edges, port registry
 // Status: Implemented.

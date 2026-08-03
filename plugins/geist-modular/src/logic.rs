@@ -9,7 +9,7 @@
 // =============================================================================
 
 use spectre_core::context::ProcessContext;
-use geist_graph::node::AudioNode;
+use spectre_graph::node::AudioNode;
 
 use crate::util::{
     gate_level, is_high, map_per_channel, process_mono_ch0, reduce_gate_into_ch0, GATE_HIGH,

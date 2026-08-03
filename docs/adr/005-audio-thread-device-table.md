@@ -16,7 +16,7 @@ Notes: Decision 8 of docs/changes/typed-realtime-graph/SPEC.md, called there the
 
 ADR 002 settled *how* a compiled graph reaches the audio thread: an rtrb SPSC ownership handoff, because `Executor` is a mutable object and `ArcSwap` only lends shared references. It did not settle *what* crosses.
 
-Today the whole executor crosses, node instances included. `Executor::new` (`crates/geist-graph/src/process_list.rs:150`) takes node instances out of the graph by move. So recompiling means reconstructing every node.
+Today the whole executor crosses, node instances included. `Executor::new` (`crates/spectre-graph/src/process_list.rs:150`) takes node instances out of the graph by move. So recompiling means reconstructing every node.
 
 That is the defect. A graph edit today discards:
 
@@ -69,6 +69,6 @@ Removal reverses: publish a plan that no longer references the slot, then send `
 
 ## Current wiring status
 
-Not implemented. Nothing in the running app touches the compiled graph at all — `app/geist-daw/src/engine.rs` imports only `geist_graph::node::AudioNode` and runs a hand-wired fixed three-track chain. See `docs/architecture.md`.
+Not implemented. Nothing in the running app touches the compiled graph at all — `app/geist-daw/src/engine.rs` imports only `spectre_graph::node::AudioNode` and runs a hand-wired fixed three-track chain. See `docs/architecture.md`.
 
 Slice T2 implements this and is the first slice where the two specs meet. Its acceptance test is direct: add and remove an unrelated device, and assert an existing device's filter state, delay line, and sounding voices are untouched.

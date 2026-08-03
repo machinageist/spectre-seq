@@ -15,7 +15,7 @@ edition = "2021"
 # Shared primitives: AudioConfig and the realtime ProcessContext
 spectre-core = { path = "../spectre-core" }
 # AudioNode trait a hosted plugin slots into
-geist-graph = { path = "../geist-graph" }
+spectre-graph = { path = "../spectre-graph" }
 # Raw CLAP ABI bindings; all FFI types and the entry/factory contracts
 clap-sys = "0.5"
 # Open a .clap shared library and resolve its clap_entry symbol

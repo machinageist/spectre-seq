@@ -62,7 +62,7 @@ An aggregate may be an empty typed owner until its content sub-spec lands. An em
 **Amended 2026-08-03** by two accepted sub-specs:
 
 - `canonical-clip-content/SPEC.md` decision 1a splits clip content from clip placement. `clips` is a new sibling aggregate owning content; `arrangement` is re-scoped to placement only. The reason is the launcher: content welded to arrangement placement would force a parallel clip type with duplicated editors and persistence. It also makes cross-track move provably unable to touch content.
-- `typed-realtime-graph/SPEC.md` decision 17 confirms `graph` as the durable graph *editor*, with `geist-graph` reduced to compile-and-execute. There is one routing authority, not two.
+- `typed-realtime-graph/SPEC.md` decision 17 confirms `graph` as the durable graph *editor*, with `spectre-graph` reduced to compile-and-execute. There is one routing authority, not two.
 
 ### The named arrangement aggregate
 

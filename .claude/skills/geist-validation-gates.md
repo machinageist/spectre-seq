@@ -40,7 +40,7 @@ Minimum commands:
 
 Prefer focused tests:
 - `cargo test -p spectre-core` for primitives.
-- `cargo test -p geist-graph` for routing/topology.
+- `cargo test -p spectre-graph` for routing/topology.
 - `cargo test -p spectre-dsp` for DSP correctness.
 - `cargo test -p spectre-project` for persistence/migration.
 - `cargo test --workspace` before broad handoff.

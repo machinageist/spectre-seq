@@ -10,7 +10,7 @@
 
 use spectre_core::config::AudioConfig;
 use spectre_core::context::ProcessContext;
-use geist_graph::node::AudioNode;
+use spectre_graph::node::AudioNode;
 
 use crate::util::{is_high, process_mono_ch0, GATE_HIGH, GATE_LOW};
 

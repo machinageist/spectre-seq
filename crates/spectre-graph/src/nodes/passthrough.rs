@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/nodes/passthrough.rs
+// File: crates/spectre-graph/src/nodes/passthrough.rs
 // Layer: audio graph
 // Purpose: identity node; useful for testing + routing
 // Status: Implemented.

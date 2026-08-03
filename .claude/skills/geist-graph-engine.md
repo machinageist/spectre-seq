@@ -1,20 +1,20 @@
 ---
-name: geist-graph-engine
-description: "Load when implementing or reviewing `crates/geist-graph`, graph topology, edge validation, process-list compilation, feedback delay insertion, graph swapping, routing nodes, metering, or graph tests."
+name: spectre-graph-engine
+description: "Load when implementing or reviewing `crates/spectre-graph`, graph topology, edge validation, process-list compilation, feedback delay insertion, graph swapping, routing nodes, metering, or graph tests."
 ---
 
 <!--
 Author: Jeff
 Date: 2026-05-27
 Description: Graph engine implementation guide
-Notes: Use for geist-graph topology, routing, process lists, and lock-free swap work
+Notes: Use for spectre-graph topology, routing, process lists, and lock-free swap work
 -->
 
 # Geist Graph Engine
 
 ## Responsibility
 
-`geist-graph` converts mutable app-thread graph edits into an immutable process list for the audio thread.
+`spectre-graph` converts mutable app-thread graph edits into an immutable process list for the audio thread.
 
 ## Architecture rules
 

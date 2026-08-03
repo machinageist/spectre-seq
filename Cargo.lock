@@ -1511,11 +1511,11 @@ version = "0.1.0"
 dependencies = [
  "ciborium",
  "clap-sys",
- "geist-graph",
  "libloading",
  "raw-window-handle",
  "serde",
  "spectre-core",
+ "spectre-graph",
 ]
 
 [[package]]
@@ -1525,7 +1525,6 @@ dependencies = [
  "eframe",
  "geist-audio-backend",
  "geist-fx",
- "geist-graph",
  "geist-synth",
  "geist-timeline",
  "geist-ui",
@@ -1534,6 +1533,7 @@ dependencies = [
  "rtrb",
  "spectre-config",
  "spectre-core",
+ "spectre-graph",
  "spectre-project",
 ]
 
@@ -1548,35 +1548,26 @@ dependencies = [
 name = "geist-fx"
 version = "0.1.0"
 dependencies = [
- "geist-graph",
  "spectre-core",
  "spectre-dsp",
-]
-
-[[package]]
-name = "geist-graph"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "rtrb",
- "spectre-core",
+ "spectre-graph",
 ]
 
 [[package]]
 name = "geist-modular"
 version = "0.1.0"
 dependencies = [
- "geist-graph",
  "spectre-core",
+ "spectre-graph",
 ]
 
 [[package]]
 name = "geist-synth"
 version = "0.1.0"
 dependencies = [
- "geist-graph",
  "spectre-core",
  "spectre-dsp",
+ "spectre-graph",
 ]
 
 [[package]]
@@ -1600,9 +1591,9 @@ dependencies = [
 name = "geist-vst-host"
 version = "0.1.0"
 dependencies = [
- "geist-graph",
  "libloading",
  "spectre-core",
+ "spectre-graph",
  "vst3",
 ]
 
@@ -3588,6 +3579,15 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "rustfft",
+]
+
+[[package]]
+name = "spectre-graph"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "rtrb",
+ "spectre-core",
 ]
 
 [[package]]

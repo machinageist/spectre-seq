@@ -1,13 +1,13 @@
 // =============================================================================
-// File: crates/geist-graph/src/tests/routing_tests.rs
+// File: crates/spectre-graph/src/tests/topology_tests.rs
 // Layer: audio graph
-// Purpose: Define routing tests responsibilities and integration boundaries.
+// Purpose: Define topology tests responsibilities and integration boundaries.
 // Status: Pseudocode scaffold; implementation intentionally pending.
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
 // Pseudocode plan:
-// - Declare responsibility: Define routing tests responsibilities and integration boundaries.
+// - Declare responsibility: Define topology tests responsibilities and integration boundaries.
 // - Define public types before behavior.
 // - Separate real-time-safe paths from UI/app paths.
 // - Prefer explicit errors over implicit panics.

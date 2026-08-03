@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: crates/geist-graph/Cargo.toml
+# File: crates/spectre-graph/Cargo.toml
 # Layer: audio graph
 # Purpose: Define Cargo responsibilities and integration boundaries.
 # Status: Implemented; full graph engine (topology, compilation, executor, swap, channels).
@@ -7,7 +7,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-graph"
+name = "spectre-graph"
 version = "0.1.0"
 edition = "2021"
 

@@ -13,7 +13,7 @@ use spectre_core::config::AudioConfig;
 use spectre_core::context::ProcessContext;
 use spectre_core::events::NoteEventKind;
 use spectre_dsp::prelude::SvfMode;
-use geist_graph::node::AudioNode;
+use spectre_graph::node::AudioNode;
 
 use crate::engine::voice_pool::VoicePool;
 

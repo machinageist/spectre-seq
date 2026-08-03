@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/node.rs
+// File: crates/spectre-graph/src/node.rs
 // Layer: audio graph
 // Purpose: AudioNode trait definition
 // Status: Implemented.

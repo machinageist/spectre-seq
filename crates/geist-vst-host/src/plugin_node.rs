@@ -1,7 +1,7 @@
 // =============================================================================
 // File: crates/geist-vst-host/src/plugin_node.rs
 // Layer: plugin host
-// Purpose: Wrap a VstInstance as a geist-graph AudioNode
+// Purpose: Wrap a VstInstance as a spectre-graph AudioNode
 // Status: Implemented; compile-checked. Audio bridging validated on real plugins.
 // Notes: Bridges the channel-major ProcessContext to VST3 ProcessData. The
 //        per-channel pointer arrays are sized in prepare(), so process() builds
@@ -12,7 +12,7 @@
 
 use spectre_core::config::AudioConfig;
 use spectre_core::context::ProcessContext;
-use geist_graph::node::AudioNode;
+use spectre_graph::node::AudioNode;
 
 use vst3::Steinberg::int32;
 use vst3::Steinberg::Vst::{

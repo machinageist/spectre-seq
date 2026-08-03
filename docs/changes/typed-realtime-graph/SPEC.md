@@ -33,31 +33,31 @@ Port typing is metadata only.
 
 The executor routes everything through `f32` sample buffers.
 
-- `ProcessPlan` (`crates/geist-graph/src/process_list.rs:43`) carries `steps`, a flat `buffer_count`, and `frames`. There is one buffer pool and one buffer kind.
-- `Executor::pool` (`crates/geist-graph/src/process_list.rs:141`) is `Vec<f32>`, sliced into `frames`-sized channel regions. `ChannelSource` is `Buffer(usize) | Silent`.
+- `ProcessPlan` (`crates/spectre-graph/src/process_list.rs:43`) carries `steps`, a flat `buffer_count`, and `frames`. There is one buffer pool and one buffer kind.
+- `Executor::pool` (`crates/spectre-graph/src/process_list.rs:141`) is `Vec<f32>`, sliced into `frames`-sized channel regions. `ChannelSource` is `Buffer(usize) | Silent`.
 - A `Note` edge and an `Audio` edge compile to the same thing: a `frames`-length `f32` region. A note stream would be silently reinterpreted as samples.
 
 Notes and parameters are global broadcasts, not routes.
 
 - `ProcessContext` (`crates/spectre-core/src/context.rs:20`) holds `notes: &'a [NoteEvent]` and `params: &'a [ParameterChange]`.
-- `Executor::process_block` (`crates/geist-graph/src/process_list.rs:172`) takes one `notes` slice and one `params` slice and passes the identical borrow to every node in the plan (`:205`).
+- `Executor::process_block` (`crates/spectre-graph/src/process_list.rs:172`) takes one `notes` slice and one `params` slice and passes the identical borrow to every node in the plan (`:205`).
 - The only consumer is `plugins/geist-synth/src/daw_node.rs:120`, which iterates `ctx.notes()`. Two synths in one graph would both sound every note in the block. There is no addressing, no filtering, and no per-port delivery.
 - `ParameterChange` carries a bare `ParamId` (`crates/spectre-core/src/events.rs:126`) with no owning device, so parameter identity is globally flat.
 
 Cycles are converted to hidden one-block delay. **This contradicts the product vision.**
 
 - `PRODUCT_VISION.md` line 87: "Every feedback cycle contains an explicit visible delay or feedback element. The compiler does not silently convert arbitrary cycles into hidden one-block latency."
-- `compile` calls `schedule(graph)` and keeps only `.order`, discarding `.feedback` (`crates/geist-graph/src/process_list.rs:54`).
-- `schedule` (`crates/geist-graph/src/topology.rs:93`) is a DFS reverse postorder that never fails. Back-edges are detected at `crates/geist-graph/src/topology.rs:136` and simply skipped, which orders the consumer ahead of its producer. The consumer therefore reads the producer's pool buffer still holding the previous block. That is a one-block delay, applied automatically, with no node, no descriptor, no error, and no declared latency.
-- `topological_order` (`crates/geist-graph/src/topology.rs:18`) does return `Err(cycle)`, but no caller uses it. It is dead except in tests.
-- `crates/geist-graph/src/process_list.rs:280`, `feedback_cycle_compiles_with_one_block_delay`, pins this behavior as intended: "The cycle no longer fails; the back-edge is scheduled as a one-block delay."
+- `compile` calls `schedule(graph)` and keeps only `.order`, discarding `.feedback` (`crates/spectre-graph/src/process_list.rs:54`).
+- `schedule` (`crates/spectre-graph/src/topology.rs:93`) is a DFS reverse postorder that never fails. Back-edges are detected at `crates/spectre-graph/src/topology.rs:136` and simply skipped, which orders the consumer ahead of its producer. The consumer therefore reads the producer's pool buffer still holding the previous block. That is a one-block delay, applied automatically, with no node, no descriptor, no error, and no declared latency.
+- `topological_order` (`crates/spectre-graph/src/topology.rs:18`) does return `Err(cycle)`, but no caller uses it. It is dead except in tests.
+- `crates/spectre-graph/src/process_list.rs:280`, `feedback_cycle_compiles_with_one_block_delay`, pins this behavior as intended: "The cycle no longer fails; the back-edge is scheduled as a one-block delay."
 - The delay is invisible in the compiled plan. `ProcessPlan` records nothing about which edges were deferred, so no UI, latency calculation, or persistence layer can see it.
-- **`DelayNode` is never inserted by anything.** `crates/geist-graph/src/nodes/delay_node.rs:4` claims "auto-inserted one-block delay for feedback loops" and `:16` claims "Topology compilation inserts this to break feedback cycles". Both comments are false; the only non-test references are module re-exports. The comment contract in `.claude/skills/geist-realtime-rust.md` requires comments to state actual behavior.
+- **`DelayNode` is never inserted by anything.** `crates/spectre-graph/src/nodes/delay_node.rs:4` claims "auto-inserted one-block delay for feedback loops" and `:16` claims "Topology compilation inserts this to break feedback cycles". Both comments are false; the only non-test references are module re-exports. The comment contract in `.claude/skills/geist-realtime-rust.md` requires comments to state actual behavior.
 
 Fan-in is rejected, not ordered.
 
-- `Graph::connect` (`crates/geist-graph/src/graph.rs:106`) rejects a second edge into an already-connected input with `GeistError::Internal("input port already connected")`. `Internal` is documented at `crates/spectre-core/src/errors.rs:32` as "indicates a bug", so a legal user action reports as an engine defect.
-- Independently, `compile` builds `feed: BTreeMap<PortId, PortId>` keyed on destination (`crates/geist-graph/src/process_list.rs:68`). If fan-in were ever permitted at the graph layer, the last-inserted edge would silently win. Deterministic fan-in requires changes in both places.
+- `Graph::connect` (`crates/spectre-graph/src/graph.rs:106`) rejects a second edge into an already-connected input with `GeistError::Internal("input port already connected")`. `Internal` is documented at `crates/spectre-core/src/errors.rs:32` as "indicates a bug", so a legal user action reports as an engine defect.
+- Independently, `compile` builds `feed: BTreeMap<PortId, PortId>` keyed on destination (`crates/spectre-graph/src/process_list.rs:68`). If fan-in were ever permitted at the graph layer, the last-inserted edge would silently win. Deterministic fan-in requires changes in both places.
 
 Channels are a bare count with no layout.
 
@@ -65,21 +65,21 @@ Channels are a bare count with no layout.
 
 Nothing declares latency or polyphony.
 
-- `AudioNode` (`crates/geist-graph/src/node.rs:15`) has `process`, `prepare`, `reset`. No latency report, no tail, no bus negotiation, no lane declaration.
+- `AudioNode` (`crates/spectre-graph/src/node.rs:15`) has `process`, `prepare`, `reset`. No latency report, no tail, no bus negotiation, no lane declaration.
 - Nothing in the plan or the graph models polyphonic lanes.
 
 The whole compiled path has no production consumer.
 
-- `Graph::add_node` is called only from unit tests and `crates/geist-graph/benches/graph_bench.rs`. The running application uses `SynthProcessor` (`app/geist-daw/src/engine.rs:575`), a fixed track array that bypasses the graph entirely. This is roadmap gap 12.
+- `Graph::add_node` is called only from unit tests and `crates/spectre-graph/benches/graph_bench.rs`. The running application uses `SynthProcessor` (`app/geist-daw/src/engine.rs:575`), a fixed track array that bypasses the graph entirely. This is roadmap gap 12.
 - Consequence for planning: rewriting the graph engine breaks no shipping behavior, and also delivers no user-visible behavior until Milestone 4 attaches the hybrid track to it.
 
 What is already correct and must be reused.
 
-- `crates/geist-graph/src/swap.rs` is the lock-free handoff **and** the reclaim path. `GraphPublisher::publish` (`crates/geist-graph/src/swap.rs:49`) is a non-blocking push; `ActiveGraph::poll_swap` (`crates/geist-graph/src/swap.rs:67`) refuses to adopt unless a retire slot is free, so the audio thread never drops; `GraphPublisher::reclaim` (`crates/geist-graph/src/swap.rs:54`) drops retired payloads on the app thread. This satisfies project-document invariant 3 today. Do not replace it.
-- `Executor::process_block` genuinely does not allocate: the pool and the input scratch are sized in `Executor::new` (`crates/geist-graph/src/process_list.rs:161`).
+- `crates/spectre-graph/src/swap.rs` is the lock-free handoff **and** the reclaim path. `GraphPublisher::publish` (`crates/spectre-graph/src/swap.rs:49`) is a non-blocking push; `ActiveGraph::poll_swap` (`crates/spectre-graph/src/swap.rs:67`) refuses to adopt unless a retire slot is free, so the audio thread never drops; `GraphPublisher::reclaim` (`crates/spectre-graph/src/swap.rs:54`) drops retired payloads on the app thread. This satisfies project-document invariant 3 today. Do not replace it.
+- `Executor::process_block` genuinely does not allocate: the pool and the input scratch are sized in `Executor::new` (`crates/spectre-graph/src/process_list.rs:161`).
 - `AtomicTransport` (`crates/spectre-core/src/transport.rs:114`) is a working seqlock with no allocation and no unsafe.
-- `MeterCell` (`crates/geist-graph/src/nodes/monitor.rs:20`) is a working audio-to-UI atomic publication cell.
-- `geist-graph` carries `#![deny(unsafe_code)]`. Every design below must hold without `unsafe`.
+- `MeterCell` (`crates/spectre-graph/src/nodes/monitor.rs:20`) is a working audio-to-UI atomic publication cell.
+- `spectre-graph` carries `#![deny(unsafe_code)]`. Every design below must hold without `unsafe`.
 
 ### What must be true instead
 
@@ -206,7 +206,7 @@ Arenas {
 
 Slot assignment rules, all resolved at compile time:
 
-- Every output port owns a contiguous ascending run in its arena. This is the existing `resolve_outputs` invariant (`crates/geist-graph/src/process_list.rs:119`) generalized per domain, and it is what lets the executor hand a node exactly one `&mut` slice per domain with no `unsafe`.
+- Every output port owns a contiguous ascending run in its arena. This is the existing `resolve_outputs` invariant (`crates/spectre-graph/src/process_list.rs:119`) generalized per domain, and it is what lets the executor hand a node exactly one `&mut` slice per domain with no `unsafe`.
 - Every node's output ports within one domain are themselves contiguous, so `ProcessContext` holds one mutable borrow per domain and sub-slices it by a per-port range table.
 - Unconnected inputs bind to a shared per-domain silent region that no node may write.
 - A node with no outputs in a domain gets an empty slice.
@@ -367,7 +367,7 @@ Per-voice modulation stays inside its lane domain. A global modulator reaching a
 Compilation:
 
 1. Build the node-level dependency graph, **excluding edges that terminate at a declared feedback-break input**.
-2. Topologically sort the remainder. This is `topological_order` (`crates/geist-graph/src/topology.rs:18`), which already returns `Err(cycle)` and is currently dead code.
+2. Topologically sort the remainder. This is `topological_order` (`crates/spectre-graph/src/topology.rs:18`), which already returns `Err(cycle)` and is currently dead code.
 3. Any remaining cycle is a compile error naming every participating node and the domain of the offending edges. The graph does not compile. The previously published generation stays live.
 4. A feedback-break node declares its domain and its delay. `AudioFeedbackDelay` declares delay in frames; `EventFeedbackDelay` declares delay in blocks. The delay is a parameter the user sees and sets.
 5. The plan records every break, its node, its domain, and its delay, so the UI can show where a loop closes and what it costs.
@@ -412,7 +412,7 @@ RenderGeneration {
 
 Device instances are **not** in the generation (decision 8). They live in an audio-thread-owned `DeviceTable` — a fixed-capacity `Vec<Option<Box<dyn AudioNode>>>` — and the plan addresses them by slot. This is the most consequential decision in the spec; ADR 005 records it and its consequences for `swap.rs`.
 
-The reason is state continuity. Under today's design, `Executor::new` (`crates/geist-graph/src/process_list.rs:150`) takes node instances out of the graph by move. Recompiling therefore means reconstructing every node, which discards filter state, delay lines, and sounding voices on every graph edit. A DAW cannot glitch every device when a user adds an effect.
+The reason is state continuity. Under today's design, `Executor::new` (`crates/spectre-graph/src/process_list.rs:150`) takes node instances out of the graph by move. Recompiling therefore means reconstructing every node, which discards filter state, delay lines, and sounding voices on every graph edit. A DAW cannot glitch every device when a user adds an effect.
 
 The two-step structural edit:
 
@@ -453,14 +453,14 @@ This is a specification task; no Rust was touched. These are the changes the spe
 2. `crates/spectre-core/src/signal.rs` — `SignalRate` stops being derived from the domain and becomes a declared field.
 3. `crates/spectre-core/src/context.rs` — the `notes` and `params` global slices are deleted and replaced by per-port accessors.
 4. `crates/spectre-core/src/events.rs` — `NoteEvent` gains `NoteInstanceId` and expression variants; `ParameterChange` gains `DeviceId`.
-5. `crates/spectre-core/src/errors.rs` — new typed connection and compilation errors; `Internal("input port already connected")` at `crates/geist-graph/src/graph.rs:107` is replaced by a real error.
-6. `crates/geist-graph/src/process_list.rs` — plan and executor rewritten around per-domain arenas, ordered fan-in, and a device table.
-7. `crates/geist-graph/src/topology.rs` — `schedule`'s automatic back-edge deferral is removed from the compile path; `topological_order` becomes the compiler's sort; feedback-break edges are excluded before the sort.
-8. `crates/geist-graph/src/nodes/delay_node.rs` — the false "auto-inserted" comments at lines 4 and 16 are corrected; the node becomes the user-placed `AudioFeedbackDelay`.
-9. `crates/geist-graph/src/process_list.rs:280` — the test `feedback_cycle_compiles_with_one_block_delay` is inverted into a rejection test.
-10. `crates/geist-graph/src/swap.rs` — payload gains `GenerationId` and `requires_control_sequence`; an acknowledgement ring is added. The mechanism is kept.
-11. `crates/geist-graph/src/node.rs` — descriptor-side latency, bus, lane, and meter-outlet declarations.
-12. `crates/geist-graph/src/tests/{cycle,routing,topology}_tests.rs` — currently pseudocode scaffolds; they become the real suites.
+5. `crates/spectre-core/src/errors.rs` — new typed connection and compilation errors; `Internal("input port already connected")` at `crates/spectre-graph/src/graph.rs:107` is replaced by a real error.
+6. `crates/spectre-graph/src/process_list.rs` — plan and executor rewritten around per-domain arenas, ordered fan-in, and a device table.
+7. `crates/spectre-graph/src/topology.rs` — `schedule`'s automatic back-edge deferral is removed from the compile path; `topological_order` becomes the compiler's sort; feedback-break edges are excluded before the sort.
+8. `crates/spectre-graph/src/nodes/delay_node.rs` — the false "auto-inserted" comments at lines 4 and 16 are corrected; the node becomes the user-placed `AudioFeedbackDelay`.
+9. `crates/spectre-graph/src/process_list.rs:280` — the test `feedback_cycle_compiles_with_one_block_delay` is inverted into a rejection test.
+10. `crates/spectre-graph/src/swap.rs` — payload gains `GenerationId` and `requires_control_sequence`; an acknowledgement ring is added. The mechanism is kept.
+11. `crates/spectre-graph/src/node.rs` — descriptor-side latency, bus, lane, and meter-outlet declarations.
+12. `crates/spectre-graph/src/tests/{cycle,routing,topology}_tests.rs` — currently pseudocode scaffolds; they become the real suites.
 13. `plugins/geist-synth/src/daw_node.rs:120` — reads its own note input port instead of the global slice.
 14. `docs/adr/002-arcswap-graph-swap.md` — still a scaffold; it should be rewritten to record the implemented rtrb handoff and the device-table decision.
 
@@ -685,7 +685,7 @@ Defaults: `Audio` and `Cv` sum; `Gate` takes the maximum; `Note` and `Midi` merg
 
 Two related boundary questions:
 
-- **Crate boundary.** Does `geist-graph` keep the mutable app-thread `Graph` editor, or does `geist_document::graph` become the editor — the Milestone 4 aggregate the project-document spec already names as owning devices, chains, routing, sends, and returns — with `geist-graph` reduced to compile-and-execute?
+- **Crate boundary.** Does `spectre-graph` keep the mutable app-thread `Graph` editor, or does `geist_document::graph` become the editor — the Milestone 4 aggregate the project-document spec already names as owning devices, chains, routing, sends, and returns — with `spectre-graph` reduced to compile-and-execute?
 - **Sequencing.** Milestone 3 delivers no user-visible behavior until Milestone 4 attaches the hybrid track, because `app::engine::SynthProcessor` bypasses the graph entirely. Is it acceptable to build ten slices of engine with no production consumer, or should a thin Milestone 4 spike land mid-sequence to prove the contract against real audio?
 
-**Accepted:** `geist-graph` becomes compile-and-execute only, with the durable graph model owned by `geist-document`, matching the aggregate table already accepted. And land the minimal T5a spike — one instrument, one effect, one meter, driven by the compiled graph — so the typed contract is proven against real audio before lanes, buses, and cycles are built on top of it. Ten slices validated only by unit tests is a large uncontrolled bet.
+**Accepted:** `spectre-graph` becomes compile-and-execute only, with the durable graph model owned by `geist-document`, matching the aggregate table already accepted. And land the minimal T5a spike — one instrument, one effect, one meter, driven by the compiled graph — so the typed contract is proven against real audio before lanes, buses, and cycles are built on top of it. Ten slices validated only by unit tests is a large uncontrolled bet.

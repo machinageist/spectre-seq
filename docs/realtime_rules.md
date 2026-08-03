@@ -106,7 +106,7 @@ Ownership moves; nothing is shared and nothing is refcounted on the callback.
   never constructs or drops the buffer.
 - **Capture** — the input ring drops its tail rather than blocking when full
   (`stream.rs:25`). A full capture ring loses samples; it never stalls the driver.
-- **Graph** — `crates/geist-graph/src/swap.rs` moves a compiled `Executor`,
+- **Graph** — `crates/spectre-graph/src/swap.rs` moves a compiled `Executor`,
   node state and buffer pool included, to the audio thread and moves the retired
   one back. See ADR 002.
 
@@ -162,10 +162,10 @@ that the rules are mechanically guaranteed.
    defect, not a tolerated design.
 3. **No realtime performance fixtures.** There is no reproducible measurement
    against the 48 kHz / 128-frame baseline or the 64-frame stress mode. The
-   criterion benches (`crates/geist-graph/benches/graph_bench.rs`) cover graph
+   criterion benches (`crates/spectre-graph/benches/graph_bench.rs`) cover graph
    compile and swap, not end-to-end callback headroom. Roadmap Milestone 3.
 4. **The compiled graph is not on the audio path.** `app/geist-daw/src/engine.rs`
-   imports only `geist_graph::node::AudioNode` and runs a hand-wired fixed
+   imports only `spectre_graph::node::AudioNode` and runs a hand-wired fixed
    three-track chain. The executor and swap are exercised only by their own tests
    and bench. Rules 1-8 apply to the hand-wired path today and to the compiled
    path when Milestone 3 wires it in.

@@ -1,7 +1,7 @@
 // =============================================================================
 // File: crates/geist-clap-host/src/plugin_node.rs
 // Layer: CLAP host
-// Purpose: Wrap a hosted CLAP plugin as a geist-graph AudioNode
+// Purpose: Wrap a hosted CLAP plugin as a spectre-graph AudioNode
 // Status: Implemented; compile-checked. Audio bridging validated on real plugins.
 // Notes: Bridges the channel-major ProcessContext to clap_process. The per-channel
 //        pointer arrays are sized in prepare(), so process() builds the audio
@@ -14,7 +14,7 @@
 
 use spectre_core::config::AudioConfig;
 use spectre_core::context::ProcessContext;
-use geist_graph::node::AudioNode;
+use spectre_graph::node::AudioNode;
 
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::process::clap_process;

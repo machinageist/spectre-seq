@@ -15,7 +15,7 @@ use geist_audio_backend::prelude::{BlockProcessor, CpalBackend, Stream};
 use spectre_core::context::ProcessContext;
 use spectre_core::events::NoteEvent;
 use spectre_core::transport::TransportSnapshot;
-use geist_graph::node::AudioNode;
+use spectre_graph::node::AudioNode;
 use geist_synth::prelude::SynthNode;
 use geist_timeline::prelude::Transport;
 

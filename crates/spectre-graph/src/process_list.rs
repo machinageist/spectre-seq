@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/process_list.rs
+// File: crates/spectre-graph/src/process_list.rs
 // Layer: audio graph
 // Purpose: routing-plan compilation and the realtime block executor
 // Status: Implemented; compilation, feedback routing, and the zero-alloc executor.

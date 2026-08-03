@@ -23,7 +23,7 @@ Notes: Preserved as historical planning context; living product authority is lin
 
 ## Phase 1 — Audio Graph Engine (Weeks 3–6)
 
-- Implement `geist-graph`: directed graph of `AudioNode` instances connected by typed port edges
+- Implement `spectre-graph`: directed graph of `AudioNode` instances connected by typed port edges
 - Topological sort on every patch change; result is a flat `Vec<ProcessStep>` — this is the only representation the audio thread sees
 - Feedback loops get automatic one-block delay; detect cycles, insert `DelayNode` transparently
 - All graph mutations happen on the app thread; result is atomically swapped via `Arc<ArcSwap<ProcessGraph>>` — audio thread never locks

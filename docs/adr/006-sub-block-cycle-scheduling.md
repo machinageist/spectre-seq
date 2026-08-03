@@ -14,7 +14,7 @@ Notes: Decision 10 of docs/changes/typed-realtime-graph/SPEC.md, taken against t
 
 ## Context
 
-The compiler today converts feedback cycles into hidden one-block delay, and does it silently. `compile` calls `schedule(graph)` and keeps only `.order`, discarding `.feedback` (`crates/geist-graph/src/process_list.rs:54`). `schedule` (`crates/geist-graph/src/topology.rs:93`) is a DFS reverse postorder that never fails; back-edges are detected at `topology.rs:136` and skipped, which orders the consumer ahead of its producer so it reads the previous block's buffer. There is no node, no descriptor, no error, and no declared latency. `topological_order` (`topology.rs:18`) does return `Err(cycle)`, but nothing calls it.
+The compiler today converts feedback cycles into hidden one-block delay, and does it silently. `compile` calls `schedule(graph)` and keeps only `.order`, discarding `.feedback` (`crates/spectre-graph/src/process_list.rs:54`). `schedule` (`crates/spectre-graph/src/topology.rs:93`) is a DFS reverse postorder that never fails; back-edges are detected at `topology.rs:136` and skipped, which orders the consumer ahead of its producer so it reads the previous block's buffer. There is no node, no descriptor, no error, and no declared latency. `topological_order` (`topology.rs:18`) does return `Err(cycle)`, but nothing calls it.
 
 `PRODUCT_VISION.md` line 87 forbids exactly this: "The compiler does not silently convert arbitrary cycles into hidden one-block latency."
 
@@ -56,6 +56,6 @@ This is the option the spec recommended against, on both timing and floor. It wa
 
 ## Current wiring status
 
-Not implemented, and the behavior it replaces is currently pinned as intended by a test: `crates/geist-graph/src/process_list.rs:280`, `feedback_cycle_compiles_with_one_block_delay` — "The cycle no longer fails; the back-edge is scheduled as a one-block delay." Slice T6 inverts that test into a rejection test; slice T6a adds the scheduler.
+Not implemented, and the behavior it replaces is currently pinned as intended by a test: `crates/spectre-graph/src/process_list.rs:280`, `feedback_cycle_compiles_with_one_block_delay` — "The cycle no longer fails; the back-edge is scheduled as a one-block delay." Slice T6 inverts that test into a rejection test; slice T6a adds the scheduler.
 
-`crates/geist-graph/src/nodes/delay_node.rs` claims at `:4` and `:16` that topology compilation auto-inserts it to break feedback cycles. Both comments are false — nothing inserts it. Slice T0a corrects them before any of this work begins.
+`crates/spectre-graph/src/nodes/delay_node.rs` claims at `:4` and `:16` that topology compilation auto-inserts it to break feedback cycles. Both comments are false — nothing inserts it. Slice T0a corrects them before any of this work begins.

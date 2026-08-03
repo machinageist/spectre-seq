@@ -29,7 +29,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | Crate | Role | State |
 | --- | --- | --- |
 | `spectre-core` | Shared primitives: `AudioConfig`, `ProcessContext`, IDs, ports, events, params, signal, transport, errors | Implemented; zero workspace dependencies |
-| `geist-graph` | Graph model, topology/scheduling, plan compilation, block executor, executor swap, built-in nodes | Implemented; not on the app's audio path (see below) |
+| `spectre-graph` | Graph model, topology/scheduling, plan compilation, block executor, executor swap, built-in nodes | Implemented; not on the app's audio path (see below) |
 | `spectre-dsp` | Oscillators, filters, envelopes, LFOs, fx primitives, FFT, math/SIMD helpers, benches | Implemented incrementally |
 | `geist-audio-backend` | Backend abstraction, `BlockBridge`, cpal backend, capture ring, xrun counter | cpal implemented; JACK and PipeWire are scaffolds |
 | `geist-timeline` | Transport, tempo map, playhead, arena clips/patterns, legacy `Timeline`, canonical `Arrangement`/`ClipEntity`, identity | Mixed; see "Competing arrangement authorities" |
@@ -77,19 +77,19 @@ spectre-project     (no workspace deps; serde/ciborium/toml/blake3)
 spectre-lv2-host    (no workspace deps)
 xtask             (no workspace deps)
 
-geist-graph          -> spectre-core
+spectre-graph          -> spectre-core
 geist-audio-backend  -> spectre-core
 geist-timeline       -> spectre-core
 geist-automation     -> spectre-core
 geist-ui             -> spectre-config
 
-geist-vst-host       -> spectre-core, geist-graph
-geist-clap-host      -> spectre-core, geist-graph
-geist-synth          -> spectre-core, geist-graph, spectre-dsp
-geist-fx             -> spectre-core, geist-graph, spectre-dsp
-geist-modular        -> spectre-core, geist-graph
+geist-vst-host       -> spectre-core, spectre-graph
+geist-clap-host      -> spectre-core, spectre-graph
+geist-synth          -> spectre-core, spectre-graph, spectre-dsp
+geist-fx             -> spectre-core, spectre-graph, spectre-dsp
+geist-modular        -> spectre-core, spectre-graph
 
-app/geist-daw        -> spectre-core, geist-graph, geist-audio-backend,
+app/geist-daw        -> spectre-core, spectre-graph, geist-audio-backend,
                         geist-synth, geist-fx, geist-timeline,
                         spectre-project, geist-ui, spectre-config
 ```
@@ -133,7 +133,7 @@ publishes atomics. The primitives carrying that boundary:
 
 - `rtrb` SPSC rings — `EngineCommand` (256), `AudioAsset` (64), scope samples
   (8192), input capture (`crates/geist-audio-backend/src/stream.rs`), and the
-  graph-swap pair in `crates/geist-graph/src/swap.rs`.
+  graph-swap pair in `crates/spectre-graph/src/swap.rs`.
 - Latest-value atomics — `LevelMeter` (`AtomicU32` bit-cast `f32`,
   `app/geist-daw/src/control.rs:114`), `BeatClock` (`AtomicU64` bit-cast `f64`,
   `app/geist-daw/src/control.rs:137`), `XrunCounter` (`AtomicU64`,
@@ -182,11 +182,11 @@ Everything in that path is hand-wired. There is no compiled graph in it.
 These are load-bearing gaps, not omissions from this document.
 
 1. **The compiled graph is not on the audio path.** `app/geist-daw/src/engine.rs`
-   imports exactly one item from `geist-graph` — `geist_graph::node::AudioNode`
+   imports exactly one item from `spectre-graph` — `spectre_graph::node::AudioNode`
    (line 18). It never constructs a `Graph`, never calls `compile`, never holds an
-   `Executor`, and never uses `graph_swap`. `geist-graph`'s topology, compilation,
+   `Executor`, and never uses `graph_swap`. `spectre-graph`'s topology, compilation,
    executor, and swap are exercised only by that crate's own tests and its bench
-   (`crates/geist-graph/benches/graph_bench.rs`). The running DAW and the graph
+   (`crates/spectre-graph/benches/graph_bench.rs`). The running DAW and the graph
    engine are, today, two separate systems.
 2. **The engine is a fixed three-track path.** `NUM_TRACKS: usize = 3`
    (`app/geist-daw/src/engine.rs:70`) with a fixed `TRACK_BASE_MIDI` array. Tracks
@@ -196,7 +196,7 @@ These are load-bearing gaps, not omissions from this document.
    (`crates/spectre-core/src/port.rs:60`) rejects direction, type, and channel-count
    mismatches at connect time. But the executor routes every edge through one flat
    `Vec<f32>` pool, and notes and parameter changes are **global slices handed to
-   every node** (`crates/geist-graph/src/process_list.rs:205-214`). There is no
+   every node** (`crates/spectre-graph/src/process_list.rs:205-214`). There is no
    per-port event routing, no control-rate buffer, no polyphonic lane, and no rate
    conversion. Typed multi-rate routing is roadmap Milestone 3.
 4. **Automation is not connected.** `geist-automation` implements curves, lanes,
@@ -266,13 +266,13 @@ decision the code contradicts today. None is a bug report; they are scheduled wo
   had no reader outside its own tests. Decision 1 makes rate a declared per-port
   property that the compiler validates and the executor acts on.
 - **The silent one-block cycle conversion becomes the explicit SCC path.**
-  `crates/geist-graph/src/process_list.rs:54` discards `.feedback`;
-  `crates/geist-graph/src/topology.rs:93` never fails and `:136` skips back-edges.
+  `crates/spectre-graph/src/process_list.rs:54` discards `.feedback`;
+  `crates/spectre-graph/src/topology.rs:93` never fails and `:136` skips back-edges.
   Slice T6 turns that into a rejection and gives `topological_order`
   (`topology.rs:18`) its first real caller; slice T6a adds the sub-block scheduler.
   See ADR 006.
 - **Device instances leave the executor.** `Executor::new`
-  (`crates/geist-graph/src/process_list.rs:150`) moves node instances out of the
+  (`crates/spectre-graph/src/process_list.rs:150`) moves node instances out of the
   graph, which is why a graph edit resets all DSP state. Decision 8 moves them to an
   audio-thread `DeviceTable`. See ADR 005.
 - **`ClipEntity.duration` becomes `ClipExtent`.** `crates/geist-document/src/arrangement.rs`
@@ -289,7 +289,7 @@ decision the code contradicts today. None is a bug report; they are scheduled wo
 
 - `cargo test --workspace` is the workspace gate.
 - `cargo check -p <crate>` is the minimum per-slice gate.
-- `crates/geist-graph/benches/graph_bench.rs` targets sub-millisecond compile and
+- `crates/spectre-graph/benches/graph_bench.rs` targets sub-millisecond compile and
   swap for a 128-node chain.
 - `crates/spectre-dsp/src/benches/` holds the DSP primitive benches.
 - Reproducible realtime performance fixtures around the 48 kHz / 128-frame baseline

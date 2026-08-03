@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/channel.rs
+// File: crates/spectre-graph/src/channel.rs
 // Layer: audio graph
 // Purpose: rtrb ring buffer for UI-to-audio parameter changes
 // Status: Implemented; metering uses the atomic MeterCell, not a ring.

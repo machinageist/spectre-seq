@@ -13,7 +13,7 @@ edition = "2021"
 
 [dependencies]
 spectre-core = { path = "../spectre-core" }
-geist-graph = { path = "../geist-graph" }
+spectre-graph = { path = "../spectre-graph" }
 # Raw VST3 COM bindings (MIT-licensed headers as of SDK 3.8.0)
 vst3 = "0.3"
 # Load the bundle's shared library and resolve the factory entry point

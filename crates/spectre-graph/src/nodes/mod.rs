@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-graph/src/nodes/mod.rs
+// File: crates/spectre-graph/src/nodes/mod.rs
 // Layer: audio graph
 // Purpose: Built-in graph nodes
 // Status: Implemented; passthrough, mixer, delay. Monitor lands with metering channel.
