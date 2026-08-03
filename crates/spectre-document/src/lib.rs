@@ -15,6 +15,8 @@
 #![deny(unsafe_code)]
 
 pub mod arrangement;
+pub mod command;
+pub mod document;
 pub mod identity;
 pub mod revision;
 
@@ -23,6 +25,8 @@ pub mod prelude {
     pub use crate::arrangement::{
         Arrangement, ArrangementError, ArrangementTrack, ClipEntity, ClipLocation, RemovedClip,
     };
+    pub use crate::command::Command;
+    pub use crate::document::{ProjectDocument, TransactionResult};
     pub use crate::identity::{ClipId, IdentityAllocator, TrackId};
     pub use crate::revision::{Aggregate, DocumentRevision, EffectSet};
 }
