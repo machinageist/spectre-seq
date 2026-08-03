@@ -1,11 +1,11 @@
 <!--
 Author: Jeff
 Date: 2026-07-31
-Description: Living product contract for Geist as a modern electronic-music production DAW.
+Description: Living product contract for Spectre as a modern electronic-music production DAW.
 Notes: Amend this contract only through explicit product decisions; implementation plans derive from it.
 -->
 
-# Geist Product Vision
+# Spectre Product Vision
 
 ## Status
 
@@ -13,7 +13,7 @@ This document is the authoritative product-direction contract. `INITIAL_PLAN.md`
 
 ## Product promise
 
-Geist is a modern, local-first electronic-music production environment in the Ableton Live and Bitwig Studio category. It combines:
+Spectre is a modern, local-first electronic-music production environment in the Ableton Live and Bitwig Studio category. It combines:
 
 - linear arrangement;
 - quantized clip and scene launching;
@@ -24,7 +24,7 @@ Geist is a modern, local-first electronic-music production environment in the Ab
 - a deeply modular typed signal system where devices can communicate without collapsing into an unsafe or incomprehensible free-for-all;
 - two flagship first-party instruments: a streamlined Serum/Phase Plant-like hybrid synthesizer and a VCV Rack-like modular instrument.
 
-Geist should be fast for ordinary production and progressively disclose its deeper graph. Users should not have to patch a graph to perform routine work, but the normal device chain must not be a separate processing truth from the advanced graph.
+Spectre should be fast for ordinary production and progressively disclose its deeper graph. Users should not have to patch a graph to perform routine work, but the normal device chain must not be a separate processing truth from the advanced graph.
 
 ## Primary production surfaces
 
@@ -72,7 +72,7 @@ Stable remote-control pages and macros exist at device, rack, track, and project
 
 ## Typed communication contract
 
-Geist distinguishes signal domains explicitly:
+Spectre distinguishes signal domains explicitly:
 
 - audio streams;
 - control voltage and modulation streams;
@@ -116,7 +116,7 @@ Loop take lanes and comping follow in a later milestone rather than blocking the
 
 ## Flagship hybrid synthesizer
 
-The streamlined flagship synthesizer is a distinct first-party instrument built from shared Geist DSP, parameter, modulation, preset, and UI primitives.
+The streamlined flagship synthesizer is a distinct first-party instrument built from shared Spectre DSP, parameter, modulation, preset, and UI primitives.
 
 Its architecture uses bounded add/reorder generator lanes rather than a fixed two-oscillator panel. Planned generator families include:
 
@@ -130,7 +130,7 @@ Generators feed multiple signal lanes. Each lane supports serial processing, lan
 
 ## Flagship modular instrument
 
-The modular flagship is a distinct VCV Rack-like instrument sharing DSP modules, parameter/modulation protocols, presets, and UI primitives with the rest of Geist.
+The modular flagship is a distinct VCV Rack-like instrument sharing DSP modules, parameter/modulation protocols, presets, and UI primitives with the rest of Spectre.
 
 It provides a true patchable instrument environment with typed audio, CV, gate, note, event, and parameter connections; explicit polyphonic-lane behavior; deterministic feedback policy; module discovery; patch persistence; macros; and reusable subpatches.
 
@@ -159,13 +159,13 @@ The MIDI-device suite is planned as graph-native note/event processing. Initial 
 
 ## External plugins
 
-Geist prioritizes one complete external plugin host before supporting several incomplete formats. VST3 is first under accepted ADR 001, including scanning, state, preset, automation, latency, note-expression/MPE, GUI embedding, missing-plugin preservation, diagnostics, and crash recovery. CLAP and other formats follow only after the VST3 host meets the same project and realtime contracts as first-party devices.
+Spectre prioritizes one complete external plugin host before supporting several incomplete formats. VST3 is first under accepted ADR 001, including scanning, state, preset, automation, latency, note-expression/MPE, GUI embedding, missing-plugin preservation, diagnostics, and crash recovery. CLAP and other formats follow only after the VST3 host meets the same project and realtime contracts as first-party devices.
 
 ## Project package and recovery
 
-A Geist project is a directory package containing the canonical manifest and managed subdirectories for recordings/media, renders/freezes, autosaves/backups, and disposable cache. External media may remain referenced without being rewritten. Collect All and Save imports external dependencies into managed storage using verified asset identity. Manual saves use atomic replacement; autosave and startup recovery never overwrite the last known-good manual save.
+A Spectre project is a directory package containing the canonical manifest and managed subdirectories for recordings/media, renders/freezes, autosaves/backups, and disposable cache. External media may remain referenced without being rewritten. Collect All and Save imports external dependencies into managed storage using verified asset identity. Manual saves use atomic replacement; autosave and startup recovery never overwrite the last known-good manual save.
 
-Before the first declared stable project format, prototype schemas may receive intentional breaking cleanup with explicit diagnostics and fixture-tested conversion where practical. Stable project format v1 begins the supported forward-migration contract. Loads never report success after silently discarding unknown or invalid durable state, and Geist never silently writes an older format.
+Before the first declared stable project format, prototype schemas may receive intentional breaking cleanup with explicit diagnostics and fixture-tested conversion where practical. Stable project format v1 begins the supported forward-migration contract. Loads never report success after silently discarding unknown or invalid durable state, and Spectre never silently writes an older format.
 
 ## Product invariants
 

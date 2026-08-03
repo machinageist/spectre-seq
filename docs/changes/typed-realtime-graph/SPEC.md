@@ -52,7 +52,7 @@ Cycles are converted to hidden one-block delay. **This contradicts the product v
 - `topological_order` (`crates/spectre-graph/src/topology.rs:18`) does return `Err(cycle)`, but no caller uses it. It is dead except in tests.
 - `crates/spectre-graph/src/process_list.rs:280`, `feedback_cycle_compiles_with_one_block_delay`, pins this behavior as intended: "The cycle no longer fails; the back-edge is scheduled as a one-block delay."
 - The delay is invisible in the compiled plan. `ProcessPlan` records nothing about which edges were deferred, so no UI, latency calculation, or persistence layer can see it.
-- **`DelayNode` is never inserted by anything.** `crates/spectre-graph/src/nodes/delay_node.rs:4` claims "auto-inserted one-block delay for feedback loops" and `:16` claims "Topology compilation inserts this to break feedback cycles". Both comments are false; the only non-test references are module re-exports. The comment contract in `.claude/skills/geist-realtime-rust.md` requires comments to state actual behavior.
+- **`DelayNode` is never inserted by anything.** `crates/spectre-graph/src/nodes/delay_node.rs:4` claims "auto-inserted one-block delay for feedback loops" and `:16` claims "Topology compilation inserts this to break feedback cycles". Both comments are false; the only non-test references are module re-exports. The comment contract in `.claude/skills/spectre-realtime-rust.md` requires comments to state actual behavior.
 
 Fan-in is rejected, not ordered.
 

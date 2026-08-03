@@ -13,7 +13,7 @@ Approved for implementation with 960 PPQ as the canonical arrangement timebase.
 
 ## Problem
 
-Geist currently has conflicting arrangement models:
+Spectre currently has conflicting arrangement models:
 
 - `spectre-timeline` stores clip and note placement in absolute samples.
 - `spectre-ui` and `StudioApp` store arrangement placement in floating-point beats.

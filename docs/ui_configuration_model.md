@@ -9,11 +9,11 @@ Notes: Captures creator-owned workflows as a product requirement before Phase 8 
 
 ## Creator-authored workflows
 
-Workflow profiles are how creators make Geist fit their own process instead of adapting to a single fixed DAW layout.
+Workflow profiles are how creators make Spectre fit their own process instead of adapting to a single fixed DAW layout.
 
 ## North star
 
-Geist should bring Linux modularity to audio production: creators can shape the working environment around their own habits without turning the DAW into a fragile script collection or a spreadsheet of preferences.
+Spectre should bring Linux modularity to audio production: creators can shape the working environment around their own habits without turning the DAW into a fragile script collection or a spreadsheet of preferences.
 
 The default UI is only one curated workflow. The product must also support user-authored workflow profiles that define how surfaces, commands, lenses, shortcuts, panels, templates, and add/search behavior fit together.
 

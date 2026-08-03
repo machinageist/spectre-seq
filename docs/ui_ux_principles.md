@@ -9,13 +9,13 @@ Notes: Establishes interaction direction before Phase 8 implementation.
 
 ## Product stance
 
-Geist is a sound-building environment, not a spreadsheet and not a skeuomorphic rack.
+Spectre is a sound-building environment, not a spreadsheet and not a skeuomorphic rack.
 
-The reference blend is VCV Rack's visible patch logic, Ableton's fast arrangement/session flow, Serum's readable sound-design controls, and Phase Plant's modular immediacy. Geist should borrow their clarity and speed without becoming a clone of any one product.
+The reference blend is VCV Rack's visible patch logic, Ableton's fast arrangement/session flow, Serum's readable sound-design controls, and Phase Plant's modular immediacy. Spectre should borrow their clarity and speed without becoming a clone of any one product.
 
 The interface should feel direct, legible, and instrument-like without copying physical hardware. It should expose the shape of the sound graph, the musical timeline, and the active controls in a way that rewards exploration without forcing menu diving.
 
-Geist should also bring Linux modularity to audio production. The default UI is a strong opinionated starting point, not a cage. Creators should be able to author workflow profiles in config files so the DAW can match a modular sound-design workflow, songwriting workflow, mixing workflow, performance workflow, or something personal without forking the app.
+Spectre should also bring Linux modularity to audio production. The default UI is a strong opinionated starting point, not a cage. Creators should be able to author workflow profiles in config files so the DAW can match a modular sound-design workflow, songwriting workflow, mixing workflow, performance workflow, or something personal without forking the app.
 
 ## Reference grammar
 
@@ -186,7 +186,7 @@ Avoid expensive animation that obscures audio state or competes with real-time w
 
 Workflow customization is a core product principle, not a cosmetic preference.
 
-Geist should let creators define their own working shape through versioned config files:
+Spectre should let creators define their own working shape through versioned config files:
 - startup lens,
 - lens order and visibility,
 - panel layout,
@@ -197,7 +197,7 @@ Geist should let creators define their own working shape through versioned confi
 - context shelf action order,
 - visual density for graph, meters, modulation, and clips.
 
-The default workflow must remain excellent with no config, but advanced users should be able to make Geist feel like their own modular audio workstation.
+The default workflow must remain excellent with no config, but advanced users should be able to make Spectre feel like their own modular audio workstation.
 
 Configuration must remain declarative and safe. It can bind and arrange typed commands; it cannot execute arbitrary code, bypass validation, or put work on the audio callback.
 

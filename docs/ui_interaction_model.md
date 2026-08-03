@@ -9,7 +9,7 @@ Notes: Translates the VCV Rack, Ableton, Serum, and Phase Plant reference blend 
 
 ## North star
 
-Geist should feel like a modular DAW where sound flow, musical time, and modulation are all visible parts of one instrument.
+Spectre should feel like a modular DAW where sound flow, musical time, and modulation are all visible parts of one instrument.
 
 Reference blend:
 - VCV Rack: visible signal relationships.
@@ -17,7 +17,7 @@ Reference blend:
 - Serum: readable parameter controls with modulation shown on the destination.
 - Phase Plant: modular sound building without forcing users into a pure patch-bay mindset.
 
-Creator workflow ownership is part of the north star. Geist should provide strong default lenses and also let users compose their own workflows through config files: Linux modularity applied to audio production, with safety rails for real-time audio and undoable project commands.
+Creator workflow ownership is part of the north star. Spectre should provide strong default lenses and also let users compose their own workflows through config files: Linux modularity applied to audio production, with safety rails for real-time audio and undoable project commands.
 
 ## Default screen layout
 

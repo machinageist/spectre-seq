@@ -1,11 +1,11 @@
 <!--
 Author: Jeff
 Date: 2026-07-31
-Description: Living dependency roadmap from the current Geist prototype to the product contract.
+Description: Living dependency roadmap from the current Spectre prototype to the product contract.
 Notes: Update this roadmap whenever an accepted product decision changes dependencies or scope.
 -->
 
-# Geist Product Roadmap
+# Spectre Product Roadmap
 
 ## Planning authority
 
@@ -192,7 +192,7 @@ Exit gate: a complete production and mix can be built with supported first-party
 - Replace the fixed prototype architecture with bounded add/reorder generator and signal lanes.
 - Add wavetable, sample/granular, virtual-analog, noise, and utility generators.
 - Add serial lane processing, parallel mixing, sends, cross-lane routing, per-voice/global modulation, macros, MPE, tuning, preset migration, and professional UI.
-- Reuse shared Geist DSP and device protocols rather than forking private infrastructure.
+- Reuse shared Spectre DSP and device protocols rather than forking private infrastructure.
 
 Exit gate: the instrument supports deep modern electronic sound design while remaining faster to operate than the free-form rack.
 

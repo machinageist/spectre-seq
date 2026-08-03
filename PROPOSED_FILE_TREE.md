@@ -1,5 +1,5 @@
 ```
-geistdaw/
+spectre-seq/
 ├── Cargo.toml                          # workspace root; members = all crates
 ├── Cargo.lock
 ├── rust-toolchain.toml                 # pin nightly for std::simd
@@ -287,7 +287,7 @@ geistdaw/
     ├── ui_interaction_model.md          # concrete UI lenses, selection behavior, and first prototype slice
     ├── ui_configuration_model.md        # configurable workflow profiles and safe UI config model
     ├── realtime_rules.md               # the audio thread contract; contributor law
-    ├── plugin_sdk.md                   # how to write a native geist node
+    ├── plugin_sdk.md                   # how to write a native spectre node
     ├── clap_hosting.md                 # CLAP host implementation notes
     └── adr/                            # architecture decision records
         ├── 001-clap-over-vst.md

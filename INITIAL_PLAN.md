@@ -1,11 +1,11 @@
 <!--
 Author: Jeff
 Date: 2026-07-31
-Description: Original implementation sequence for Geist's technical foundations.
+Description: Original implementation sequence for Spectre's technical foundations.
 Notes: Preserved as historical planning context; living product authority is linked below.
 -->
 
-# Geist Initial Plan
+# Spectre Initial Plan
 
 > **Planning status (2026-07-31):** This file preserves the original foundation plan. The living product contract and current dependency order are maintained in [`docs/product/PRODUCT_VISION.md`](docs/product/PRODUCT_VISION.md) and [`docs/product/ROADMAP.md`](docs/product/ROADMAP.md). Where phase labels or scope differ, the living product documents and repository implementation evidence govern new work.
 

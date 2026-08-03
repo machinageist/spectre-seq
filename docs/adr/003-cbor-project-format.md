@@ -48,7 +48,7 @@ implementation debt, not as precedent:
 
 ## Decision
 
-A Geist project is a **directory package**, not a single file.
+A Spectre project is a **directory package**, not a single file.
 
 - **Canonical manifest.** One manifest inside the package holds the project
   document. Everything else in the package is managed content the manifest
@@ -61,7 +61,7 @@ A Geist project is a **directory package**, not a single file.
   verified asset identity — size plus content hash, which the blake3 `AssetMap`
   already models.
 - **Versioned schema.** The manifest carries a schema version. A file newer than
-  the binary supports is rejected, never best-effort read. Geist never silently
+  the binary supports is rejected, never best-effort read. Spectre never silently
   writes an older format.
 - **Atomic candidate-then-replace load.** A load builds a complete candidate
   document and validates it — every identity domain, asset reference, clip, graph

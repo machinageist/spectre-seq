@@ -1,7 +1,7 @@
 <!--
 File: docs/plugin_sdk.md
 Layer: documentation
-Purpose: how to write a native geist node
+Purpose: how to write a native spectre node
 Status: Pseudocode scaffold; implementation intentionally pending.
 Contract: Keep comments terse, declarative, and synchronized with code.
 -->
@@ -9,7 +9,7 @@ Contract: Keep comments terse, declarative, and synchronized with code.
 # Plugin Sdk
 
 ## Pseudocode plan
-- Declare responsibility: how to write a native geist node
+- Declare responsibility: how to write a native spectre node
 - Define public types before behavior.
 - Separate real-time-safe paths from UI/app paths.
 - Prefer explicit errors over implicit panics.
