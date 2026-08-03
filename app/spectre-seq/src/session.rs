@@ -694,7 +694,8 @@ mod tests {
 
     #[test]
     fn session_round_trips_through_a_project_file() {
-        let path = std::env::temp_dir().join(format!("spectre-studio-{}.gproj", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("spectre-studio-{}.gproj", std::process::id()));
         let session = sample();
         save_to(&session, &path).unwrap();
         let loaded = load_from(&defaults(), &path).unwrap();
@@ -710,7 +711,8 @@ mod tests {
 
     #[test]
     fn audio_clip_is_packaged_beside_the_project() {
-        let root = std::env::temp_dir().join(format!("spectre-audio-project-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("spectre-audio-project-{}", std::process::id()));
         let source_dir = root.join("capture");
         let project_dir = root.join("project");
         std::fs::create_dir_all(&source_dir).unwrap();
@@ -745,7 +747,8 @@ mod tests {
 
     #[test]
     fn missing_audio_take_fails_save() {
-        let root = std::env::temp_dir().join(format!("spectre-missing-take-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("spectre-missing-take-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("song.gproj");
         let mut session = defaults();
@@ -765,7 +768,8 @@ mod tests {
 
     #[test]
     fn changed_audio_take_loads_as_offline() {
-        let root = std::env::temp_dir().join(format!("spectre-changed-take-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("spectre-changed-take-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let source = root.join("source.wav");
         let project_path = root.join("song.gproj");

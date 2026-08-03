@@ -35,7 +35,9 @@ impl AudioConfig {
         output_channels: u16,
     ) -> SpectreResult<Self> {
         if !(MIN_SAMPLE_RATE_HZ..=MAX_SAMPLE_RATE_HZ).contains(&sample_rate_hz) {
-            return Err(SpectreError::BadConfig("sample rate out of supported range"));
+            return Err(SpectreError::BadConfig(
+                "sample rate out of supported range",
+            ));
         }
         if !(MIN_BLOCK_FRAMES..=MAX_BLOCK_FRAMES).contains(&block_size_frames) {
             return Err(SpectreError::BadConfig("block size out of supported range"));

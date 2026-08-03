@@ -6,8 +6,8 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use spectre_core::events::ParameterChange;
 use rtrb::{Consumer, Producer, RingBuffer};
+use spectre_core::events::ParameterChange;
 
 // App-thread end of the parameter channel
 pub struct ParamProducer {

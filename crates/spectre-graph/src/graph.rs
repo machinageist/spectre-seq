@@ -227,7 +227,10 @@ pub(crate) mod tests {
         let mut g = Graph::new();
         let (_a, _a_in, a_out) = add_stereo_node(&mut g);
         let ghost = PortId::new(9_999);
-        assert_eq!(g.connect(a_out, ghost), Err(SpectreError::InvalidPort(ghost)));
+        assert_eq!(
+            g.connect(a_out, ghost),
+            Err(SpectreError::InvalidPort(ghost))
+        );
     }
 
     #[test]

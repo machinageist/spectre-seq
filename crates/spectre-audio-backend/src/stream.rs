@@ -8,8 +8,8 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use spectre_core::config::AudioConfig;
 use rtrb::{Consumer, Producer, RingBuffer};
+use spectre_core::config::AudioConfig;
 
 // Depth of the input capture ring in samples; sized to outpace the app drain
 pub const CAPTURE_RING_CAPACITY: usize = 1 << 16;

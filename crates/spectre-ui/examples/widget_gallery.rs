@@ -6,7 +6,7 @@
 //        state only; no engine, no project truth.
 
 use eframe::egui;
-use spectre_ui::theme::{self, SpectreTheme, SignalKind};
+use spectre_ui::theme::{self, SignalKind, SpectreTheme};
 use spectre_ui::widgets::{Fader, Knob, Meter};
 
 fn main() -> eframe::Result<()> {
