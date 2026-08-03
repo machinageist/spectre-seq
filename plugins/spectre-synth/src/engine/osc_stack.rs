@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-synth/src/engine/osc_stack.rs
+// File: plugins/spectre-synth/src/engine/osc_stack.rs
 // Layer: synth plugin
 // Purpose: 2× wavetable oscs with unison/detune
 // Status: Implemented; unison wavetable oscillator + two-osc stack with mix.

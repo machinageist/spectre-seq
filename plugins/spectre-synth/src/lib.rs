@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-synth/src/lib.rs
+// File: plugins/spectre-synth/src/lib.rs
 // Layer: synth plugin
 // Purpose: Flagship wavetable/subtractive synth crate root
 // Status: Implemented incrementally; engine modules land first.

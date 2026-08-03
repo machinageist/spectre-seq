@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-synth/src/engine/params.rs
+// File: plugins/spectre-synth/src/engine/params.rs
 // Layer: synth plugin
 // Purpose: all parameter definitions + ranges
 // Status: Pseudocode scaffold; implementation intentionally pending.

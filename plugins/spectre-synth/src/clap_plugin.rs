@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-synth/src/clap_plugin.rs
+// File: plugins/spectre-synth/src/clap_plugin.rs
 // Layer: synth plugin
 // Purpose: implements CLAP ABI for standalone use
 // Status: Pseudocode scaffold; implementation intentionally pending.

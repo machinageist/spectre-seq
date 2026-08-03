@@ -92,7 +92,7 @@ mod tests {
         let mut p = ProjectFile::new("round trip");
         p.graph.nodes.push(NodeEntry {
             id: 1,
-            kind: "geist-synth".into(),
+            kind: "spectre-synth".into(),
             params: vec![ParamValue { id: 7, value: 0.5 }],
             state_blob: vec![0xDE, 0xAD, 0xBE, 0xEF],
         });

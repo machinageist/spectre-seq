@@ -19,7 +19,7 @@ spectre-graph = { path = "../../crates/spectre-graph" }
 # cpal backend, block bridge, stream config
 spectre-audio-backend = { path = "../../crates/spectre-audio-backend" }
 # Flagship synth exposed as an AudioNode
-geist-synth = { path = "../../plugins/geist-synth" }
+spectre-synth = { path = "../../plugins/spectre-synth" }
 # Effects nodes for the post-synth device chain
 geist-fx = { path = "../../plugins/geist-fx" }
 # Transport and tempo for the DAW playhead

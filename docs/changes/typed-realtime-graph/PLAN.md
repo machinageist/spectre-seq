@@ -75,11 +75,11 @@ Verification: `cargo test -p spectre-graph`; bit-identity fixture across two pro
 
 ## Slice T4 — Events
 
-Note and MIDI arenas, per-route delivery, deterministic k-way merge, `NoteInstanceId`, expression variants, per-port capacity and overflow counters, and the reserved note-off headroom in note runs. Deletes `ctx.notes()` and `ctx.param_changes()`; updates `plugins/geist-synth/src/daw_node.rs`.
+Note and MIDI arenas, per-route delivery, deterministic k-way merge, `NoteInstanceId`, expression variants, per-port capacity and overflow counters, and the reserved note-off headroom in note runs. Deletes `ctx.notes()` and `ctx.param_changes()`; updates `plugins/spectre-synth/src/daw_node.rs`.
 
 Must prove: a note run saturated with note-ons still delivers every note-off, so overflow cannot produce a stuck note.
 
-Verification: `cargo test -p spectre-graph`; `cargo test -p geist-synth`; overflow saturation test.
+Verification: `cargo test -p spectre-graph`; `cargo test -p spectre-synth`; overflow saturation test.
 
 ## Slice T5 — Parameters
 

@@ -31,7 +31,7 @@ empty_actions = ["add_source", "add_processor", "add_modulator", "open_browser"]
 [[templates]]
 name = "Instrument Track"
 kind = "track"
-args = { role = "instrument", insert = "geist_synth" }
+args = { role = "instrument", insert = "spectre_synth" }
 
 [[templates]]
 name = "Mix Bus"

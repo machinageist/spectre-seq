@@ -41,7 +41,7 @@ Notes and parameters are global broadcasts, not routes.
 
 - `ProcessContext` (`crates/spectre-core/src/context.rs:20`) holds `notes: &'a [NoteEvent]` and `params: &'a [ParameterChange]`.
 - `Executor::process_block` (`crates/spectre-graph/src/process_list.rs:172`) takes one `notes` slice and one `params` slice and passes the identical borrow to every node in the plan (`:205`).
-- The only consumer is `plugins/geist-synth/src/daw_node.rs:120`, which iterates `ctx.notes()`. Two synths in one graph would both sound every note in the block. There is no addressing, no filtering, and no per-port delivery.
+- The only consumer is `plugins/spectre-synth/src/daw_node.rs:120`, which iterates `ctx.notes()`. Two synths in one graph would both sound every note in the block. There is no addressing, no filtering, and no per-port delivery.
 - `ParameterChange` carries a bare `ParamId` (`crates/spectre-core/src/events.rs:126`) with no owning device, so parameter identity is globally flat.
 
 Cycles are converted to hidden one-block delay. **This contradicts the product vision.**
@@ -461,7 +461,7 @@ This is a specification task; no Rust was touched. These are the changes the spe
 10. `crates/spectre-graph/src/swap.rs` — payload gains `GenerationId` and `requires_control_sequence`; an acknowledgement ring is added. The mechanism is kept.
 11. `crates/spectre-graph/src/node.rs` — descriptor-side latency, bus, lane, and meter-outlet declarations.
 12. `crates/spectre-graph/src/tests/{cycle,routing,topology}_tests.rs` — currently pseudocode scaffolds; they become the real suites.
-13. `plugins/geist-synth/src/daw_node.rs:120` — reads its own note input port instead of the global slice.
+13. `plugins/spectre-synth/src/daw_node.rs:120` — reads its own note input port instead of the global slice.
 14. `docs/adr/002-arcswap-graph-swap.md` — still a scaffold; it should be rewritten to record the implemented rtrb handoff and the device-table decision.
 
 ## Non-goals

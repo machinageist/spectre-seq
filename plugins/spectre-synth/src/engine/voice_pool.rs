@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-synth/src/engine/voice_pool.rs
+// File: plugins/spectre-synth/src/engine/voice_pool.rs
 // Layer: synth plugin
 // Purpose: polyphony manager + steal modes
 // Status: Implemented; fixed voice array, free/oldest/quietest allocation.

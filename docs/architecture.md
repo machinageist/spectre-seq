@@ -45,7 +45,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 
 | Crate | Role | State |
 | --- | --- | --- |
-| `geist-synth` | Flagship synth engine exposed as an `AudioNode` (`daw_node.rs`) | Implemented as a two-oscillator prototype; `clap_plugin.rs` is a scaffold |
+| `spectre-synth` | Flagship synth engine exposed as an `AudioNode` (`daw_node.rs`) | Implemented as a two-oscillator prototype; `clap_plugin.rs` is a scaffold |
 | `geist-fx` | Delay, reverb, chorus, saturator, EQ graph nodes | Implemented |
 | `spectre-modular` | Utility node families: math, logic, signal, timing, sample/hold | Implemented; **no consumer in the app binary**; `clap_plugins.rs` deferred |
 
@@ -85,12 +85,12 @@ spectre-ui             -> spectre-config
 
 spectre-vst-host       -> spectre-core, spectre-graph
 spectre-clap-host      -> spectre-core, spectre-graph
-geist-synth          -> spectre-core, spectre-graph, spectre-dsp
+spectre-synth          -> spectre-core, spectre-graph, spectre-dsp
 geist-fx             -> spectre-core, spectre-graph, spectre-dsp
 spectre-modular        -> spectre-core, spectre-graph
 
 app/geist-daw        -> spectre-core, spectre-graph, spectre-audio-backend,
-                        geist-synth, geist-fx, spectre-timeline,
+                        spectre-synth, geist-fx, spectre-timeline,
                         spectre-project, spectre-ui, spectre-config
 ```
 
@@ -168,7 +168,7 @@ cpal output callback
           |- per track (fixed 3):
           |    |- Sequencer::advance_to_beat  step grid -> NoteEvent
           |    |- Arrangement::advance        placed MIDI clips -> NoteEvent
-          |    |- SynthNode::process          geist-synth
+          |    |- SynthNode::process          spectre-synth
           |    |- Arrangement::mix_audio      placed audio clips from the asset store
           |    \- FxChain::process            app/geist-daw/src/fx.rs
           |- sum tracks, apply master gain

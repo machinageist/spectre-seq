@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-synth/src/engine/voice.rs
+// File: plugins/spectre-synth/src/engine/voice.rs
 // Layer: synth plugin
 // Purpose: per-voice state: oscs, filters, envs
 // Status: Implemented; OscStack -> FilterStack with amp + filter ADSR.

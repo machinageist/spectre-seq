@@ -16,7 +16,7 @@ use spectre_core::context::ProcessContext;
 use spectre_core::events::NoteEvent;
 use spectre_core::transport::TransportSnapshot;
 use spectre_graph::node::AudioNode;
-use geist_synth::prelude::SynthNode;
+use spectre_synth::prelude::SynthNode;
 use spectre_timeline::prelude::Transport;
 
 use crate::control::{EngineCommand, EngineSink};

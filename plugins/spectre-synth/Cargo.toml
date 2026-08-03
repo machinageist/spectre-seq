@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: plugins/geist-synth/Cargo.toml
+# File: plugins/spectre-synth/Cargo.toml
 # Layer: synth plugin
 # Purpose: Flagship wavetable/subtractive synth; engine + AudioNode integration.
 # Status: Implemented incrementally; engine first (osc/filter/voice).
@@ -7,7 +7,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-synth"
+name = "spectre-synth"
 version = "0.1.0"
 edition = "2021"
 

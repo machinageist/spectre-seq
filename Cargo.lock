@@ -1495,7 +1495,6 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "geist-fx",
- "geist-synth",
  "hound",
  "rfd",
  "rtrb",
@@ -1504,21 +1503,13 @@ dependencies = [
  "spectre-core",
  "spectre-graph",
  "spectre-project",
+ "spectre-synth",
  "spectre-timeline",
  "spectre-ui",
 ]
 
 [[package]]
 name = "geist-fx"
-version = "0.1.0"
-dependencies = [
- "spectre-core",
- "spectre-dsp",
- "spectre-graph",
-]
-
-[[package]]
-name = "geist-synth"
 version = "0.1.0"
 dependencies = [
  "spectre-core",
@@ -3576,6 +3567,15 @@ dependencies = [
  "serde",
  "serde_bytes",
  "toml",
+]
+
+[[package]]
+name = "spectre-synth"
+version = "0.1.0"
+dependencies = [
+ "spectre-core",
+ "spectre-dsp",
+ "spectre-graph",
 ]
 
 [[package]]

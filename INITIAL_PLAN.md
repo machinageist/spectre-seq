@@ -76,7 +76,7 @@ Notes: Preserved as historical planning context; living product authority is lin
 
 - Each plugin in `plugins/` has three layers: `engine/` (pure DSP), `daw_node.rs` (implements `AudioNode`), `clap_plugin.rs` (implements CLAP ABI)
 - Same `engine/` compiles into both; zero duplication
-- Build `geist-synth` first — it's the flagship and exercises the most DSP infrastructure:
+- Build `spectre-synth` first — it's the flagship and exercises the most DSP infrastructure:
   - 2× wavetable oscillators with morph, unison, detune
   - 2× SVF filters in series/parallel with FM routing
   - Modulation matrix: any envelope/LFO output → any parameter; implemented as a `Vec<ModRoute>` resolved per block

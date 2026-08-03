@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-synth/src/daw_node.rs
+// File: plugins/spectre-synth/src/daw_node.rs
 // Layer: synth plugin
 // Purpose: implements AudioNode for DAW-internal use
 // Status: Implemented; SynthNode drives the voice pool from block note events.

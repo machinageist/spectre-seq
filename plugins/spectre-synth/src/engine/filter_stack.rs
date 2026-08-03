@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-synth/src/engine/filter_stack.rs
+// File: plugins/spectre-synth/src/engine/filter_stack.rs
 // Layer: synth plugin
 // Purpose: 2× SVF in series/parallel with FM routing
 // Status: Implemented; two SVF filters, series/parallel routing, cutoff mod.

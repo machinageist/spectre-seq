@@ -36,7 +36,7 @@ actions = ["add_instrument", "add_effect", "add_send", "arm", "mute", "solo", "s
 [[templates]]
 name = "Synth Voice Branch"
 kind = "graph"
-args = { source = "geist_synth", processors = "filter,delay", output = "master" }
+args = { source = "spectre_synth", processors = "filter,delay", output = "master" }
 
 [[templates]]
 name = "Macro Mod Lane"

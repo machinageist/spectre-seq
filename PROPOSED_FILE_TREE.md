@@ -227,7 +227,7 @@ geistdaw/
 │
 ├── plugins/
 │   │
-│   ├── geist-synth/                    # flagship wavetable/subtractive synth
+│   ├── spectre-synth/                    # flagship wavetable/subtractive synth
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs

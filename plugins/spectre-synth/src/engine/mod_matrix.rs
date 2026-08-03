@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-synth/src/engine/mod_matrix.rs
+// File: plugins/spectre-synth/src/engine/mod_matrix.rs
 // Layer: synth plugin
 // Purpose: internal mod matrix (env/lfo → any param)
 // Status: Implemented; index-based routes summed into destination accumulators.

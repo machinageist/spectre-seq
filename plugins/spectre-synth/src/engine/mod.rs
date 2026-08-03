@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-synth/src/engine/mod.rs
+// File: plugins/spectre-synth/src/engine/mod.rs
 // Layer: synth plugin
 // Purpose: Pure-DSP synth engine; oscillators, filters, voices, modulation
 // Status: Implemented incrementally; osc/filter, voice, mod matrix, voice pool.
