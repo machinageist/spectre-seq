@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use geist_core::ids::NodeId;
+use spectre_core::ids::NodeId;
 
 use crate::graph::Graph;
 
@@ -148,7 +148,7 @@ mod tests {
     use super::*;
     use crate::edge::PortSpec;
     use crate::graph::tests::{add_stereo_node, DummyNode};
-    use geist_core::port::PortType;
+    use spectre_core::port::PortType;
 
     #[test]
     fn linear_chain_orders_source_to_sink() {

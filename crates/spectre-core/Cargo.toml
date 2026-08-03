@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: crates/geist-core/Cargo.toml
+# File: crates/spectre-core/Cargo.toml
 # Layer: core primitives
 # Purpose: Define Cargo responsibilities and integration boundaries.
 # Status: Pseudocode scaffold; implementation intentionally pending.
@@ -19,7 +19,7 @@
 # - Document each non-default setting inline.
 
 [package]
-name = "geist-core"
+name = "spectre-core"
 version = "0.1.0"
 edition = "2021"
 

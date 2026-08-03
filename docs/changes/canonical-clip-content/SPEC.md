@@ -17,7 +17,7 @@ This sub-specification **un-gates slice D3** of [`docs/changes/project-document/
 
 [`docs/changes/canonical-clip-commands/SPEC.md`](../canonical-clip-commands/SPEC.md) Slice B2 is paused prior thinking, not a baseline. This document confirms parts of it, revises parts of it, and rejects one part of it outright.
 
-References use post-D1 homes: `geist_core::time::MusicalTime`, `geist_core::ids`, `geist_document::arrangement`.
+References use post-D1 homes: `spectre_core::time::MusicalTime`, `spectre_core::ids`, `geist_document::arrangement`.
 
 ## Problem
 
@@ -115,7 +115,7 @@ Rules:
 
 ### Note identity
 
-- `NoteId` is a document-scoped opaque nonzero newtype from `geist_core::ids`, allocated by the document allocator.
+- `NoteId` is a document-scoped opaque nonzero newtype from `spectre_core::ids`, allocated by the document allocator.
 - Uniqueness is document-wide, not clip-wide or arrangement-wide. Launcher clips share the domain.
 - Identity survives exact editing, undo, redo, expression editing, duplication of the *same* note, and persistence — invariant 9.
 - Identity is never derived from MIDI channel, list position, or start time.
@@ -293,13 +293,13 @@ Each slice is one commit with its own validation. `CC1` and `CC2` together un-ga
 - **CC3 — Audio region content and warp state.** `AssetId` reference; typed source frames; gain, reverse, fades; `WarpMode`, markers, algorithm tag; unresolved and short-asset handling. **Gated on the assets aggregate landing first.**
 - **CC4 — Clip-local automation envelopes.** **Gated on durable parameter and device target identity from Milestone 4.**
 
-Ordering rationale: MIDI content depends on nothing outside `geist-core` and an empty MIDI clip is a complete user object, so `D3` becomes provable at the earliest possible point. Audio content depends on the asset registry. Envelopes depend on target identity that does not yet exist.
+Ordering rationale: MIDI content depends on nothing outside `spectre-core` and an empty MIDI clip is a complete user object, so `D3` becomes provable at the earliest possible point. Audio content depends on the asset registry. Envelopes depend on target identity that does not yet exist.
 
 ### Prerequisites outside this spec
 
-- D1 relocation complete: `MusicalTime` in `geist-core`, arrangement in `geist-document`.
+- D1 relocation complete: `MusicalTime` in `spectre-core`, arrangement in `geist-document`.
 - D2 complete: document, revision, transactions, history, allocators.
-- `CurveShape` relocated from `geist-automation` to `geist-core`, per Milestone 1's removal of the timeline-to-automation dependency. This spec's expression curves and envelopes both consume it.
+- `CurveShape` relocated from `geist-automation` to `spectre-core`, per Milestone 1's removal of the timeline-to-automation dependency. This spec's expression curves and envelopes both consume it.
 - The assets aggregate must land before CC3. See Decision 2.
 
 ## Planning status
@@ -387,7 +387,7 @@ All seven were settled 2026-08-03, every one of them on the recommendation. Each
 
 **Option B — MIDI, then audio, then automation.** *(Accepted.)*
 
-- For: MIDI depends on nothing outside `geist-core`, and an empty MIDI clip is a complete user object, so `D3` becomes provable at the earliest point. Audio waits only for the asset registry. Automation waits for target identity.
+- For: MIDI depends on nothing outside `spectre-core`, and an empty MIDI clip is a complete user object, so `D3` becomes provable at the earliest point. Audio waits only for the asset registry. Automation waits for target identity.
 - Against: the app's real content today is recorded audio takes, so the legacy audio path stays authoritative longer than the legacy MIDI path.
 
 **Option C — Audio first, matching what the app actually plays.**

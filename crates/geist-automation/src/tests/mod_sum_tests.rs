@@ -10,7 +10,7 @@ use crate::curve::CurveShape;
 use crate::evaluator::{ParamSpec, ParameterEvaluator};
 use crate::lane::AutomationLane;
 use crate::route::ModRoute;
-use geist_core::ids::{ParamId, PortId};
+use spectre_core::ids::{ParamId, PortId};
 
 const CUTOFF: ParamId = ParamId::new(1);
 const ENV: PortId = PortId::new(10);

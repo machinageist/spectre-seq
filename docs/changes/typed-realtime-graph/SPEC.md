@@ -26,9 +26,9 @@ It also unblocks `docs/changes/project-document/PLAN.md` Slice D5, which is expl
 
 Port typing is metadata only.
 
-- `crates/geist-core/src/port.rs:19` declares seven `PortType` variants: `Audio`, `Cv`, `Gate`, `Note`, `Midi`, `Parameter`, `Meter`.
-- `crates/geist-core/src/signal.rs:23` classifies them into three `SignalRate` values.
-- Nothing consumes either classification. `SignalRate` has no reader outside its own unit tests. `PortType` is read only by `can_connect` (`crates/geist-core/src/port.rs:60`) for equality checking.
+- `crates/spectre-core/src/port.rs:19` declares seven `PortType` variants: `Audio`, `Cv`, `Gate`, `Note`, `Midi`, `Parameter`, `Meter`.
+- `crates/spectre-core/src/signal.rs:23` classifies them into three `SignalRate` values.
+- Nothing consumes either classification. `SignalRate` has no reader outside its own unit tests. `PortType` is read only by `can_connect` (`crates/spectre-core/src/port.rs:60`) for equality checking.
 - No node anywhere in the workspace declares a `Cv`, `Gate`, `Note`, `Midi`, `Parameter`, or `Meter` port. Every `PortSpec::new` call site in `crates/` and `plugins/` uses `PortType::Audio`, except two negative tests.
 
 The executor routes everything through `f32` sample buffers.
@@ -39,10 +39,10 @@ The executor routes everything through `f32` sample buffers.
 
 Notes and parameters are global broadcasts, not routes.
 
-- `ProcessContext` (`crates/geist-core/src/context.rs:20`) holds `notes: &'a [NoteEvent]` and `params: &'a [ParameterChange]`.
+- `ProcessContext` (`crates/spectre-core/src/context.rs:20`) holds `notes: &'a [NoteEvent]` and `params: &'a [ParameterChange]`.
 - `Executor::process_block` (`crates/geist-graph/src/process_list.rs:172`) takes one `notes` slice and one `params` slice and passes the identical borrow to every node in the plan (`:205`).
 - The only consumer is `plugins/geist-synth/src/daw_node.rs:120`, which iterates `ctx.notes()`. Two synths in one graph would both sound every note in the block. There is no addressing, no filtering, and no per-port delivery.
-- `ParameterChange` carries a bare `ParamId` (`crates/geist-core/src/events.rs:126`) with no owning device, so parameter identity is globally flat.
+- `ParameterChange` carries a bare `ParamId` (`crates/spectre-core/src/events.rs:126`) with no owning device, so parameter identity is globally flat.
 
 Cycles are converted to hidden one-block delay. **This contradicts the product vision.**
 
@@ -56,12 +56,12 @@ Cycles are converted to hidden one-block delay. **This contradicts the product v
 
 Fan-in is rejected, not ordered.
 
-- `Graph::connect` (`crates/geist-graph/src/graph.rs:106`) rejects a second edge into an already-connected input with `GeistError::Internal("input port already connected")`. `Internal` is documented at `crates/geist-core/src/errors.rs:32` as "indicates a bug", so a legal user action reports as an engine defect.
+- `Graph::connect` (`crates/geist-graph/src/graph.rs:106`) rejects a second edge into an already-connected input with `GeistError::Internal("input port already connected")`. `Internal` is documented at `crates/spectre-core/src/errors.rs:32` as "indicates a bug", so a legal user action reports as an engine defect.
 - Independently, `compile` builds `feed: BTreeMap<PortId, PortId>` keyed on destination (`crates/geist-graph/src/process_list.rs:68`). If fan-in were ever permitted at the graph layer, the last-inserted edge would silently win. Deterministic fan-in requires changes in both places.
 
 Channels are a bare count with no layout.
 
-- `PortDescriptor.channels: u16` (`crates/geist-core/src/port.rs:52`) has no layout meaning. `can_connect` (`crates/geist-core/src/port.rs:70`) requires exact equality, so mono cannot feed stereo. That happens to satisfy "no implicit upmix", but by accident: there is no bus descriptor, no layout vocabulary, and no adapter to make the conversion explicitly.
+- `PortDescriptor.channels: u16` (`crates/spectre-core/src/port.rs:52`) has no layout meaning. `can_connect` (`crates/spectre-core/src/port.rs:70`) requires exact equality, so mono cannot feed stereo. That happens to satisfy "no implicit upmix", but by accident: there is no bus descriptor, no layout vocabulary, and no adapter to make the conversion explicitly.
 
 Nothing declares latency or polyphony.
 
@@ -77,7 +77,7 @@ What is already correct and must be reused.
 
 - `crates/geist-graph/src/swap.rs` is the lock-free handoff **and** the reclaim path. `GraphPublisher::publish` (`crates/geist-graph/src/swap.rs:49`) is a non-blocking push; `ActiveGraph::poll_swap` (`crates/geist-graph/src/swap.rs:67`) refuses to adopt unless a retire slot is free, so the audio thread never drops; `GraphPublisher::reclaim` (`crates/geist-graph/src/swap.rs:54`) drops retired payloads on the app thread. This satisfies project-document invariant 3 today. Do not replace it.
 - `Executor::process_block` genuinely does not allocate: the pool and the input scratch are sized in `Executor::new` (`crates/geist-graph/src/process_list.rs:161`).
-- `AtomicTransport` (`crates/geist-core/src/transport.rs:114`) is a working seqlock with no allocation and no unsafe.
+- `AtomicTransport` (`crates/spectre-core/src/transport.rs:114`) is a working seqlock with no allocation and no unsafe.
 - `MeterCell` (`crates/geist-graph/src/nodes/monitor.rs:20`) is a working audio-to-UI atomic publication cell.
 - `geist-graph` carries `#![deny(unsafe_code)]`. Every design below must hold without `unsafe`.
 
@@ -256,7 +256,7 @@ Proving capacity at compile time was rejected: a producer whose output depends o
 
 Ordering. Every event run is sorted by `sample_offset` ascending. Within one offset, order is production order for a single source. For fan-in, the merge key is `(sample_offset, route_ordinal, source_position)`, giving a total order that is stable across runs and across sessions. The merge is a bounded k-way merge over already-sorted runs; it allocates nothing.
 
-Note identity. The realtime note event carries `NoteInstanceId: NonZeroU32`, unique among sounding notes within one generation lifetime, minted by whatever originates the note — the clip scheduler, live MIDI input, or a note device such as an arpeggiator that creates notes of its own. Every note-off and every expression event references the instance id of its note-on. Durable `NoteId` from `ProjectDocument` does not enter the audio thread; the scheduler owns the mapping in both directions (decision 12). Live MIDI input, arpeggiators, and chord devices have no durable document identity and cannot mint one on the callback; vision invariant 9 is about editing, undo, expression editing, and persistence, which are all document concerns. The current `note_id: i32` with the `-1` sentinel (`crates/geist-core/src/events.rs:26`) is retained only inside the VST3 and MIDI interop adapters, where the sentinel convention is required.
+Note identity. The realtime note event carries `NoteInstanceId: NonZeroU32`, unique among sounding notes within one generation lifetime, minted by whatever originates the note — the clip scheduler, live MIDI input, or a note device such as an arpeggiator that creates notes of its own. Every note-off and every expression event references the instance id of its note-on. Durable `NoteId` from `ProjectDocument` does not enter the audio thread; the scheduler owns the mapping in both directions (decision 12). Live MIDI input, arpeggiators, and chord devices have no durable document identity and cannot mint one on the callback; vision invariant 9 is about editing, undo, expression editing, and persistence, which are all document concerns. The current `note_id: i32` with the `-1` sentinel (`crates/spectre-core/src/events.rs:26`) is retained only inside the VST3 and MIDI interop adapters, where the sentinel convention is required.
 
 Note expression is in the type from the first slice, even before any producer emits it, so devices are not rewritten when MPE lands:
 
@@ -449,11 +449,11 @@ Enforcement, required in the same slices as the features:
 
 This is a specification task; no Rust was touched. These are the changes the spec implies, recorded here rather than performed:
 
-1. `crates/geist-core/src/port.rs` — `PortType` becomes `SignalDomain`; `channels: u16` becomes `BusLayout`; the descriptor gains rate, lanes, fan-in policy, event capacity, and `ParamKey`.
-2. `crates/geist-core/src/signal.rs` — `SignalRate` stops being derived from the domain and becomes a declared field.
-3. `crates/geist-core/src/context.rs` — the `notes` and `params` global slices are deleted and replaced by per-port accessors.
-4. `crates/geist-core/src/events.rs` — `NoteEvent` gains `NoteInstanceId` and expression variants; `ParameterChange` gains `DeviceId`.
-5. `crates/geist-core/src/errors.rs` — new typed connection and compilation errors; `Internal("input port already connected")` at `crates/geist-graph/src/graph.rs:107` is replaced by a real error.
+1. `crates/spectre-core/src/port.rs` — `PortType` becomes `SignalDomain`; `channels: u16` becomes `BusLayout`; the descriptor gains rate, lanes, fan-in policy, event capacity, and `ParamKey`.
+2. `crates/spectre-core/src/signal.rs` — `SignalRate` stops being derived from the domain and becomes a declared field.
+3. `crates/spectre-core/src/context.rs` — the `notes` and `params` global slices are deleted and replaced by per-port accessors.
+4. `crates/spectre-core/src/events.rs` — `NoteEvent` gains `NoteInstanceId` and expression variants; `ParameterChange` gains `DeviceId`.
+5. `crates/spectre-core/src/errors.rs` — new typed connection and compilation errors; `Internal("input port already connected")` at `crates/geist-graph/src/graph.rs:107` is replaced by a real error.
 6. `crates/geist-graph/src/process_list.rs` — plan and executor rewritten around per-domain arenas, ordered fan-in, and a device table.
 7. `crates/geist-graph/src/topology.rs` — `schedule`'s automatic back-edge deferral is removed from the compile path; `topological_order` becomes the compiler's sort; feedback-break edges are excluded before the sort.
 8. `crates/geist-graph/src/nodes/delay_node.rs` — the false "auto-inserted" comments at lines 4 and 16 are corrected; the node becomes the user-placed `AudioFeedbackDelay`.
@@ -505,7 +505,7 @@ Deferred to their own specs and interviews:
 
 All gating decisions are settled; see `## Decision record` and `PLAN.md`.
 
-- **T1 — Descriptors and validation.** `SignalDomain`, declared `SignalRate`, `BusLayout`, `LaneSpec`, `FanInPolicy`, `EventCapacity`, typed connection errors. `geist-core` only. No executor change.
+- **T1 — Descriptors and validation.** `SignalDomain`, declared `SignalRate`, `BusLayout`, `LaneSpec`, `FanInPolicy`, `EventCapacity`, typed connection errors. `spectre-core` only. No executor change.
 - **T2 — Ownership skeleton.** Device table, plan-and-arena generation payload, `GenerationId` and `requires_control_sequence` on the swap, acknowledgement ring, allocator guard. Audio domain only; behavior otherwise preserved.
 - **T3 — Streams.** Per-domain arenas for audio, CV, and gate; control-rate buffers at `CONTROL_PERIOD_FRAMES = 8`; ordered summing fan-in; `CvUpsample` and `CvDownsample`.
 - **T4 — Events.** Note and MIDI arenas, per-route delivery, deterministic merge, `NoteInstanceId`, expression variants, reserved note-off headroom, capacity and overflow counters. Removes the global slices from `ProcessContext`.
@@ -565,7 +565,7 @@ All seventeen were settled 2026-08-03. Each entry keeps its rejected alternative
 
 ### 2. What is the numeric convention for CV?
 
-- **A. Normalized.** Bipolar `-1..1`, unipolar `0..1`. Matches DAW modulation conventions and the existing `ParamRange` normalized space (`crates/geist-core/src/params.rs`).
+- **A. Normalized.** Bipolar `-1..1`, unipolar `0..1`. Matches DAW modulation conventions and the existing `ParamRange` normalized space (`crates/spectre-core/src/params.rs`).
 - **B. Volt-style.** `±5 V` range, `1 V/oct` pitch. Matches VCV Rack, Eurorack literature, and every module concept a modular user already knows.
 - **C. Normalized with a fixed octave convention.** `-1..1` generally, and `1.0 = 1 octave` on ports declared as pitch CV.
 

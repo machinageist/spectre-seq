@@ -32,7 +32,7 @@ pub mod prelude {
     pub use crate::transport::Transport;
 
     // Compatibility window; musical time and canonical arrangement moved to core and document
-    pub use geist_core::time::{MusicalTime, MAX_EXACT_MUSICAL_TIME_TICKS, TICKS_PER_QUARTER};
+    pub use spectre_core::time::{MusicalTime, MAX_EXACT_MUSICAL_TIME_TICKS, TICKS_PER_QUARTER};
     pub use geist_document::arrangement::{
         Arrangement, ArrangementError, ArrangementTrack, ClipEntity, ClipLocation, RemovedClip,
     };

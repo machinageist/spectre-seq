@@ -12,9 +12,9 @@
 use std::sync::Arc;
 
 use geist_audio_backend::prelude::{BlockProcessor, CpalBackend, Stream};
-use geist_core::context::ProcessContext;
-use geist_core::events::NoteEvent;
-use geist_core::transport::TransportSnapshot;
+use spectre_core::context::ProcessContext;
+use spectre_core::events::NoteEvent;
+use spectre_core::transport::TransportSnapshot;
 use geist_graph::node::AudioNode;
 use geist_synth::prelude::SynthNode;
 use geist_timeline::prelude::Transport;
@@ -513,7 +513,7 @@ impl Track {
     }
 
     // Prepare the track's instrument and effects chain for the stream
-    pub fn prepare(&mut self, config: &geist_core::config::AudioConfig) {
+    pub fn prepare(&mut self, config: &spectre_core::config::AudioConfig) {
         self.node.prepare(config);
         self.fx.prepare(config);
     }
@@ -989,8 +989,8 @@ impl Engine {
 mod tests {
     use super::*;
     use crate::control::control_plane;
-    use geist_core::config::AudioConfig;
-    use geist_core::events::NoteEventKind;
+    use spectre_core::config::AudioConfig;
+    use spectre_core::events::NoteEventKind;
 
     fn config(sample_rate_hz: u32, block: u32, channels: u16) -> AudioConfig {
         AudioConfig::new(sample_rate_hz, block, 0, channels).unwrap()

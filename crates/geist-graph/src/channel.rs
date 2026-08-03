@@ -6,7 +6,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::events::ParameterChange;
+use spectre_core::events::ParameterChange;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 // App-thread end of the parameter channel
@@ -60,7 +60,7 @@ impl ParamConsumer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_core::ids::ParamId;
+    use spectre_core::ids::ParamId;
 
     fn change(offset: u32, param: u64, value: f32) -> ParameterChange {
         ParameterChange {

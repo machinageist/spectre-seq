@@ -19,7 +19,7 @@ Notes: Each slice ends with review, validation, commit, push, and remote SHA ver
 
 Files:
 
-- Specialize shared `TrackId` and `ClipId` in `crates/geist-core/src/ids.rs`.
+- Specialize shared `TrackId` and `ClipId` in `crates/spectre-core/src/ids.rs`.
 - Add `crates/geist-timeline/src/identity.rs`.
 - Update `crates/geist-timeline/src/lib.rs`.
 
@@ -36,7 +36,7 @@ RED tests:
 
 Implementation:
 
-- Keep one opaque nonzero definition for each ID in `geist-core`.
+- Keep one opaque nonzero definition for each ID in `spectre-core`.
 - Re-export those shared types from the timeline identity boundary.
 - Keep allocation app-thread-owned and non-atomic.
 - Keep generic allocation machinery private unless public need is proven.

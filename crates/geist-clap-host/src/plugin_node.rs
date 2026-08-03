@@ -12,8 +12,8 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::config::AudioConfig;
-use geist_core::context::ProcessContext;
+use spectre_core::config::AudioConfig;
+use spectre_core::context::ProcessContext;
 use geist_graph::node::AudioNode;
 
 use clap_sys::audio_buffer::clap_audio_buffer;

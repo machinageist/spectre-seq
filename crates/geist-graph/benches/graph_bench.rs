@@ -10,8 +10,8 @@ use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
-use geist_core::config::AudioConfig;
-use geist_core::port::PortType;
+use spectre_core::config::AudioConfig;
+use spectre_core::port::PortType;
 use geist_graph::prelude::*;
 
 // Number of nodes the plan targets sorting and swapping within one millisecond

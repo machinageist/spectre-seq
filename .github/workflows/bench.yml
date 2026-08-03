@@ -37,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # geist-graph benches pull in geist-core, which pulls the audio backend deps
+      # geist-graph benches pull in spectre-core, which pulls the audio backend deps
       - name: Install ALSA development headers
         run: |
           sudo apt-get update

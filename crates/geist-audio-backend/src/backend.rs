@@ -6,7 +6,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::errors::GeistResult;
+use spectre_core::errors::GeistResult;
 
 use crate::device::DeviceInfo;
 use crate::stream::{CaptureConsumer, StreamConfig};
@@ -59,7 +59,7 @@ pub trait AudioBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_core::config::AudioConfig;
+    use spectre_core::config::AudioConfig;
 
     // Backend stub that runs the callback inline without touching hardware
     struct MockBackend;
@@ -100,7 +100,7 @@ mod tests {
             Ok(Box::new(MockStream))
         }
         fn default_input_device(&self) -> GeistResult<DeviceInfo> {
-            Err(geist_core::errors::GeistError::UnsupportedBackend(
+            Err(spectre_core::errors::GeistError::UnsupportedBackend(
                 "mock has no input",
             ))
         }
@@ -108,7 +108,7 @@ mod tests {
             &mut self,
             _config: &StreamConfig,
         ) -> GeistResult<(Box<dyn Stream>, crate::stream::CaptureConsumer)> {
-            Err(geist_core::errors::GeistError::UnsupportedBackend(
+            Err(spectre_core::errors::GeistError::UnsupportedBackend(
                 "mock has no input",
             ))
         }

@@ -13,7 +13,7 @@ edition = "2021"
 
 [dependencies]
 # Shared primitives: AudioConfig and the realtime ProcessContext
-geist-core = { path = "../geist-core" }
+spectre-core = { path = "../spectre-core" }
 # AudioNode trait a hosted plugin slots into
 geist-graph = { path = "../geist-graph" }
 # Raw CLAP ABI bindings; all FFI types and the entry/factory contracts

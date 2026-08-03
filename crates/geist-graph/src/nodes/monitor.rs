@@ -9,7 +9,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use geist_core::context::ProcessContext;
+use spectre_core::context::ProcessContext;
 
 use crate::node::AudioNode;
 
@@ -96,7 +96,7 @@ impl AudioNode for MonitorNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_core::transport::TransportSnapshot;
+    use spectre_core::transport::TransportSnapshot;
 
     #[test]
     fn meter_cell_round_trips() {

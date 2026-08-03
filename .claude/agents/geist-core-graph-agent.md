@@ -1,17 +1,17 @@
 ---
-name: geist-core-graph-agent
-description: "Implements and reviews geist-core and geist-graph slices: IDs, ports, events, params, transport snapshots, graph topology, routing, process lists, and graph swap."
+name: spectre-core-graph-agent
+description: "Implements and reviews spectre-core and geist-graph slices: IDs, ports, events, params, transport snapshots, graph topology, routing, process lists, and graph swap."
 tools: Read, Write, Edit, Bash
 ---
 
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Claude subagent definition for geist-core-graph-agent
+Description: Claude subagent definition for spectre-core-graph-agent
 Notes: Use through Claude subagent/task routing for Geist DAW implementation slices
 -->
 
-# geist-core-graph-agent
+# spectre-core-graph-agent
 
 ## Mission
 

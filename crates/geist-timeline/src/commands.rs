@@ -203,7 +203,7 @@ mod tests {
     use super::*;
     use crate::clip::{Clip, MidiClip};
     use crate::pattern::{Note, Pattern};
-    use geist_core::events::NoteEventKind;
+    use spectre_core::events::NoteEventKind;
 
     // Timeline with a one-note MIDI clip and a single track, returning clip handle
     fn fixture() -> (Timeline, Index) {

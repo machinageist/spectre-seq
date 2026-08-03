@@ -6,8 +6,8 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::ids::PortId;
-use geist_core::port::PortType;
+use spectre_core::ids::PortId;
+use spectre_core::port::PortType;
 
 // Declarative request for one port when adding a node
 // Direction is implied by which list the spec appears in

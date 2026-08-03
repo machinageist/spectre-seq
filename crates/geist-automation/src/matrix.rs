@@ -8,7 +8,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::ids::{ParamId, PortId};
+use spectre_core::ids::{ParamId, PortId};
 
 use crate::route::ModRoute;
 

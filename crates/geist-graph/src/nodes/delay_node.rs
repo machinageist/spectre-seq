@@ -6,8 +6,8 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::config::AudioConfig;
-use geist_core::context::ProcessContext;
+use spectre_core::config::AudioConfig;
+use spectre_core::context::ProcessContext;
 
 use crate::node::AudioNode;
 
@@ -68,7 +68,7 @@ impl AudioNode for DelayNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_core::transport::TransportSnapshot;
+    use spectre_core::transport::TransportSnapshot;
 
     // Run one mono block through a freshly built context
     fn run_block(node: &mut DelayNode, samples: &[f32]) -> Vec<f32> {

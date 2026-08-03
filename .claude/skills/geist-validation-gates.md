@@ -39,7 +39,7 @@ Minimum commands:
 ## Behavior gate
 
 Prefer focused tests:
-- `cargo test -p geist-core` for primitives.
+- `cargo test -p spectre-core` for primitives.
 - `cargo test -p geist-graph` for routing/topology.
 - `cargo test -p geist-dsp` for DSP correctness.
 - `cargo test -p geist-project` for persistence/migration.

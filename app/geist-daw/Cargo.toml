@@ -13,7 +13,7 @@ edition = "2021"
 
 [dependencies]
 # AudioConfig, ProcessContext, note events, transport snapshot
-geist-core = { path = "../../crates/geist-core" }
+spectre-core = { path = "../../crates/spectre-core" }
 # AudioNode trait the synth node implements
 geist-graph = { path = "../../crates/geist-graph" }
 # cpal backend, block bridge, stream config

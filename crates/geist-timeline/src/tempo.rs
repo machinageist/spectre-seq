@@ -9,8 +9,8 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::time::{MusicalTime, MAX_EXACT_F64_INTEGER};
-use geist_core::transport::{DEFAULT_TIME_SIG_DEN, DEFAULT_TIME_SIG_NUM};
+use spectre_core::time::{MusicalTime, MAX_EXACT_F64_INTEGER};
+use spectre_core::transport::{DEFAULT_TIME_SIG_DEN, DEFAULT_TIME_SIG_NUM};
 
 // Seconds in one minute; tempo math reads in beats per minute
 const SECONDS_PER_MINUTE: f64 = 60.0;
@@ -181,7 +181,7 @@ fn rounded_exact_u64(value: f64) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_core::time::{MusicalTime, MAX_EXACT_MUSICAL_TIME_TICKS};
+    use spectre_core::time::{MusicalTime, MAX_EXACT_MUSICAL_TIME_TICKS};
 
     const SR: u32 = 48_000;
 

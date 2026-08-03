@@ -49,11 +49,11 @@ Verification: `cargo test -p geist-graph`; `cargo check --workspace`.
 
 ## Slice T1 — Descriptors and validation
 
-`geist-core` only. `SignalDomain` (six variants; `Meter` is not among them), declared `SignalRate`, `BusLayout` with `Declared` parsed and compiler-rejected, `LaneSpec`, `FanInPolicy`, `EventCapacity`, and typed connection errors replacing `GeistError::Internal`. Normalized CV convention with the pitch-port octave relationship. `MAX_LANES = 32` lands here as a constant.
+`spectre-core` only. `SignalDomain` (six variants; `Meter` is not among them), declared `SignalRate`, `BusLayout` with `Declared` parsed and compiler-rejected, `LaneSpec`, `FanInPolicy`, `EventCapacity`, and typed connection errors replacing `GeistError::Internal`. Normalized CV convention with the pitch-port octave relationship. `MAX_LANES = 32` lands here as a constant.
 
 The executor does not change; `geist-graph` is updated only enough to keep compiling.
 
-Verification: `cargo test -p geist-core`; `cargo check --workspace`.
+Verification: `cargo test -p spectre-core`; `cargo check --workspace`.
 
 ## Slice T2 — Ownership skeleton
 
@@ -145,7 +145,7 @@ Verification: all fixtures green at both block sizes; allocator guard clean thro
 ## Standing verification for every slice
 
 - `cargo check -p <touched crate>` at minimum.
-- `cargo test -p geist-core`, `cargo test -p geist-graph`, `cargo test --workspace`.
+- `cargo test -p spectre-core`, `cargo test -p geist-graph`, `cargo test --workspace`.
 - `cargo bench -p geist-graph` when the compiled plan or executor changes.
 - The debug allocator guard, once T2 lands, on every slice after it.
 - `git diff --check`.

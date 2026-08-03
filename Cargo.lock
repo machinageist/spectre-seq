@@ -1494,15 +1494,15 @@ name = "geist-audio-backend"
 version = "0.1.0"
 dependencies = [
  "cpal",
- "geist-core",
  "rtrb",
+ "spectre-core",
 ]
 
 [[package]]
 name = "geist-automation"
 version = "0.1.0"
 dependencies = [
- "geist-core",
+ "spectre-core",
 ]
 
 [[package]]
@@ -1511,16 +1511,12 @@ version = "0.1.0"
 dependencies = [
  "ciborium",
  "clap-sys",
- "geist-core",
  "geist-graph",
  "libloading",
  "raw-window-handle",
  "serde",
+ "spectre-core",
 ]
-
-[[package]]
-name = "geist-core"
-version = "0.1.0"
 
 [[package]]
 name = "geist-daw"
@@ -1528,7 +1524,6 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "geist-audio-backend",
- "geist-core",
  "geist-fx",
  "geist-graph",
  "geist-project",
@@ -1539,13 +1534,14 @@ dependencies = [
  "rfd",
  "rtrb",
  "spectre-config",
+ "spectre-core",
 ]
 
 [[package]]
 name = "geist-document"
 version = "0.1.0"
 dependencies = [
- "geist-core",
+ "spectre-core",
 ]
 
 [[package]]
@@ -1560,9 +1556,9 @@ dependencies = [
 name = "geist-fx"
 version = "0.1.0"
 dependencies = [
- "geist-core",
  "geist-dsp",
  "geist-graph",
+ "spectre-core",
 ]
 
 [[package]]
@@ -1570,8 +1566,8 @@ name = "geist-graph"
 version = "0.1.0"
 dependencies = [
  "criterion",
- "geist-core",
  "rtrb",
+ "spectre-core",
 ]
 
 [[package]]
@@ -1582,8 +1578,8 @@ version = "0.1.0"
 name = "geist-modular"
 version = "0.1.0"
 dependencies = [
- "geist-core",
  "geist-graph",
+ "spectre-core",
 ]
 
 [[package]]
@@ -1601,17 +1597,17 @@ dependencies = [
 name = "geist-synth"
 version = "0.1.0"
 dependencies = [
- "geist-core",
  "geist-dsp",
  "geist-graph",
+ "spectre-core",
 ]
 
 [[package]]
 name = "geist-timeline"
 version = "0.1.0"
 dependencies = [
- "geist-core",
  "geist-document",
+ "spectre-core",
 ]
 
 [[package]]
@@ -1627,9 +1623,9 @@ dependencies = [
 name = "geist-vst-host"
 version = "0.1.0"
 dependencies = [
- "geist-core",
  "geist-graph",
  "libloading",
+ "spectre-core",
  "vst3",
 ]
 
@@ -3604,6 +3600,10 @@ dependencies = [
  "serde",
  "toml",
 ]
+
+[[package]]
+name = "spectre-core"
+version = "0.1.0"
 
 [[package]]
 name = "spirv"

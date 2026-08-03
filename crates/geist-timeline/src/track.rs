@@ -9,7 +9,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::events::NoteEvent;
+use spectre_core::events::NoteEvent;
 
 use crate::arena::{Arena, Index};
 use crate::clip::Clip;
@@ -202,7 +202,7 @@ mod tests {
     use super::*;
     use crate::clip::MidiClip;
     use crate::pattern::Note;
-    use geist_core::events::NoteEventKind;
+    use spectre_core::events::NoteEventKind;
 
     // Timeline with one MIDI clip (a single note at pattern-local 100) placed at `start`
     fn timeline_with_clip(start: u64) -> (Timeline, usize) {

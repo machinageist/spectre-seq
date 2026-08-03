@@ -8,7 +8,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::context::ProcessContext;
+use spectre_core::context::ProcessContext;
 
 // Gate/trigger convention shared by every logic and timing node
 // A signal reads high at or above the threshold; logic emits clean 0/1 levels

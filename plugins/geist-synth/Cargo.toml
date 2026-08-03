@@ -13,5 +13,5 @@ edition = "2021"
 
 [dependencies]
 geist-dsp = { path = "../../crates/geist-dsp" }
-geist-core = { path = "../../crates/geist-core" }
+spectre-core = { path = "../../crates/spectre-core" }
 geist-graph = { path = "../../crates/geist-graph" }

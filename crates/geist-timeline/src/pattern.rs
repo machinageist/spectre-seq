@@ -8,7 +8,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::events::NoteEvent;
+use spectre_core::events::NoteEvent;
 
 // A single note in a pattern; positions are samples from the pattern origin
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -102,7 +102,7 @@ impl Pattern {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_core::events::NoteEventKind;
+    use spectre_core::events::NoteEventKind;
 
     fn pattern() -> Pattern {
         let mut p = Pattern::new(1_000);

@@ -8,7 +8,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::context::ProcessContext;
+use spectre_core::context::ProcessContext;
 
 // Mirror the input buffer into the output, channel by channel
 // Output channels beyond the input count are cleared to silence

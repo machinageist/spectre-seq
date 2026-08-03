@@ -8,7 +8,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::context::ProcessContext;
+use spectre_core::context::ProcessContext;
 use geist_graph::node::AudioNode;
 
 use crate::util::{map_per_channel, reduce_into_ch0};
@@ -174,7 +174,7 @@ impl AudioNode for RescaleNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_core::transport::TransportSnapshot;
+    use spectre_core::transport::TransportSnapshot;
 
     const SR: u32 = 48_000;
     const FRAMES: usize = 8;

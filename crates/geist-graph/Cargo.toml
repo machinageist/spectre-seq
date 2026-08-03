@@ -16,7 +16,7 @@ edition = "2021"
 bench = false
 
 [dependencies]
-geist-core = { path = "../geist-core" }
+spectre-core = { path = "../spectre-core" }
 rtrb = "0.3.4"
 
 [dev-dependencies]

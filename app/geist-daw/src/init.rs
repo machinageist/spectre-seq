@@ -10,8 +10,8 @@
 // =============================================================================
 
 use geist_audio_backend::prelude::{AudioBackend, BlockBridge, CpalBackend, StreamConfig};
-use geist_core::config::{AudioConfig, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
-use geist_core::errors::GeistResult;
+use spectre_core::config::{AudioConfig, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
+use spectre_core::errors::GeistResult;
 
 use crate::control::{control_plane, EngineControl};
 use crate::engine::{

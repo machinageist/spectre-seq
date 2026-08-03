@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 
-use geist_core::time::MusicalTime;
+use spectre_core::time::MusicalTime;
 
 use crate::identity::{ClipId, TrackId};
 

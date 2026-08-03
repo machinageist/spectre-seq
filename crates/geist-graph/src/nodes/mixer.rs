@@ -6,7 +6,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::context::ProcessContext;
+use spectre_core::context::ProcessContext;
 
 use crate::node::AudioNode;
 
@@ -50,7 +50,7 @@ impl AudioNode for MixerNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_core::transport::TransportSnapshot;
+    use spectre_core::transport::TransportSnapshot;
 
     #[test]
     fn sums_inputs_into_single_output() {

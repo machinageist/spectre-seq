@@ -27,7 +27,7 @@ geistdaw/
 │
 ├── crates/
 │   │
-│   ├── geist-core/                     # shared primitives; no dependencies on other crates
+│   ├── spectre-core/                     # shared primitives; no dependencies on other crates
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -42,14 +42,14 @@ geistdaw/
 │   │       ├── transport.rs            # AtomicTransport, TransportState, TempoMap
 │   │       └── errors.rs               # GeistError, GeistResult
 │   │
-│   ├── geist-document/                 # canonical app-thread project truth; depends only on geist-core
+│   ├── geist-document/                 # canonical app-thread project truth; depends only on spectre-core
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── identity.rs             # IdSequence, IdentityAllocator; checked monotonic allocation
 │   │       └── arrangement.rs          # Arrangement, ClipEntity, ArrangementTrack, ClipLocation
 │   │
-│   ├── geist-graph/                    # audio process graph; depends on geist-core
+│   ├── geist-graph/                    # audio process graph; depends on spectre-core
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs

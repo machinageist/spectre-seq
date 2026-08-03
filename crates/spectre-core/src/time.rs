@@ -4,7 +4,7 @@
 // Description: Canonical 960-PPQ musical-time primitives.
 // Notes: Float-mediated conversions preserve adjacent 960-PPQ tick resolution.
 //
-// File: crates/geist-core/src/time.rs
+// File: crates/spectre-core/src/time.rs
 // Layer: core primitives
 // Purpose: Canonical 960-PPQ musical-time primitives
 // Status: Implemented; opaque ticks, checked arithmetic, and beat quantization.

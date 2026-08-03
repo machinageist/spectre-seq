@@ -8,10 +8,10 @@
 
 use std::collections::BTreeMap;
 
-use geist_core::config::AudioConfig;
-use geist_core::errors::{GeistError, GeistResult};
-use geist_core::ids::{NodeId, PortId};
-use geist_core::port::{can_connect, PortDescriptor, PortDirection};
+use spectre_core::config::AudioConfig;
+use spectre_core::errors::{GeistError, GeistResult};
+use spectre_core::ids::{NodeId, PortId};
+use spectre_core::port::{can_connect, PortDescriptor, PortDirection};
 
 use crate::edge::{Edge, PortSpec};
 use crate::node::AudioNode;
@@ -179,8 +179,8 @@ impl Graph {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use geist_core::context::ProcessContext;
-    use geist_core::port::PortType;
+    use spectre_core::context::ProcessContext;
+    use spectre_core::port::PortType;
 
     // Inert node used to exercise topology without real DSP
     pub(crate) struct DummyNode;

@@ -6,8 +6,8 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::config::AudioConfig;
-use geist_core::context::ProcessContext;
+use spectre_core::config::AudioConfig;
+use spectre_core::context::ProcessContext;
 
 // Unit of audio processing in the graph
 // Send so a compiled graph can move to the audio thread; never required to be Sync

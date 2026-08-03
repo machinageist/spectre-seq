@@ -94,7 +94,7 @@ mod tests {
     use super::*;
     use crate::graph::Graph;
     use crate::process_list::compile;
-    use geist_core::config::AudioConfig;
+    use spectre_core::config::AudioConfig;
 
     // Build a runnable executor from an empty graph
     fn empty_executor() -> Executor {

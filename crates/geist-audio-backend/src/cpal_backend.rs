@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use geist_core::errors::{GeistError, GeistResult};
+use spectre_core::errors::{GeistError, GeistResult};
 
 use crate::backend::{AudioBackend, RenderCallback, Stream};
 use crate::device::DeviceInfo;

@@ -53,7 +53,7 @@ Acceptance: a rejected transaction leaves both aggregates, history, revision, an
 
 Implements decisions 5a, 5b, 5c, 6c, and the MIDI half of 3.
 
-MIDI depends on nothing outside `geist-core`, and an empty MIDI clip is already a complete user object, which is why it goes first (decision 2).
+MIDI depends on nothing outside `spectre-core`, and an empty MIDI clip is already a complete user object, which is why it goes first (decision 2).
 
 Expected outcomes:
 
@@ -110,7 +110,7 @@ Delete only when the replacement round-trips through persistence:
 ## Standing verification for every slice
 
 - `cargo test -p geist-document`
-- `cargo test -p geist-core`
+- `cargo test -p spectre-core`
 - `cargo test --workspace`
 - `git diff --check`
 

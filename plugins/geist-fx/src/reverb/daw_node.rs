@@ -8,8 +8,8 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::config::AudioConfig;
-use geist_core::context::ProcessContext;
+use spectre_core::config::AudioConfig;
+use spectre_core::context::ProcessContext;
 use geist_graph::node::AudioNode;
 
 use crate::io::copy_input_to_output;
@@ -102,7 +102,7 @@ impl AudioNode for ReverbNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_core::transport::TransportSnapshot;
+    use spectre_core::transport::TransportSnapshot;
 
     const SR: u32 = 48_000;
     const FRAMES: usize = 256;

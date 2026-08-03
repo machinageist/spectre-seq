@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use geist_core::ids::{ParamId, PortId};
+use spectre_core::ids::{ParamId, PortId};
 
 use crate::lane::AutomationLane;
 use crate::matrix::ModMatrix;

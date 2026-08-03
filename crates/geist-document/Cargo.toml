@@ -12,4 +12,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-geist-core = { path = "../geist-core" }
+spectre-core = { path = "../spectre-core" }

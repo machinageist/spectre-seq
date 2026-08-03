@@ -79,8 +79,8 @@ New crate `crates/geist-document`, `#![deny(unsafe_code)]`, no serde, no rendere
 
 Dependency direction:
 
-- `geist-core` owns shared domain vocabulary: the durable ID family, `MusicalTime`, `TICKS_PER_QUARTER`, sample coordinates, normalized values, and curve-shape vocabulary.
-- `geist-document` depends on `geist-core` only.
+- `spectre-core` owns shared domain vocabulary: the durable ID family, `MusicalTime`, `TICKS_PER_QUARTER`, sample coordinates, normalized values, and curve-shape vocabulary.
+- `geist-document` depends on `spectre-core` only.
 - `geist-project` depends on `geist-document` and owns schema, serialization, migration, and the project package.
 - `geist-ui` depends on `geist-document` for read-only projections and typed intent types.
 - `geist-document` never depends on `geist-timeline`, `geist-project`, `geist-ui`, or the app.
@@ -133,7 +133,7 @@ History is session state in this milestone and is not persisted.
 
 The document owns a non-cloneable allocator per durable domain. Domains are independent: exhausting one does not exhaust another.
 
-- Every durable ID is an opaque nonzero newtype defined once in `geist-core`.
+- Every durable ID is an opaque nonzero newtype defined once in `spectre-core`.
 - Allocation starts at 1, advances monotonically, and never reuses a value.
 - Loading observes every stored ID and advances the allocator past it.
 - Batch reservation is atomic; a partially available batch fails before any allocator advances.
@@ -230,7 +230,7 @@ Deferred to their own specs and interviews: launcher content and launch quantiza
 8. The audio thread acknowledges both the executing generation and the applied control sequence, and the app never advances mirrors past acknowledgement.
 9. Stream saturation and rejected publication produce explicit reconciliation, never silent divergence.
 10. Retired generations, plugin instances, and assets are dropped off the callback.
-11. `geist-document` depends only on `geist-core`.
+11. `geist-document` depends only on `spectre-core`.
 12. Each legacy authority is deleted only after its four deletion criteria hold.
 13. A load validates the complete candidate document before touching live state; a failed load leaves the live document unchanged and reports exactly what failed.
 14. Unresolved assets, devices, plugins, modules, mappings, and targets round-trip losslessly, stay relinkable, and never block editing or saving the rest of the project.
@@ -238,7 +238,7 @@ Deferred to their own specs and interviews: launcher content and launch quantiza
 
 ## Slice boundaries
 
-- **D1 — Crate skeleton and vocabulary relocation.** Create `geist-document`; move shared vocabulary to `geist-core`; re-export from `geist-timeline`. No behavior change.
+- **D1 — Crate skeleton and vocabulary relocation.** Create `geist-document`; move shared vocabulary to `spectre-core`; re-export from `geist-timeline`. No behavior change.
 - **D2 — Document skeleton, revision, transactions, history.** Typed empty aggregates, transaction and result types, history with its failure semantics.
 - **D3 — Arrangement domain onto the document.** Canonical arrangement under document ownership; create, delete, move, cross-track move, right resize as transactions. This un-pauses canonical-clip-commands Slice C with the correct owner.
 - **D4 — Projection contract and arrangement UI projection.** Revision-stamped projections; UI reads projections and emits intents; parity tests.

@@ -5,11 +5,11 @@
 // Status: Implemented; transport state, playhead advance, snapshot publication.
 // Notes: App-thread owner of run state, playhead, tempo map, and loop region.
 //        Advances only while playing or recording; publishes a block-stable
-//        TransportSnapshot into a geist-core AtomicTransport for the audio thread.
+//        TransportSnapshot into a spectre-core AtomicTransport for the audio thread.
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::transport::{AtomicTransport, TransportSnapshot, TransportState};
+use spectre_core::transport::{AtomicTransport, TransportSnapshot, TransportState};
 
 use crate::playhead::{LoopRegion, Playhead};
 use crate::tempo::TempoMap;

@@ -11,7 +11,7 @@ Notes: Execute and commit one independently validated slice at a time; blocking 
 
 - Product and architecture contract: `SPEC.md`.
 - Migration is a strangler; the app stays runnable after every slice.
-- `ProjectDocument` lives in `crates/geist-document` and depends only on `geist-core`.
+- `ProjectDocument` lives in `crates/geist-document` and depends only on `spectre-core`.
 - Publication is hybrid: immutable versioned render generations plus a bounded acknowledged control stream.
 - App-thread ownership and realtime constraints remain mandatory.
 - Legacy authorities are deleted only when all four deletion criteria in `SPEC.md` hold for their domain.
@@ -24,9 +24,9 @@ Files:
 
 - Add `crates/geist-document/Cargo.toml`.
 - Add `crates/geist-document/src/lib.rs`.
-- Add `crates/geist-core/src/time.rs`.
-- Update `crates/geist-core/src/lib.rs`.
-- Move `crates/geist-timeline/src/time.rs` into `geist-core`.
+- Add `crates/spectre-core/src/time.rs`.
+- Update `crates/spectre-core/src/lib.rs`.
+- Move `crates/geist-timeline/src/time.rs` into `spectre-core`.
 - Move `crates/geist-timeline/src/identity.rs` into `geist-document`.
 - Move `crates/geist-timeline/src/arrangement.rs` into `geist-document`.
 - Update `crates/geist-timeline/src/lib.rs`.
@@ -36,19 +36,19 @@ Files:
 
 Tasks:
 
-1. [x] Create `geist-document` with `#![deny(unsafe_code)]` and `geist-core` as its only dependency. The workspace `members` glob `crates/*` picks it up, so the root manifest needs no edit. Write a real manifest header matching `crates/geist-timeline/Cargo.toml`, not the pseudocode-scaffold header older manifests carry.
-2. [x] Move `MusicalTime`, `TICKS_PER_QUARTER`, `MAX_EXACT_MUSICAL_TIME_TICKS`, and their tests from `geist-timeline` to `geist-core::time`; add them to the `geist-core` prelude.
-3. [x] Move the `IdSequence` and `IdentityAllocator` machinery to `geist-document`. `ClipId` and `TrackId` already live in `geist-core::ids` and stay there; `crates/geist-timeline/src/identity.rs:14` only re-exports them.
+1. [x] Create `geist-document` with `#![deny(unsafe_code)]` and `spectre-core` as its only dependency. The workspace `members` glob `crates/*` picks it up, so the root manifest needs no edit. Write a real manifest header matching `crates/geist-timeline/Cargo.toml`, not the pseudocode-scaffold header older manifests carry.
+2. [x] Move `MusicalTime`, `TICKS_PER_QUARTER`, `MAX_EXACT_MUSICAL_TIME_TICKS`, and their tests from `geist-timeline` to `spectre-core::time`; add them to the `spectre-core` prelude.
+3. [x] Move the `IdSequence` and `IdentityAllocator` machinery to `geist-document`. `ClipId` and `TrackId` already live in `spectre-core::ids` and stay there; `crates/geist-timeline/src/identity.rs:14` only re-exports them.
 4. [x] Move `Arrangement`, `ClipEntity`, `ArrangementTrack`, `ClipLocation`, `RemovedClip`, and `ArrangementError` to `geist-document::arrangement` with their tests.
 5. [x] Re-export every moved item from `geist_timeline::prelude` for the compatibility window so no consumer breaks in this slice.
-6. [x] Add the durable nonzero ID family to `geist-core::ids` — `AssetId`, `SceneId`, `DeviceId`, `ParamKey`, `RouteId`, `NoteId`, `MappingId`, `AutomationTargetId`. Scope amendment: without it, D2 and the Wave 2 vocabulary slice both edit `crates/geist-core/src/lib.rs` concurrently. The `define_nonzero_id!` macro already exists, so this adds no behavior.
+6. [x] Add the durable nonzero ID family to `spectre-core::ids` — `AssetId`, `SceneId`, `DeviceId`, `ParamKey`, `RouteId`, `NoteId`, `MappingId`, `AutomationTargetId`. Scope amendment: without it, D2 and the Wave 2 vocabulary slice both edit `crates/spectre-core/src/lib.rs` concurrently. The `define_nonzero_id!` macro already exists, so this adds no behavior.
 7. [x] Confirm the workspace test count did not drop; every moved test runs at its new home.
 8. [x] Resolve independent spec and code review findings.
 9. [x] Commit only after all findings are resolved.
 
 Verification:
 
-- `cargo test -p geist-core`
+- `cargo test -p spectre-core`
 - `cargo test -p geist-document`
 - `cargo test -p geist-timeline`
 - `cargo check --workspace`

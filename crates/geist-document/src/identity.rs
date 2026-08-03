@@ -11,7 +11,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-pub use geist_core::ids::{ClipId, TrackId};
+pub use spectre_core::ids::{ClipId, TrackId};
 
 // One monotonic nonzero sequence; zero marks permanent exhaustion
 #[derive(Debug)]

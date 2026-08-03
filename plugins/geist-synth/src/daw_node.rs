@@ -9,9 +9,9 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::config::AudioConfig;
-use geist_core::context::ProcessContext;
-use geist_core::events::NoteEventKind;
+use spectre_core::config::AudioConfig;
+use spectre_core::context::ProcessContext;
+use spectre_core::events::NoteEventKind;
 use geist_dsp::prelude::SvfMode;
 use geist_graph::node::AudioNode;
 
@@ -150,8 +150,8 @@ impl AudioNode for SynthNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_core::events::NoteEvent;
-    use geist_core::transport::TransportSnapshot;
+    use spectre_core::events::NoteEvent;
+    use spectre_core::transport::TransportSnapshot;
 
     const SAMPLE_RATE: u32 = 48_000;
     const FRAMES: usize = 128;

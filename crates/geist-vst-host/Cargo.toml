@@ -12,7 +12,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-geist-core = { path = "../geist-core" }
+spectre-core = { path = "../spectre-core" }
 geist-graph = { path = "../geist-graph" }
 # Raw VST3 COM bindings (MIT-licensed headers as of SDK 3.8.0)
 vst3 = "0.3"

@@ -28,7 +28,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 
 | Crate | Role | State |
 | --- | --- | --- |
-| `geist-core` | Shared primitives: `AudioConfig`, `ProcessContext`, IDs, ports, events, params, signal, transport, errors | Implemented; zero workspace dependencies |
+| `spectre-core` | Shared primitives: `AudioConfig`, `ProcessContext`, IDs, ports, events, params, signal, transport, errors | Implemented; zero workspace dependencies |
 | `geist-graph` | Graph model, topology/scheduling, plan compilation, block executor, executor swap, built-in nodes | Implemented; not on the app's audio path (see below) |
 | `geist-dsp` | Oscillators, filters, envelopes, LFOs, fx primitives, FFT, math/SIMD helpers, benches | Implemented incrementally |
 | `geist-audio-backend` | Backend abstraction, `BlockBridge`, cpal backend, capture ring, xrun counter | cpal implemented; JACK and PipeWire are scaffolds |
@@ -70,37 +70,37 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 Actual `[dependencies]` edges between workspace members:
 
 ```
-geist-core        (no workspace deps)
+spectre-core        (no workspace deps)
 spectre-config      (no workspace deps)
 geist-dsp         (no workspace deps; rustfft)
 geist-project     (no workspace deps; serde/ciborium/toml/blake3)
 geist-lv2-host    (no workspace deps)
 xtask             (no workspace deps)
 
-geist-graph          -> geist-core
-geist-audio-backend  -> geist-core
-geist-timeline       -> geist-core
-geist-automation     -> geist-core
+geist-graph          -> spectre-core
+geist-audio-backend  -> spectre-core
+geist-timeline       -> spectre-core
+geist-automation     -> spectre-core
 geist-ui             -> spectre-config
 
-geist-vst-host       -> geist-core, geist-graph
-geist-clap-host      -> geist-core, geist-graph
-geist-synth          -> geist-core, geist-graph, geist-dsp
-geist-fx             -> geist-core, geist-graph, geist-dsp
-geist-modular        -> geist-core, geist-graph
+geist-vst-host       -> spectre-core, geist-graph
+geist-clap-host      -> spectre-core, geist-graph
+geist-synth          -> spectre-core, geist-graph, geist-dsp
+geist-fx             -> spectre-core, geist-graph, geist-dsp
+geist-modular        -> spectre-core, geist-graph
 
-app/geist-daw        -> geist-core, geist-graph, geist-audio-backend,
+app/geist-daw        -> spectre-core, geist-graph, geist-audio-backend,
                         geist-synth, geist-fx, geist-timeline,
                         geist-project, geist-ui, spectre-config
 ```
 
-The direction is acyclic and `geist-core` is the only shared root. Two edges are
+The direction is acyclic and `spectre-core` is the only shared root. Two edges are
 worth naming because they are surprising:
 
 - **`geist-project` depends on nothing in the workspace.** It is a parallel serde
   data model, not a projection of an in-memory one. Converting between it and live
   app state is `app/geist-daw/src/session.rs`'s job.
-- **`geist-ui` depends only on `spectre-config`.** It does not see `geist-core` or
+- **`geist-ui` depends only on `spectre-config`.** It does not see `spectre-core` or
   `geist-timeline`; it owns its own renderer-facing `SessionModel` and
   `TimelineModel` types. The app binary is the only place UI types and engine types
   meet.
@@ -113,7 +113,7 @@ binary: `geist-automation`, `geist-modular`, `geist-vst-host`, `geist-clap-host`
 
 `docs/changes/project-document/SPEC.md` introduces a new dependency-low crate
 `crates/geist-document` to own the canonical app-thread `ProjectDocument`, with
-`geist-core` as its only dependency. **It is being implemented concurrently and is
+`spectre-core` as its only dependency. **It is being implemented concurrently and is
 not in the tree at the time of writing.** Treat every `geist-document` reference
 in this document as in-progress, not landed.
 
@@ -192,8 +192,8 @@ These are load-bearing gaps, not omissions from this document.
    (`app/geist-daw/src/engine.rs:70`) with a fixed `TRACK_BASE_MIDI` array. Tracks
    cannot be added or removed at runtime, and each track's device chain is the
    hard-coded `FxChain`, not a graph.
-3. **Typed ports are validation metadata only.** `geist_core::port::can_connect`
-   (`crates/geist-core/src/port.rs:60`) rejects direction, type, and channel-count
+3. **Typed ports are validation metadata only.** `spectre_core::port::can_connect`
+   (`crates/spectre-core/src/port.rs:60`) rejects direction, type, and channel-count
    mismatches at connect time. But the executor routes every edge through one flat
    `Vec<f32>` pool, and notes and parameter changes are **global slices handed to
    every node** (`crates/geist-graph/src/process_list.rs:205-214`). There is no
@@ -250,7 +250,7 @@ Recorded so a future session does not re-derive them:
 - ADR 001 calls `geist-clap-host` a shelved scaffold. The crate is substantially
   implemented. The plan decision stands; the description of the code does not.
 - `PROPOSED_FILE_TREE.md` predates the `geist-document` decision and the vocabulary
-  relocation into `geist-core`. Per the roadmap it is revised only after authority
+  relocation into `spectre-core`. Per the roadmap it is revised only after authority
   boundaries are accepted, so expect it to lag.
 
 ## Accepted changes the code has not caught up to
@@ -259,10 +259,10 @@ Recorded 2026-08-03, when `docs/changes/typed-realtime-graph/SPEC.md` and
 `docs/changes/canonical-clip-content/SPEC.md` were accepted. Each of these is a
 decision the code contradicts today. None is a bug report; they are scheduled work.
 
-- **`PortType::Meter` leaves the connectable set.** `crates/geist-core/src/port.rs:19`
+- **`PortType::Meter` leaves the connectable set.** `crates/spectre-core/src/port.rs:19`
   declares it as a routable variant. Decision 4 makes meters node-declared outlets
   backed by atomic cells, never edges. `SignalDomain` will have six variants.
-- **`SignalRate` finally gains a consumer.** `crates/geist-core/src/signal.rs:23` has
+- **`SignalRate` finally gains a consumer.** `crates/spectre-core/src/signal.rs:23` has
   had no reader outside its own tests. Decision 1 makes rate a declared per-port
   property that the compiler validates and the executor acts on.
 - **The silent one-block cycle conversion becomes the explicit SCC path.**

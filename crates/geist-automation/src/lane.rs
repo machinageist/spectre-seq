@@ -9,7 +9,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::ids::ParamId;
+use spectre_core::ids::ParamId;
 
 use crate::curve::CurveShape;
 

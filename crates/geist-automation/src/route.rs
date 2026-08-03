@@ -8,7 +8,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use geist_core::ids::{ParamId, PortId};
+use spectre_core::ids::{ParamId, PortId};
 
 // One modulation connection: source CV scaled into a parameter target
 #[derive(Clone, Copy, Debug, PartialEq)]

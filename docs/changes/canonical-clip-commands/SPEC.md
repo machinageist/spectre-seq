@@ -104,14 +104,14 @@ Offline audio and unresolved automation clips may be duplicated. Duplication pre
 
 ### Identity allocation
 
-`AssetId` and `NoteId` join the shared opaque ID vocabulary in `geist-core`. Both reject zero. Note allocation is monotonic, checked, and timeline-owned. Asset allocation is monotonic, checked, and project-registry-owned. Loading observes stored IDs so future allocation cannot collide. Exhausting one identity domain does not exhaust another.
+`AssetId` and `NoteId` join the shared opaque ID vocabulary in `spectre-core`. Both reject zero. Note allocation is monotonic, checked, and timeline-owned. Asset allocation is monotonic, checked, and project-registry-owned. Loading observes stored IDs so future allocation cannot collide. Exhausting one identity domain does not exhaust another.
 
 MIDI duplication reserves all required note IDs as one checked batch. If the complete batch is unavailable, duplication fails before advancing the note allocator or mutating arrangement content. Successful reservation may produce monotonic gaps only if a later fully validated operation is abandoned; IDs are never reused.
 
 ## Stable identity
 
 - `TrackId` and `ClipId` are opaque nonzero `u64` newtypes.
-- Their single canonical definitions live in `geist-core`; timeline code re-exports rather than duplicates them.
+- Their single canonical definitions live in `spectre-core`; timeline code re-exports rather than duplicates them.
 - Raw value `0` is invalid and remains available for provisional UI state only.
 - Runtime arena `Index` values never cross the canonical public edit boundary.
 - IDs allocate monotonically and are not reused after deletion.

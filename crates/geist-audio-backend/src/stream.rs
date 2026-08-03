@@ -8,7 +8,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use geist_core::config::AudioConfig;
+use spectre_core::config::AudioConfig;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 // Depth of the input capture ring in samples; sized to outpace the app drain

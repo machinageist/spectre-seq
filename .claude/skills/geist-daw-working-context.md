@@ -54,7 +54,7 @@ Notes: Non-obvious context, design decisions
 
 ## Phase order
 
-1. Workspace and `geist-core` primitives.
+1. Workspace and `spectre-core` primitives.
 2. `geist-graph` process graph and atomic graph swap.
 3. `geist-audio-backend` callback boundary.
 4. `geist-dsp` primitives and benchmarks.

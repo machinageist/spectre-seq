@@ -8,12 +8,12 @@
 
 use std::collections::BTreeMap;
 
-use geist_core::config::AudioConfig;
-use geist_core::context::ProcessContext;
-use geist_core::errors::{GeistError, GeistResult};
-use geist_core::events::{NoteEvent, ParameterChange};
-use geist_core::ids::{NodeId, PortId};
-use geist_core::transport::TransportSnapshot;
+use spectre_core::config::AudioConfig;
+use spectre_core::context::ProcessContext;
+use spectre_core::errors::{GeistError, GeistResult};
+use spectre_core::events::{NoteEvent, ParameterChange};
+use spectre_core::ids::{NodeId, PortId};
+use spectre_core::transport::TransportSnapshot;
 
 use crate::graph::Graph;
 use crate::node::AudioNode;
@@ -227,7 +227,7 @@ mod tests {
     use super::*;
     use crate::edge::PortSpec;
     use crate::graph::tests::{add_stereo_node, DummyNode};
-    use geist_core::port::PortType;
+    use spectre_core::port::PortType;
 
     fn config() -> AudioConfig {
         AudioConfig::new(48_000, 128, 2, 2).unwrap()
@@ -291,7 +291,7 @@ mod tests {
     // Test node that adds one to each input sample
     struct AddOneNode;
     impl crate::node::AudioNode for AddOneNode {
-        fn process(&mut self, ctx: &mut geist_core::context::ProcessContext) {
+        fn process(&mut self, ctx: &mut spectre_core::context::ProcessContext) {
             let frames = ctx.frames();
             let (input, output) = ctx.io();
             for (channel, out) in output.chunks_mut(frames).enumerate() {
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn self_feedback_accumulates_one_block_at_a_time() {
-        use geist_core::transport::TransportSnapshot;
+        use spectre_core::transport::TransportSnapshot;
 
         // A node that feeds its own input becomes an accumulator with one-block delay
         let mut g = Graph::new();
@@ -337,7 +337,7 @@ mod tests {
         value: f32,
     }
     impl crate::node::AudioNode for ConstNode {
-        fn process(&mut self, ctx: &mut geist_core::context::ProcessContext) {
+        fn process(&mut self, ctx: &mut spectre_core::context::ProcessContext) {
             let (_input, output) = ctx.io();
             output.fill(self.value);
         }
@@ -346,7 +346,7 @@ mod tests {
     #[test]
     fn executor_runs_a_compiled_chain_end_to_end() {
         use crate::nodes::PassthroughNode;
-        use geist_core::transport::TransportSnapshot;
+        use spectre_core::transport::TransportSnapshot;
 
         // Constant source feeds a passthrough; the passthrough output must carry the value
         let mut g = Graph::new();
@@ -379,7 +379,7 @@ mod tests {
     #[test]
     fn executor_silences_unconnected_inputs() {
         use crate::nodes::PassthroughNode;
-        use geist_core::transport::TransportSnapshot;
+        use spectre_core::transport::TransportSnapshot;
 
         // A lone passthrough with no source must emit silence, not garbage
         let mut g = Graph::new();

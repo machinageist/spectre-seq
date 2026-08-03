@@ -11,7 +11,7 @@ Notes: Preserved as historical planning context; living product authority is lin
 
 ## Phase 0 — Foundations (Weeks 1–2)
 
-- Create cargo workspace; establish `geist-core` crate first, nothing depends on nothing
+- Create cargo workspace; establish `spectre-core` crate first, nothing depends on nothing
 - Define canonical types: `NodeId(u64)`, `PortId(u64)`, `PortType` enum, `AudioConfig`, `ProcessContext<'a>`
 - `ProcessContext` holds: sample rate, block size, input/output buffer slices, event queue slice — all borrowed, zero allocation
 - Enforce real-time constraints via type system: `ProcessContext` is `!Send`; audio callback is `extern "C"`-compatible
