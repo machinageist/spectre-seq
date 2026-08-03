@@ -62,7 +62,7 @@ fn run_gui(
     control: EngineControl,
     recorder: Option<recorder::AudioRecorder>,
     classic: bool,
-    ui_state: geist_ui::state::UIState,
+    ui_state: spectre_ui::state::UIState,
 ) -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default().with_inner_size(WINDOW_SIZE),
@@ -73,7 +73,7 @@ fn run_gui(
         options,
         Box::new(move |cc| {
             // Install the tactile-dark theme once before the first frame
-            geist_ui::theme::GeistTheme::apply(&cc.egui_ctx);
+            spectre_ui::theme::GeistTheme::apply(&cc.egui_ctx);
             let app: Box<dyn eframe::App> = if classic {
                 Box::new(gui::GeistApp::new(engine, control))
             } else {

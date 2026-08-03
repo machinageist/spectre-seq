@@ -36,7 +36,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | `spectre-automation` | Curves, lanes, routes, modulation matrix, evaluator | Implemented; **no consumer in the app binary** |
 | `spectre-project` | On-disk project schema, CBOR serialize, TOML settings, blake3 asset map, migration, autosave | Implemented; **zero workspace dependencies** — a standalone serde DTO tree |
 | `spectre-config` | Workflow profile schema, TOML loader, keybindings, command intents, validation | Implemented |
-| `geist-ui` | UI state, typed selection, commands, egui renderer, views, widgets, theme | Implemented incrementally |
+| `spectre-ui` | UI state, typed selection, commands, egui renderer, views, widgets, theme | Implemented incrementally |
 | `geist-vst-host` | VST3 host over raw `vst3` COM bindings; scanner, bundle, module, instance, `VstPluginNode` | Implemented, compile-checked; FFI crate, does not deny unsafe |
 | `geist-clap-host` | CLAP host over `clap-sys`; scanner, bundle, cache db, params, state, gui, instance, `ClapPluginNode` | Substantially implemented; **not on the active plan** per ADR 001 |
 | `spectre-lv2-host` | LV2 host | Scanner only; `world.rs` and `instance.rs` are scaffolds |
@@ -59,7 +59,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | `engine.rs` | The running engine: sequencer, per-track arrangement, `SynthProcessor` block processor |
 | `fx.rs` | Hard-wired per-track `FxChain` (delay then reverb) |
 | `control.rs` | The app/audio boundary: `EngineCommand` ring, asset ring, scope ring, meters, beat clock |
-| `studio.rs` | The real front-end: lens shell over `geist-ui`, diffing a `SessionModel` mirror into `EngineCommand`s |
+| `studio.rs` | The real front-end: lens shell over `spectre-ui`, diffing a `SessionModel` mirror into `EngineCommand`s |
 | `gui.rs`, `graph_view.rs` | Minimal window and node-graph view |
 | `session.rs`, `project.rs` | Mapping app state to and from `spectre-project`'s `ProjectFile` |
 | `recorder.rs` | App-thread drain of the capture ring; WAV write |
@@ -81,7 +81,7 @@ spectre-graph          -> spectre-core
 spectre-audio-backend  -> spectre-core
 spectre-timeline       -> spectre-core
 spectre-automation     -> spectre-core
-geist-ui             -> spectre-config
+spectre-ui             -> spectre-config
 
 geist-vst-host       -> spectre-core, spectre-graph
 geist-clap-host      -> spectre-core, spectre-graph
@@ -91,7 +91,7 @@ geist-modular        -> spectre-core, spectre-graph
 
 app/geist-daw        -> spectre-core, spectre-graph, spectre-audio-backend,
                         geist-synth, geist-fx, spectre-timeline,
-                        spectre-project, geist-ui, spectre-config
+                        spectre-project, spectre-ui, spectre-config
 ```
 
 The direction is acyclic and `spectre-core` is the only shared root. Two edges are
@@ -100,7 +100,7 @@ worth naming because they are surprising:
 - **`spectre-project` depends on nothing in the workspace.** It is a parallel serde
   data model, not a projection of an in-memory one. Converting between it and live
   app state is `app/geist-daw/src/session.rs`'s job.
-- **`geist-ui` depends only on `spectre-config`.** It does not see `spectre-core` or
+- **`spectre-ui` depends only on `spectre-config`.** It does not see `spectre-core` or
   `spectre-timeline`; it owns its own renderer-facing `SessionModel` and
   `TimelineModel` types. The app binary is the only place UI types and engine types
   meet.
@@ -226,7 +226,7 @@ the central problem `docs/changes/project-document/SPEC.md` exists to fix.
 | `spectre_timeline::Timeline` | `crates/spectre-timeline/src/track.rs:91` | None outside its own crate; legacy arena handles, sample placement |
 | `spectre_document::Arrangement` | `crates/spectre-document/src/arrangement.rs` | None yet; canonical `ClipEntity` model, unwired. Relocated out of `spectre-timeline` by slice D1 and still re-exported from `spectre_timeline::prelude` for the compatibility window |
 | `app::engine::Arrangement` | `app/geist-daw/src/engine.rs:259` | The audio thread; the only one that makes sound |
-| `geist_ui::model::TimelineModel` | `crates/geist-ui/src/model.rs:295` | Passed `&mut` into `views::arrangement`, so the view mutates it directly |
+| `spectre_ui::model::TimelineModel` | `crates/spectre-ui/src/model.rs:295` | Passed `&mut` into `views::arrangement`, so the view mutates it directly |
 | `app::session::StudioSession` | `app/geist-daw/src/session.rs` | The de-facto persistence model, in float beats |
 
 The app binary uses exactly one item from `spectre-timeline`: `Transport`

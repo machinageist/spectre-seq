@@ -1,5 +1,5 @@
 ---
-name: geist-ui-project-agent
+name: spectre-ui-project-agent
 description: "Implements and reviews timeline, automation, project persistence, UI state, renderer abstractions, views, and widgets."
 tools: Read, Write, Edit, Bash
 ---
@@ -7,11 +7,11 @@ tools: Read, Write, Edit, Bash
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Claude subagent definition for geist-ui-project-agent
+Description: Claude subagent definition for spectre-ui-project-agent
 Notes: Use through Claude subagent/task routing for Geist DAW implementation slices
 -->
 
-# geist-ui-project-agent
+# spectre-ui-project-agent
 
 ## Mission
 
@@ -20,7 +20,7 @@ Connect musical/project state to a command-driven UI without letting UI own core
 ## Required skills
 
 - `.claude/skills/geist-daw-working-context.md`
-- `.claude/skills/geist-ui-workflow.md`
+- `.claude/skills/spectre-ui-workflow.md`
 - `.claude/skills/spectre-project-timeline.md`
 - `.claude/skills/geist-validation-gates.md`
 

@@ -1,13 +1,13 @@
 // Author: Jeff
 // Date: 2026-06-15
 // Description: Live gallery of the tactile-dark theme and core widgets.
-// Notes: Not a test target; run with `cargo run -p geist-ui --example widget_gallery`
+// Notes: Not a test target; run with `cargo run -p spectre-ui --example widget_gallery`
 //        to eyeball the theme, knobs, faders, and meters. Holds throwaway demo
 //        state only; no engine, no project truth.
 
 use eframe::egui;
-use geist_ui::theme::{self, GeistTheme, SignalKind};
-use geist_ui::widgets::{Fader, Knob, Meter};
+use spectre_ui::theme::{self, GeistTheme, SignalKind};
+use spectre_ui::widgets::{Fader, Knob, Meter};
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {

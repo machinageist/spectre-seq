@@ -5,11 +5,11 @@
 
 use spectre_config::loader::load_workflow_toml;
 use spectre_config::schema::{LensId, PanelId};
-use geist_ui::egui_renderer::EguiRenderer;
-use geist_ui::prelude::UIState;
-use geist_ui::renderer::{PanelSlot, Renderer};
-use geist_ui::views::workspace_surface_from_frame;
-use geist_ui::widgets::workspace_widgets_from_surface;
+use spectre_ui::egui_renderer::EguiRenderer;
+use spectre_ui::prelude::UIState;
+use spectre_ui::renderer::{PanelSlot, Renderer};
+use spectre_ui::views::workspace_surface_from_frame;
+use spectre_ui::widgets::workspace_widgets_from_surface;
 use std::path::PathBuf;
 
 #[test]

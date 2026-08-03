@@ -1,13 +1,13 @@
 // =============================================================================
-// File: crates/geist-ui/src/widgets/piano.rs
+// File: crates/spectre-ui/src/widgets/cable.rs
 // Layer: UI
-// Purpose: mini keyboard widget
+// Purpose: bezier cable renderer for node graph
 // Status: Pseudocode scaffold; implementation intentionally pending.
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
 // Pseudocode plan:
-// - Declare responsibility: mini keyboard widget
+// - Declare responsibility: bezier cable renderer for node graph
 // - Define public types before behavior.
 // - Separate real-time-safe paths from UI/app paths.
 // - Prefer explicit errors over implicit panics.

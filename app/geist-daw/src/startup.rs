@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use spectre_config::loader::WorkflowSource;
 use spectre_config::schema::WorkflowProfile;
 use spectre_config::validate::ConfigDiagnostic;
-use geist_ui::state::UIState;
+use spectre_ui::state::UIState;
 
 // Parsed process options that affect startup routing
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
@@ -123,7 +123,7 @@ fn resolve_ui_state_from_paths(
         ));
     }
 
-    let (app, diagnostics) = geist_ui::app::App::from_workflow_candidates(candidates);
+    let (app, diagnostics) = spectre_ui::app::App::from_workflow_candidates(candidates);
     (
         app.state().clone(),
         diagnostics

@@ -1,13 +1,13 @@
 ---
-name: geist-ui-workflow
-description: "Load when implementing or reviewing `crates/geist-ui`, renderer abstractions, egui integration, app/UI state, command dispatch, views, widgets, meters, waveform rendering, or node-graph interactions."
+name: spectre-ui-workflow
+description: "Load when implementing or reviewing `crates/spectre-ui`, renderer abstractions, egui integration, app/UI state, command dispatch, views, widgets, meters, waveform rendering, or node-graph interactions."
 ---
 
 <!--
 Author: Jeff
 Date: 2026-05-27
 Description: UI implementation guide
-Notes: Use for geist-ui views, widgets, renderer, app state, and command dispatch
+Notes: Use for spectre-ui views, widgets, renderer, app state, and command dispatch
 -->
 
 # Geist UI Workflow

@@ -300,6 +300,6 @@ visible = ["arrange"]
     }
 
     fn temp_workflow_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("geist-ui-{}-{name}", std::process::id()))
+        std::env::temp_dir().join(format!("spectre-ui-{}-{name}", std::process::id()))
     }
 }

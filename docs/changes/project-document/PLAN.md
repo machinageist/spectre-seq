@@ -101,7 +101,7 @@ Covers acceptance criteria 7 and 15.
 Expected outcomes:
 
 - Revision-stamped read-only projections rebuilt from the document.
-- `geist_ui::model::TimelineModel` demoted to a projection; the UI stops mutating durable state.
+- `spectre_ui::model::TimelineModel` demoted to a projection; the UI stops mutating durable state.
 - Typed arrangement intents replacing direct UI mutation.
 - Parity tests proving the projection reproduces the document facts it shows.
 - Stale projections rebuilt or visibly marked, never silently trusted.

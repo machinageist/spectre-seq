@@ -16,7 +16,7 @@ Approved for implementation with 960 PPQ as the canonical arrangement timebase.
 Geist currently has conflicting arrangement models:
 
 - `spectre-timeline` stores clip and note placement in absolute samples.
-- `geist-ui` and `StudioApp` store arrangement placement in floating-point beats.
+- `spectre-ui` and `StudioApp` store arrangement placement in floating-point beats.
 - Project persistence stores floating-point beats.
 - App-level diffing translates UI mutations directly into engine commands.
 

@@ -47,7 +47,7 @@ Use human-readable versioned config files. Prefer TOML for global/user settings 
 
 The implementation home is `crates/spectre-config`. That crate owns the workflow schema, TOML loading, validation diagnostics, safe fallback resolution, command alias schema, keybinding schema, and template references.
 
-`crates/geist-ui` consumes the validated workflow profile through `UIState`. UI commands can switch configured lenses, apply a new workflow snapshot, execute declarative aliases, and queue non-UI command intents for the app/project layer instead of mutating DAW truth directly.
+`crates/spectre-ui` consumes the validated workflow profile through `UIState`. UI commands can switch configured lenses, apply a new workflow snapshot, execute declarative aliases, and queue non-UI command intents for the app/project layer instead of mutating DAW truth directly.
 
 The renderer boundary derives a `RenderFrame` from `UIState`: visible lens tabs, active lens, panel placements, density, transport edge, main-view empty actions, and context-shelf actions all come from the active workflow profile. The current egui adapter is a deterministic scaffold around that frame plan so renderer tests can prove config changes affect the UI plan before concrete egui widgets are built.
 

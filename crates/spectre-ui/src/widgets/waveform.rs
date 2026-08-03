@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-ui/src/widgets/waveform.rs
+// File: crates/spectre-ui/src/widgets/waveform.rs
 // Layer: UI
 // Purpose: audio clip waveform display
 // Status: Pseudocode scaffold; implementation intentionally pending.

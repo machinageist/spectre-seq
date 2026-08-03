@@ -195,7 +195,7 @@ geistdaw/
 │   │       ├── commands.rs             # declarative command aliases to typed UICommand intents
 │   │       └── templates.rs            # track/rack/graph/project template definitions
 │   │
-│   └── geist-ui/                       # UI layer; depends on all other crates
+│   └── spectre-ui/                       # UI layer; depends on all other crates
 │       ├── Cargo.toml
 │       └── src/
 │           ├── lib.rs

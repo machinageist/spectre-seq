@@ -25,7 +25,7 @@ Five owners currently hold overlapping durable arrangement and project truth:
 - `spectre_timeline::Timeline` (`crates/spectre-timeline/src/track.rs:91`) — legacy arena handles, sample placement.
 - `spectre_timeline::Arrangement` (`crates/spectre-timeline/src/arrangement.rs`) — canonical entities, zero consumers.
 - `app::engine::Arrangement` (`app/geist-daw/src/engine.rs:259`) — audio-thread copy, fixed `NUM_TRACKS`.
-- `geist_ui::model::TimelineModel` (`crates/geist-ui/src/model.rs:295`) — renderer-facing, directly mutated.
+- `spectre_ui::model::TimelineModel` (`crates/spectre-ui/src/model.rs:295`) — renderer-facing, directly mutated.
 - `app::session::StudioSession` (`app/geist-daw/src/session.rs:121`) — de-facto persistence model in float beats.
 
 Consequences visible in the code today:
@@ -70,7 +70,7 @@ An aggregate may be an empty typed owner until its content sub-spec lands. An em
 
 - `spectre_timeline::Timeline` — legacy, frozen, deleted in slice 8.
 - `app::engine::Arrangement` — becomes render-generation content, not an authority.
-- `geist_ui::model::TimelineModel` — becomes a read-only projection.
+- `spectre_ui::model::TimelineModel` — becomes a read-only projection.
 - `app::session::StudioSession` — becomes a persistence adapter, then deleted.
 
 ## Crate and dependency boundaries
@@ -82,8 +82,8 @@ Dependency direction:
 - `spectre-core` owns shared domain vocabulary: the durable ID family, `MusicalTime`, `TICKS_PER_QUARTER`, sample coordinates, normalized values, and curve-shape vocabulary.
 - `spectre-document` depends on `spectre-core` only.
 - `spectre-project` depends on `spectre-document` and owns schema, serialization, migration, and the project package.
-- `geist-ui` depends on `spectre-document` for read-only projections and typed intent types.
-- `spectre-document` never depends on `spectre-timeline`, `spectre-project`, `geist-ui`, or the app.
+- `spectre-ui` depends on `spectre-document` for read-only projections and typed intent types.
+- `spectre-document` never depends on `spectre-timeline`, `spectre-project`, `spectre-ui`, or the app.
 
 `MusicalTime`, `TICKS_PER_QUARTER`, and the canonical identity allocator relocate out of `spectre-timeline`. `spectre-timeline` re-exports them during the compatibility window so no consumer breaks in the same slice as the move. `PROPOSED_FILE_TREE.md` is revised to match once slice 1 lands.
 

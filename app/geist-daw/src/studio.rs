@@ -1,7 +1,7 @@
 // =============================================================================
 // File: app/geist-daw/src/studio.rs
 // Layer: application binary
-// Purpose: Front-end on the geist-ui studio shell, bridged to the audio engine
+// Purpose: Front-end on the spectre-ui studio shell, bridged to the audio engine
 // Status: Implemented; lens shell (mixer/rack/graph/arrange/browser) over the
 //         real engine, playable from an on-screen and computer keyboard.
 // Notes: The UI owns no audio truth. A SessionModel mirrors the engine; views
@@ -17,14 +17,14 @@ use spectre_config::commands::CommandIntent;
 use spectre_config::templates::{TemplateKind, TemplateRef};
 use std::collections::HashMap;
 
-use geist_ui::model::{
+use spectre_ui::model::{
     BrowserItem, BrowserModel, ChannelStrip, Clip, EffectSlot, GraphModel, GraphNode, Lane, Note,
     ParamSpec, Port, RackModel, SessionModel, StepPattern, StepSequencerModel, TimelineModel,
 };
-use geist_ui::shell::draw_studio;
-use geist_ui::state::{SelectedObject, UIState};
-use geist_ui::theme::{self, SignalKind};
-use geist_ui::widgets::{KeyEvent, Keyboard, Taper};
+use spectre_ui::shell::draw_studio;
+use spectre_ui::state::{SelectedObject, UIState};
+use spectre_ui::theme::{self, SignalKind};
+use spectre_ui::widgets::{KeyEvent, Keyboard, Taper};
 
 use std::sync::Arc;
 
@@ -592,7 +592,7 @@ impl StudioApp {
                     name: format!("Clip {}", clip.id),
                     start_beats: clip.start_beats,
                     len_beats: clip.len_beats,
-                    kind: geist_ui::theme::SignalKind::Note,
+                    kind: spectre_ui::theme::SignalKind::Note,
                 });
                 self.clip_notes.insert(clip.id, notes.clone());
                 self.clip_notes_mirror.insert(clip.id, notes);
@@ -725,7 +725,7 @@ impl StudioApp {
                     name: "Rec".to_string(),
                     start_beats: start,
                     len_beats: DEFAULT_RECORD_LEN,
-                    kind: geist_ui::theme::SignalKind::Note,
+                    kind: spectre_ui::theme::SignalKind::Note,
                 };
                 self.session.timeline.clips.push(clip.clone());
                 self.timeline_mirror.push(clip);
@@ -1679,8 +1679,8 @@ fn engine_graph() -> GraphModel {
 }
 
 // One audio cable from a node's first output to the next node's first input
-fn cable(from: u64, to: u64) -> geist_ui::model::Cable {
-    geist_ui::model::Cable {
+fn cable(from: u64, to: u64) -> spectre_ui::model::Cable {
+    spectre_ui::model::Cable {
         from_node: from,
         from_port: 0,
         to_node: to,
@@ -1873,7 +1873,7 @@ fn env_of(slot: &EffectSlot) -> Option<[f32; 4]> {
 }
 
 // The (row, step) gates that are on in a step pattern
-fn gates_of(pattern: &geist_ui::model::StepPattern) -> Vec<(u8, u8)> {
+fn gates_of(pattern: &spectre_ui::model::StepPattern) -> Vec<(u8, u8)> {
     let mut gates = Vec::new();
     for row in 0..pattern.rows {
         for step in 0..pattern.steps {

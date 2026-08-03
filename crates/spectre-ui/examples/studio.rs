@@ -1,16 +1,16 @@
 // Author: Jeff
 // Date: 2026-06-15
 // Description: Runnable demo of the full studio shell over a demo session.
-// Notes: Not a test target; run with `cargo run -p geist-ui --example studio`.
+// Notes: Not a test target; run with `cargo run -p spectre-ui --example studio`.
 //        Animates meters/scope/spectrum and advances transport so every lens —
 //        mixer, build graph, effects chain, arrange + piano roll, browser,
 //        modulation — can be exercised. No engine; demo state only.
 
 use eframe::egui;
-use geist_ui::model::SessionModel;
-use geist_ui::shell::draw_studio;
-use geist_ui::state::UIState;
-use geist_ui::theme::GeistTheme;
+use spectre_ui::model::SessionModel;
+use spectre_ui::shell::draw_studio;
+use spectre_ui::state::UIState;
+use spectre_ui::theme::GeistTheme;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {

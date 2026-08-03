@@ -73,7 +73,7 @@ Notes: Non-obvious context, design decisions
 - DSP, synth, fx, modular utilities: load `spectre-dsp-and-plugins` and `geist-realtime-rust`.
 - CLAP/LV2 hosting: load `geist-plugin-hosting` and `geist-realtime-rust`.
 - Timeline, automation, persistence: load `spectre-project-timeline`.
-- UI work: load `geist-ui-workflow`.
+- UI work: load `spectre-ui-workflow`.
 - Any review: load `geist-validation-gates` plus the domain skill.
 
 ## Completion rule

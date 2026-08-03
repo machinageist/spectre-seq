@@ -31,7 +31,7 @@ rtrb = "0.3.4"
 # Immediate-mode GUI and native windowing/event loop
 eframe = "0.34"
 # Tactile-dark theme and Knob/Fader/Meter widgets for the front-end
-geist-ui = { path = "../../crates/geist-ui" }
+spectre-ui = { path = "../../crates/spectre-ui" }
 # Workflow profile parsing and startup precedence
 spectre-config = { path = "../../crates/spectre-config" }
 # WAV encoding for recorded audio clips

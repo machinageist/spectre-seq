@@ -15,5 +15,5 @@ Use the narrowest agent that owns the current slice.
 - `spectre-core-graph-agent`: `spectre-core` and `spectre-graph` implementation/review.
 - `geist-audio-dsp-agent`: audio backend, DSP, synth/fx/modular implementation/review.
 - `geist-plugin-host-agent`: CLAP/LV2 plugin host implementation/review.
-- `geist-ui-project-agent`: timeline, automation, persistence, UI implementation/review.
+- `spectre-ui-project-agent`: timeline, automation, persistence, UI implementation/review.
 - `geist-reviewer`: independent gatekeeper for plan fidelity and quality.

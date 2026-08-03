@@ -11,8 +11,8 @@
 // =============================================================================
 
 use eframe::egui;
-use geist_ui::theme::{self, GeistTheme};
-use geist_ui::widgets::{Fader, Knob, Meter};
+use spectre_ui::theme::{self, GeistTheme};
+use spectre_ui::widgets::{Fader, Knob, Meter};
 
 use crate::control::{EngineCommand, EngineControl};
 use crate::engine::{default_grid_for, empty_grid, Engine, Grid, NUM_TRACKS, SEQ_ROWS, SEQ_STEPS};
