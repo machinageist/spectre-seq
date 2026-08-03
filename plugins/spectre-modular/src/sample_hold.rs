@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-modular/src/sample_hold.rs
+// File: plugins/spectre-modular/src/sample_hold.rs
 // Layer: modular utilities
 // Purpose: Sample & Hold, Track & Hold nodes
 // Status: Implemented; trigger-latched and gate-tracked holds.

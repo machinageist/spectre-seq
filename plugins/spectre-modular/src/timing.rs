@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-modular/src/timing.rs
+// File: plugins/spectre-modular/src/timing.rs
 // Layer: modular utilities
 // Purpose: Clock divider, gate delay, slew limiter nodes
 // Status: Implemented; edge counting, per-channel delay lines, rate limiting.

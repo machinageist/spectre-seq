@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: plugins/geist-modular/Cargo.toml
+# File: plugins/spectre-modular/Cargo.toml
 # Layer: modular utilities
 # Purpose: Utility/glue nodes; pure routing math wrapped as graph AudioNodes.
 # Status: Implemented incrementally; math nodes first.
@@ -7,7 +7,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-modular"
+name = "spectre-modular"
 version = "0.1.0"
 edition = "2021"
 

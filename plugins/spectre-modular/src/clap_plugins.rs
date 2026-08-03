@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-modular/src/clap_plugins.rs
+// File: plugins/spectre-modular/src/clap_plugins.rs
 // Layer: modular utilities
 // Purpose: Register every utility node as a CLAP plugin
 // Status: Deferred to Phase 4 (CLAP host). Intentionally NOT in the module tree.

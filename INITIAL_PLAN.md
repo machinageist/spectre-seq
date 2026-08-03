@@ -82,7 +82,7 @@ Notes: Preserved as historical planning context; living product authority is lin
   - Modulation matrix: any envelope/LFO output → any parameter; implemented as a `Vec<ModRoute>` resolved per block
   - Polyphonic with per-voice state; voice allocation with steal modes
 - Build `geist-fx` second: reverb, delay, chorus, saturator, EQ — each as a standalone CLAP
-- Build `geist-modular`: utility nodes (math ops, signal mux, attenuverter, slew limiter, logic gates, sample-and-hold) — these are the glue for "any signal to any input"
+- Build `spectre-modular`: utility nodes (math ops, signal mux, attenuverter, slew limiter, logic gates, sample-and-hold) — these are the glue for "any signal to any input"
 - CLAP binaries built with `cargo build --release --features clap-plugin`; DAW-internal nodes built without that feature
 
 ---

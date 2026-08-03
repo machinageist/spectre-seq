@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-modular/src/util.rs
+// File: plugins/spectre-modular/src/util.rs
 // Layer: modular utilities
 // Purpose: Gate convention and channel-major buffer walkers
 // Status: Implemented; gate levels, per-channel map, channel-0 reducers.

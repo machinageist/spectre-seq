@@ -261,7 +261,7 @@ geistdaw/
 │   │       └── eq/
 │   │           └── ...
 │   │
-│   └── geist-modular/                  # utility nodes: the routing glue
+│   └── spectre-modular/                  # utility nodes: the routing glue
 │       ├── Cargo.toml
 │       └── src/
 │           ├── lib.rs

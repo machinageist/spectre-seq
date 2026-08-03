@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-modular/src/signal.rs
+// File: plugins/spectre-modular/src/signal.rs
 // Layer: modular utilities
 // Purpose: Mux, Demux, Attenuverter, DC offset nodes
 // Status: Implemented; selector routing and per-channel scaling.

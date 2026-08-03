@@ -1518,14 +1518,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "geist-modular"
-version = "0.1.0"
-dependencies = [
- "spectre-core",
- "spectre-graph",
-]
-
-[[package]]
 name = "geist-synth"
 version = "0.1.0"
 dependencies = [
@@ -3566,6 +3558,14 @@ dependencies = [
 [[package]]
 name = "spectre-lv2-host"
 version = "0.1.0"
+
+[[package]]
+name = "spectre-modular"
+version = "0.1.0"
+dependencies = [
+ "spectre-core",
+ "spectre-graph",
+]
 
 [[package]]
 name = "spectre-project"

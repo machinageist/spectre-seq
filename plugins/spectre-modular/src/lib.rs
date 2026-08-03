@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-modular/src/lib.rs
+// File: plugins/spectre-modular/src/lib.rs
 // Layer: modular utilities
 // Purpose: Utility/glue nodes; the routing math for "any signal to any input"
 // Status: Implemented; math, logic, signal, timing, sample/hold node families.

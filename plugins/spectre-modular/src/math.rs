@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-modular/src/math.rs
+// File: plugins/spectre-modular/src/math.rs
 // Layer: modular utilities
 // Purpose: Add, Multiply, Abs, Clip, Rescale nodes
 // Status: Implemented; reduction mixers and per-channel maps.

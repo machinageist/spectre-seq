@@ -47,7 +47,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | --- | --- | --- |
 | `geist-synth` | Flagship synth engine exposed as an `AudioNode` (`daw_node.rs`) | Implemented as a two-oscillator prototype; `clap_plugin.rs` is a scaffold |
 | `geist-fx` | Delay, reverb, chorus, saturator, EQ graph nodes | Implemented |
-| `geist-modular` | Utility node families: math, logic, signal, timing, sample/hold | Implemented; **no consumer in the app binary**; `clap_plugins.rs` deferred |
+| `spectre-modular` | Utility node families: math, logic, signal, timing, sample/hold | Implemented; **no consumer in the app binary**; `clap_plugins.rs` deferred |
 
 ### `app/geist-daw`
 
@@ -87,7 +87,7 @@ spectre-vst-host       -> spectre-core, spectre-graph
 spectre-clap-host      -> spectre-core, spectre-graph
 geist-synth          -> spectre-core, spectre-graph, spectre-dsp
 geist-fx             -> spectre-core, spectre-graph, spectre-dsp
-geist-modular        -> spectre-core, spectre-graph
+spectre-modular        -> spectre-core, spectre-graph
 
 app/geist-daw        -> spectre-core, spectre-graph, spectre-audio-backend,
                         geist-synth, geist-fx, spectre-timeline,
@@ -106,7 +106,7 @@ worth naming because they are surprising:
   meet.
 
 Five workspace members build and test but contribute nothing to the running
-binary: `spectre-automation`, `geist-modular`, `spectre-vst-host`, `spectre-clap-host`,
+binary: `spectre-automation`, `spectre-modular`, `spectre-vst-host`, `spectre-clap-host`,
 `spectre-lv2-host`.
 
 ### Planned: `spectre-document`

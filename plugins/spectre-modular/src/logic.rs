@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-modular/src/logic.rs
+// File: plugins/spectre-modular/src/logic.rs
 // Layer: modular utilities
 // Purpose: Comparator, AND, OR, NOT, flip-flop nodes
 // Status: Implemented; Schmitt comparator, gate reducers, edge-toggle.
