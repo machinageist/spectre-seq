@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-vst-host/src/host_app.rs
+// File: crates/spectre-vst-host/src/host_app.rs
 // Layer: plugin host
 // Purpose: Host-side IHostApplication the plugin receives as its init context
 // Status: Implemented; minimal getName, createInstance returns notImplemented.

@@ -33,7 +33,7 @@ Two facts changed the calculus:
 
 - The plugin host targets **VST3 only**. CLAP and LV2 are dropped from the active plan;
   `spectre-clap-host` and `spectre-lv2-host` remain as shelved scaffolds, not built.
-- The host is built in a new crate **`geist-vst-host`** that **wraps the raw `vst3`
+- The host is built in a new crate **`spectre-vst-host`** that **wraps the raw `vst3`
   COM bindings in a safe Rust API** — mirroring the original "wrap `clap-sys`"
   philosophy. The realtime hot path stays first-party IP rather than delegated to a
   higher-level hosting crate.
@@ -42,7 +42,7 @@ Two facts changed the calculus:
 
 ## Consequences
 
-- **Unsafe FFI is required and concentrated here.** `geist-vst-host` is the one
+- **Unsafe FFI is required and concentrated here.** `spectre-vst-host` is the one
   first-party crate that does not `#![deny(unsafe_code)]`; unsafe is confined to the
   FFI/instance layer behind narrow safe wrappers, per the project's FFI rule.
 - **VST3 hosting is harder than CLAP would have been.** VST3 is a bidirectional

@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-vst-host/src/plugin_node.rs
+// File: crates/spectre-vst-host/src/plugin_node.rs
 // Layer: plugin host
 // Purpose: Wrap a VstInstance as a spectre-graph AudioNode
 // Status: Implemented; compile-checked. Audio bridging validated on real plugins.

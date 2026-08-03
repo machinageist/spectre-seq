@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-vst-host/src/instance.rs
+// File: crates/spectre-vst-host/src/instance.rs
 // Layer: plugin host
 // Purpose: VST3 component lifecycle: create, initialize, activate, process, end
 // Status: Implemented; compile-checked. Behavior validated against real plugins.

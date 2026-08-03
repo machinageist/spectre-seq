@@ -37,7 +37,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | `spectre-project` | On-disk project schema, CBOR serialize, TOML settings, blake3 asset map, migration, autosave | Implemented; **zero workspace dependencies** — a standalone serde DTO tree |
 | `spectre-config` | Workflow profile schema, TOML loader, keybindings, command intents, validation | Implemented |
 | `spectre-ui` | UI state, typed selection, commands, egui renderer, views, widgets, theme | Implemented incrementally |
-| `geist-vst-host` | VST3 host over raw `vst3` COM bindings; scanner, bundle, module, instance, `VstPluginNode` | Implemented, compile-checked; FFI crate, does not deny unsafe |
+| `spectre-vst-host` | VST3 host over raw `vst3` COM bindings; scanner, bundle, module, instance, `VstPluginNode` | Implemented, compile-checked; FFI crate, does not deny unsafe |
 | `spectre-clap-host` | CLAP host over `clap-sys`; scanner, bundle, cache db, params, state, gui, instance, `ClapPluginNode` | Substantially implemented; **not on the active plan** per ADR 001 |
 | `spectre-lv2-host` | LV2 host | Scanner only; `world.rs` and `instance.rs` are scaffolds |
 
@@ -83,7 +83,7 @@ spectre-timeline       -> spectre-core
 spectre-automation     -> spectre-core
 spectre-ui             -> spectre-config
 
-geist-vst-host       -> spectre-core, spectre-graph
+spectre-vst-host       -> spectre-core, spectre-graph
 spectre-clap-host      -> spectre-core, spectre-graph
 geist-synth          -> spectre-core, spectre-graph, spectre-dsp
 geist-fx             -> spectre-core, spectre-graph, spectre-dsp
@@ -106,7 +106,7 @@ worth naming because they are surprising:
   meet.
 
 Five workspace members build and test but contribute nothing to the running
-binary: `spectre-automation`, `geist-modular`, `geist-vst-host`, `spectre-clap-host`,
+binary: `spectre-automation`, `geist-modular`, `spectre-vst-host`, `spectre-clap-host`,
 `spectre-lv2-host`.
 
 ### Planned: `spectre-document`
@@ -202,7 +202,7 @@ These are load-bearing gaps, not omissions from this document.
 4. **Automation is not connected.** `spectre-automation` implements curves, lanes,
    and an evaluator, and nothing depends on it.
 5. **No plugin host is instantiated.** ADR 001 makes VST3 the active target;
-   `geist-vst-host` is implemented and compile-checked, but the binary never loads
+   `spectre-vst-host` is implemented and compile-checked, but the binary never loads
    it. `spectre-clap-host` is substantially implemented (bundle, cache db, params,
    state, gui, instance, `ClapPluginNode`, FFI layer) despite ADR 001 describing it
    as a shelved scaffold — "shelved" is accurate about the *plan*, not about the

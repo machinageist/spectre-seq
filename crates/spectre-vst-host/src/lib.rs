@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-vst-host/src/lib.rs
+// File: crates/spectre-vst-host/src/lib.rs
 // Layer: plugin host
 // Purpose: VST3 host entrypoint; safe API over the raw vst3 COM bindings
 // Status: Implemented incrementally; scanner first.

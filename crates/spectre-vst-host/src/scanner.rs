@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-vst-host/src/scanner.rs
+// File: crates/spectre-vst-host/src/scanner.rs
 // Layer: plugin host
 // Purpose: Discover .vst3 bundles in the platform's standard plugin paths
 // Status: Implemented; standard paths plus a bounded, bundle-aware walk.

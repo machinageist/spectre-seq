@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: crates/geist-vst-host/Cargo.toml
+# File: crates/spectre-vst-host/Cargo.toml
 # Layer: plugin host
 # Purpose: VST3 plugin host; wraps the raw vst3 COM bindings in a safe API.
 # Status: Implemented incrementally; scanner first. FFI deps land with that slice.
@@ -7,7 +7,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-vst-host"
+name = "spectre-vst-host"
 version = "0.1.0"
 edition = "2021"
 

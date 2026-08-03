@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-vst-host/src/bundle.rs
+// File: crates/spectre-vst-host/src/bundle.rs
 // Layer: plugin host
 // Purpose: Resolve the loadable binary and metadata inside a .vst3 bundle
 // Status: Implemented; platform/arch-aware path resolution, no FFI yet.

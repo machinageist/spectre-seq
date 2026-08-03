@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-vst-host/src/descriptor.rs
+// File: crates/spectre-vst-host/src/descriptor.rs
 // Layer: plugin host
 // Purpose: Safe owned descriptors built from VST3 factory C structs
 // Status: Implemented; fixed-array C string conversion is unit-tested.

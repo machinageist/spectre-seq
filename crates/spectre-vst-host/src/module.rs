@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-vst-host/src/module.rs
+// File: crates/spectre-vst-host/src/module.rs
 // Layer: plugin host
 // Purpose: Load a .vst3 binary and enumerate its plugin factory
 // Status: Implemented; library load + factory enumeration. Unsafe FFI confined here.
