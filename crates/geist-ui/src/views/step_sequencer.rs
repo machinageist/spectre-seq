@@ -55,9 +55,8 @@ pub fn draw(
     );
 
     // Column under the transport, if any, for the moving highlight
-    let play_step = playhead_beats.map(|ph| {
-        ((ph * STEPS_PER_BEAT) as usize).rem_euclid(pattern.steps.max(1))
-    });
+    let play_step =
+        playhead_beats.map(|ph| ((ph * STEPS_PER_BEAT) as usize).rem_euclid(pattern.steps.max(1)));
 
     egui::ScrollArea::both().show(ui, |ui| {
         let (area, _resp) = ui.allocate_exact_size(grid_size, Sense::hover());
@@ -84,7 +83,11 @@ pub fn draw(
                 Align2::RIGHT_CENTER,
                 note_name(midi),
                 FontId::new(9.0, egui::FontFamily::Proportional),
-                if is_black_key(midi) { theme::TEXT_MUTED } else { theme::TEXT },
+                if is_black_key(midi) {
+                    theme::TEXT_MUTED
+                } else {
+                    theme::TEXT
+                },
             );
 
             for step in 0..pattern.steps {
@@ -120,7 +123,9 @@ pub fn draw(
 
 // MIDI note number to a short name like "C4" or "F#3"
 fn note_name(midi: i32) -> String {
-    const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    const NAMES: [&str; 12] = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
     let octave = midi.div_euclid(12) - 1;
     format!("{}{}", NAMES[midi.rem_euclid(12) as usize], octave)
 }

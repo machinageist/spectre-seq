@@ -65,10 +65,16 @@ pub fn draw(ui: &mut egui::Ui, rack: &mut RackModel, intents: &mut Vec<CommandIn
                         if ui.small_button("✕").clicked() {
                             edit = Some(RackEdit::Remove(index));
                         }
-                        if ui.add_enabled(index + 1 < len, egui::Button::new("▼").small()).clicked() {
+                        if ui
+                            .add_enabled(index + 1 < len, egui::Button::new("▼").small())
+                            .clicked()
+                        {
                             edit = Some(RackEdit::Move(index, index + 1));
                         }
-                        if ui.add_enabled(index > 0, egui::Button::new("▲").small()).clicked() {
+                        if ui
+                            .add_enabled(index > 0, egui::Button::new("▲").small())
+                            .clicked()
+                        {
                             edit = Some(RackEdit::Move(index, index - 1));
                         }
                         if ui

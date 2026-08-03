@@ -43,7 +43,11 @@ pub fn draw(ui: &mut egui::Ui, graph: &mut GraphModel, _intents: &mut [CommandIn
     // Move nodes first so cables and bodies render at the new positions
     for index in 0..graph.nodes.len() {
         let rect = node_rect(&graph.nodes[index], origin);
-        let resp = ui.interact(rect, ui.id().with(("gnode", graph.nodes[index].id)), Sense::drag());
+        let resp = ui.interact(
+            rect,
+            ui.id().with(("gnode", graph.nodes[index].id)),
+            Sense::drag(),
+        );
         if resp.dragged() {
             graph.nodes[index].pos.0 += resp.drag_delta().x;
             graph.nodes[index].pos.1 += resp.drag_delta().y;
@@ -52,12 +56,16 @@ pub fn draw(ui: &mut egui::Ui, graph: &mut GraphModel, _intents: &mut [CommandIn
 
     // Cables under the nodes
     for cable in &graph.cables {
-        let (Some(from), Some(to)) = (graph.node(cable.from_node), graph.node(cable.to_node)) else {
+        let (Some(from), Some(to)) = (graph.node(cable.from_node), graph.node(cable.to_node))
+        else {
             continue;
         };
         let p0 = output_port_pos(from, cable.from_port, origin);
         let p3 = input_port_pos(to, cable.to_port, origin);
-        painter.add(Shape::line(bezier(p0, p3), Stroke::new(2.0, cable.kind.color())));
+        painter.add(Shape::line(
+            bezier(p0, p3),
+            Stroke::new(2.0, cable.kind.color()),
+        ));
     }
 
     // Node bodies, headers, ports, labels
@@ -89,13 +97,19 @@ fn node_rect(node: &GraphNode, origin: egui::Vec2) -> Rect {
 // Screen position of an input port (left edge)
 fn input_port_pos(node: &GraphNode, index: usize, origin: egui::Vec2) -> Pos2 {
     let rect = node_rect(node, origin);
-    pos2(rect.left(), rect.top() + HEADER_H + index as f32 * PORT_ROW_H + PORT_ROW_H * 0.5)
+    pos2(
+        rect.left(),
+        rect.top() + HEADER_H + index as f32 * PORT_ROW_H + PORT_ROW_H * 0.5,
+    )
 }
 
 // Screen position of an output port (right edge)
 fn output_port_pos(node: &GraphNode, index: usize, origin: egui::Vec2) -> Pos2 {
     let rect = node_rect(node, origin);
-    pos2(rect.right(), rect.top() + HEADER_H + index as f32 * PORT_ROW_H + PORT_ROW_H * 0.5)
+    pos2(
+        rect.right(),
+        rect.top() + HEADER_H + index as f32 * PORT_ROW_H + PORT_ROW_H * 0.5,
+    )
 }
 
 // Paint a node block: body, header, title, and its colored ports
@@ -103,7 +117,12 @@ fn paint_node(painter: &egui::Painter, node: &GraphNode, origin: egui::Vec2) {
     let rect = node_rect(node, origin);
     let radius = theme::RADIUS_PANEL;
     painter.rect_filled(rect, radius, theme::PANEL_RAISED);
-    painter.rect_stroke(rect, radius, Stroke::new(1.0, theme::STROKE_STRONG), StrokeKind::Inside);
+    painter.rect_stroke(
+        rect,
+        radius,
+        Stroke::new(1.0, theme::STROKE_STRONG),
+        StrokeKind::Inside,
+    );
 
     // Header strip
     let header = Rect::from_min_size(rect.min, vec2(rect.width(), HEADER_H));
@@ -121,13 +140,25 @@ fn paint_node(painter: &egui::Painter, node: &GraphNode, origin: egui::Vec2) {
         let p = input_port_pos(node, i, origin);
         painter.circle_filled(p, PORT_R, port.kind.color());
         painter.circle_stroke(p, PORT_R, Stroke::new(1.0, theme::BG));
-        painter.text(p + vec2(9.0, 0.0), Align2::LEFT_CENTER, &port.name, label_font.clone(), theme::TEXT_MUTED);
+        painter.text(
+            p + vec2(9.0, 0.0),
+            Align2::LEFT_CENTER,
+            &port.name,
+            label_font.clone(),
+            theme::TEXT_MUTED,
+        );
     }
     for (i, port) in node.outputs.iter().enumerate() {
         let p = output_port_pos(node, i, origin);
         painter.circle_filled(p, PORT_R, port.kind.color());
         painter.circle_stroke(p, PORT_R, Stroke::new(1.0, theme::BG));
-        painter.text(p - vec2(9.0, 0.0), Align2::RIGHT_CENTER, &port.name, label_font.clone(), theme::TEXT_MUTED);
+        painter.text(
+            p - vec2(9.0, 0.0),
+            Align2::RIGHT_CENTER,
+            &port.name,
+            label_font.clone(),
+            theme::TEXT_MUTED,
+        );
     }
 }
 
@@ -172,8 +203,14 @@ mod tests {
             id: 1,
             name: "N".into(),
             pos: (10.0, 20.0),
-            inputs: vec![crate::model::Port { name: "in".into(), kind: theme::SignalKind::Audio }],
-            outputs: vec![crate::model::Port { name: "out".into(), kind: theme::SignalKind::Audio }],
+            inputs: vec![crate::model::Port {
+                name: "in".into(),
+                kind: theme::SignalKind::Audio,
+            }],
+            outputs: vec![crate::model::Port {
+                name: "out".into(),
+                kind: theme::SignalKind::Audio,
+            }],
         };
         let origin = vec2(0.0, 0.0);
         let rect = node_rect(&node, origin);

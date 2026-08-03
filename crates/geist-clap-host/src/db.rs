@@ -193,11 +193,7 @@ pub fn default_cache_path() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         let local = std::env::var_os("LOCALAPPDATA")?;
-        Some(
-            Path::new(&local)
-                .join(CACHE_DIR_NAME)
-                .join(CACHE_FILE_NAME),
-        )
+        Some(Path::new(&local).join(CACHE_DIR_NAME).join(CACHE_FILE_NAME))
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {

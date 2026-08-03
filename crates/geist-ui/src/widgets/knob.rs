@@ -234,7 +234,14 @@ fn paint_knob(
     let a_val = pointer_angle(norm);
 
     // Track then filled value arc
-    paint_arc(p, center, arc_r, a_min, a_max, Stroke::new(3.0, theme::STROKE_STRONG));
+    paint_arc(
+        p,
+        center,
+        arc_r,
+        a_min,
+        a_max,
+        Stroke::new(3.0, theme::STROKE_STRONG),
+    );
     paint_arc(p, center, arc_r, a_min, a_val, Stroke::new(3.0, arc_color));
 
     // Knob body
@@ -259,19 +266,19 @@ fn paint_knob(
     // Outer modulation ring showing the modulated reach of the value
     if let Some(amount) = modulation {
         let a_mod = pointer_angle((norm + amount).clamp(0.0, 1.0));
-        paint_arc(p, center, arc_r + 5.0, a_val, a_mod, Stroke::new(2.0, theme::CV));
+        paint_arc(
+            p,
+            center,
+            arc_r + 5.0,
+            a_val,
+            a_mod,
+            Stroke::new(2.0, theme::CV),
+        );
     }
 }
 
 // Stroke a circular arc between two angles as a sampled polyline
-fn paint_arc(
-    painter: &egui::Painter,
-    center: Pos2,
-    radius: f32,
-    a0: f32,
-    a1: f32,
-    stroke: Stroke,
-) {
+fn paint_arc(painter: &egui::Painter, center: Pos2, radius: f32, a0: f32, a1: f32, stroke: Stroke) {
     let points: Vec<Pos2> = (0..=ARC_STEPS)
         .map(|i| {
             let t = i as f32 / ARC_STEPS as f32;

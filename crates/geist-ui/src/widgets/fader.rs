@@ -144,7 +144,10 @@ fn paint_fader(ui: &Ui, rect: Rect, norm: f32, fill_color: Color32) {
         let t = i as f32 / (TICKS - 1) as f32;
         let y = y_for_norm(t, rect.top(), rect.bottom());
         p.line_segment(
-            [egui::pos2(track.right() + 3.0, y), egui::pos2(track.right() + 8.0, y)],
+            [
+                egui::pos2(track.right() + 3.0, y),
+                egui::pos2(track.right() + 8.0, y),
+            ],
             Stroke::new(1.0, theme::STROKE_STRONG),
         );
     }

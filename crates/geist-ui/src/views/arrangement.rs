@@ -56,8 +56,10 @@ pub fn draw(
         let grid_left = rect.left() + LABEL_W;
         let beat_x = |beat: f32| grid_left + beat * PX_PER_BEAT;
         let x_beat = |x: f32| ((x - grid_left) / PX_PER_BEAT).max(0.0);
-        let y_lane = |y: f32| (((y - (rect.top() + RULER_H)) / LANE_H).floor() as i64)
-            .clamp(0, lane_count.saturating_sub(1) as i64) as usize;
+        let y_lane = |y: f32| {
+            (((y - (rect.top() + RULER_H)) / LANE_H).floor() as i64)
+                .clamp(0, lane_count.saturating_sub(1) as i64) as usize
+        };
 
         painter.rect_filled(rect, 0.0, theme::BG);
 
@@ -125,7 +127,11 @@ pub fn draw(
             let selected = timeline.selected == Some(index);
             let color = clip.kind.color();
             let fill = if selected { 0.45 } else { 0.30 };
-            painter.rect_filled(clip_rect, theme::RADIUS_CONTROL, color.linear_multiply(fill));
+            painter.rect_filled(
+                clip_rect,
+                theme::RADIUS_CONTROL,
+                color.linear_multiply(fill),
+            );
             painter.rect_stroke(
                 clip_rect,
                 theme::RADIUS_CONTROL,
@@ -145,12 +151,19 @@ pub fn draw(
                 pos2(clip_rect.right() - HANDLE_W, clip_rect.top()),
                 clip_rect.right_bottom(),
             );
-            let handle = ui.interact(handle_rect, ui.id().with(("clip_handle", index)), Sense::drag());
+            let handle = ui.interact(
+                handle_rect,
+                ui.id().with(("clip_handle", index)),
+                Sense::drag(),
+            );
             if handle.hovered() || handle.dragged() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             }
             if handle.dragged() {
-                let new_right = handle.interact_pointer_pos().map(|p| p.x).unwrap_or(clip_rect.right());
+                let new_right = handle
+                    .interact_pointer_pos()
+                    .map(|p| p.x)
+                    .unwrap_or(clip_rect.right());
                 timeline.selected = Some(index);
                 selection_interacted = true;
                 timeline.clips[index].len_beats = (x_beat(new_right) - clip.start_beats).max(0.25);
@@ -161,7 +174,11 @@ pub fn draw(
             }
 
             // Body: select + move (the handle sits on top and wins its strip)
-            let body = ui.interact(clip_rect, ui.id().with(("clip_body", index)), Sense::click_and_drag());
+            let body = ui.interact(
+                clip_rect,
+                ui.id().with(("clip_body", index)),
+                Sense::click_and_drag(),
+            );
             if body.clicked() {
                 timeline.selected = Some(index);
                 selection_interacted = true;
@@ -179,7 +196,11 @@ pub fn draw(
                 let snapped = timeline.clips[index].start_beats.round().max(0.0);
                 timeline.clips[index].start_beats = snapped;
             }
-            if selected && ui.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
+            if selected
+                && ui.input(|i| {
+                    i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)
+                })
+            {
                 remove = Some(index);
             }
         }
@@ -269,12 +290,7 @@ mod tests {
         };
         let mut changed = false;
         let _ = ctx.run_ui(raw, |ui| {
-            changed = draw(
-                ui,
-                timeline,
-                &Transport::default(),
-                &mut Vec::new(),
-            );
+            changed = draw(ui, timeline, &Transport::default(), &mut Vec::new());
         });
         changed
     }

@@ -53,7 +53,8 @@ pub fn draw(
         for pitch in LOW_PITCH..HIGH_PITCH {
             let y = pitch_top(pitch);
             if is_black_key(pitch) {
-                let row = Rect::from_min_size(pos2(grid_left, y), vec2(rect.right() - grid_left, ROW_H));
+                let row =
+                    Rect::from_min_size(pos2(grid_left, y), vec2(rect.right() - grid_left, ROW_H));
                 painter.rect_filled(row, 0.0, theme::FAINT);
             }
             painter.line_segment(
@@ -62,9 +63,18 @@ pub fn draw(
             );
 
             let key = Rect::from_min_size(pos2(rect.left(), y), vec2(KEY_W, ROW_H));
-            let fill = if is_black_key(pitch) { theme::INSET } else { theme::PANEL_RAISED };
+            let fill = if is_black_key(pitch) {
+                theme::INSET
+            } else {
+                theme::PANEL_RAISED
+            };
             painter.rect_filled(key, 0.0, fill);
-            painter.rect_stroke(key, 0.0, Stroke::new(1.0, theme::STROKE), StrokeKind::Inside);
+            painter.rect_stroke(
+                key,
+                0.0,
+                Stroke::new(1.0, theme::STROKE),
+                StrokeKind::Inside,
+            );
             if pitch % 12 == 0 {
                 painter.text(
                     key.right_center() - vec2(3.0, 0.0),
@@ -83,7 +93,14 @@ pub fn draw(
             let strong = (beat as i32) % 4 == 0;
             painter.line_segment(
                 [pos2(x, rect.top()), pos2(x, rect.bottom())],
-                Stroke::new(1.0, if strong { theme::STROKE_STRONG } else { theme::STROKE }),
+                Stroke::new(
+                    1.0,
+                    if strong {
+                        theme::STROKE_STRONG
+                    } else {
+                        theme::STROKE
+                    },
+                ),
             );
             beat += 1.0;
         }
@@ -100,7 +117,12 @@ pub fn draw(
                 3.0,
                 theme::ACCENT.linear_multiply(0.4 + 0.6 * note.velocity.clamp(0.0, 1.0)),
             );
-            painter.rect_stroke(note_rect, 3.0, Stroke::new(1.0, theme::ACCENT), StrokeKind::Inside);
+            painter.rect_stroke(
+                note_rect,
+                3.0,
+                Stroke::new(1.0, theme::ACCENT),
+                StrokeKind::Inside,
+            );
         }
 
         // Playhead at the current loop position

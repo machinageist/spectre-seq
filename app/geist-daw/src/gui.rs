@@ -172,13 +172,34 @@ impl GeistApp {
         self.control.send(EngineCommand::SetBpm(patch.bpm));
         self.control.send(EngineCommand::SetGain(patch.gain));
         // The classic GUI runs one global patch; broadcast it to every track
-        self.broadcast(|track| EngineCommand::SetCutoff { track, hz: patch.cutoff_hz });
-        self.broadcast(|track| EngineCommand::SetResonance { track, resonance: patch.resonance });
-        self.broadcast(|track| EngineCommand::SetUnisonVoices { track, voices: patch.unison_voices });
-        self.broadcast(|track| EngineCommand::SetDetune { track, cents: patch.detune_cents });
-        self.broadcast(|track| EngineCommand::SetDelay { track, on: patch.delay_on });
-        self.broadcast(|track| EngineCommand::SetReverb { track, on: patch.reverb_on });
-        self.broadcast(|track| EngineCommand::SetReverbMix { track, mix: patch.reverb_mix });
+        self.broadcast(|track| EngineCommand::SetCutoff {
+            track,
+            hz: patch.cutoff_hz,
+        });
+        self.broadcast(|track| EngineCommand::SetResonance {
+            track,
+            resonance: patch.resonance,
+        });
+        self.broadcast(|track| EngineCommand::SetUnisonVoices {
+            track,
+            voices: patch.unison_voices,
+        });
+        self.broadcast(|track| EngineCommand::SetDetune {
+            track,
+            cents: patch.detune_cents,
+        });
+        self.broadcast(|track| EngineCommand::SetDelay {
+            track,
+            on: patch.delay_on,
+        });
+        self.broadcast(|track| EngineCommand::SetReverb {
+            track,
+            on: patch.reverb_on,
+        });
+        self.broadcast(|track| EngineCommand::SetReverbMix {
+            track,
+            mix: patch.reverb_mix,
+        });
     }
 
     // Send a per-track command to every track; the classic GUI runs one patch
@@ -198,16 +219,15 @@ impl GeistApp {
                 velocity: UI_VELOCITY,
             });
         } else if !now_down && *held {
-            self.control.send(EngineCommand::NoteOff { track, key: midi });
+            self.control
+                .send(EngineCommand::NoteOff { track, key: midi });
         }
         *held = now_down;
     }
 
     // Poll the computer keyboard and play mapped notes
     fn handle_computer_keys(&mut self, ctx: &egui::Context) {
-        let down = ctx.input(|i| {
-            COMPUTER_KEYS.map(|(key, _)| i.keys_down.contains(&key))
-        });
+        let down = ctx.input(|i| COMPUTER_KEYS.map(|(key, _)| i.keys_down.contains(&key)));
         for (index, (_, midi)) in COMPUTER_KEYS.iter().enumerate() {
             let mut held = self.computer_held[index];
             self.edge(*midi, down[index], &mut held);
@@ -319,7 +339,10 @@ impl GeistApp {
                                     on: self.track_muted[track],
                                 });
                             }
-                            if ui.toggle_value(&mut self.track_soloed[track], "S").changed() {
+                            if ui
+                                .toggle_value(&mut self.track_soloed[track], "S")
+                                .changed()
+                            {
                                 self.control.send(EngineCommand::SetTrackSolo {
                                     track: track as u8,
                                     on: self.track_soloed[track],
@@ -600,6 +623,9 @@ mod tests {
     #[test]
     fn keyboard_spans_two_octaves_from_c3() {
         assert_eq!(note_name(KEYBOARD_BASE_MIDI), "C3");
-        assert_eq!(note_name(KEYBOARD_BASE_MIDI + KEYBOARD_KEYS as u8 - 1), "C5");
+        assert_eq!(
+            note_name(KEYBOARD_BASE_MIDI + KEYBOARD_KEYS as u8 - 1),
+            "C5"
+        );
     }
 }

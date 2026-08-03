@@ -6,7 +6,9 @@
 //        crossed this frame; the app maps those to engine commands. One key
 //        sounds at a time from the mouse (black keys win over the white below).
 
-use egui::{pos2, vec2, Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Ui};
+use egui::{
+    pos2, vec2, Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Ui,
+};
 
 use crate::theme;
 
@@ -69,7 +71,12 @@ impl<'a> Keyboard<'a> {
 
     // Draw the keyboard, edge-detect the pressed key, and return the transitions
     pub fn show(self, ui: &mut Ui) -> Vec<KeyEvent> {
-        let Keyboard { held, base_midi, keys, height } = self;
+        let Keyboard {
+            held,
+            base_midi,
+            keys,
+            height,
+        } = self;
         // Keep the held vector aligned with the key count across reconfigurations
         if held.len() != keys {
             held.clear();
@@ -95,7 +102,10 @@ impl<'a> Keyboard<'a> {
         for s in 0..keys {
             if is_black(base_midi, s) {
                 let cx = rect.left() + wi as f32 * white_w;
-                let r = Rect::from_min_size(pos2(cx - black_w * 0.5, rect.top()), vec2(black_w, black_h));
+                let r = Rect::from_min_size(
+                    pos2(cx - black_w * 0.5, rect.top()),
+                    vec2(black_w, black_h),
+                );
                 black.push((s, r));
             } else {
                 let x = rect.left() + wi as f32 * white_w;
@@ -107,14 +117,20 @@ impl<'a> Keyboard<'a> {
 
         // Single active key while pressed (topmost wins); hover for idle highlight
         let active = if resp.is_pointer_button_down_on() {
-            resp.interact_pointer_pos().and_then(|p| key_at(p, &black, &white))
+            resp.interact_pointer_pos()
+                .and_then(|p| key_at(p, &black, &white))
         } else {
             None
         };
         let hovered = resp.hover_pos().and_then(|p| key_at(p, &black, &white));
 
         // White keys first, black keys painted on top
-        let white_cr = CornerRadius { nw: 0, ne: 0, sw: 4, se: 4 };
+        let white_cr = CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: 4,
+            se: 4,
+        };
         for (s, r) in &white {
             let down = active == Some(*s);
             let fill = if down {
@@ -125,7 +141,12 @@ impl<'a> Keyboard<'a> {
                 WHITE_KEY
             };
             painter.rect_filled(r.shrink(0.5), white_cr, fill);
-            painter.rect_stroke(r.shrink(0.5), white_cr, Stroke::new(1.0, theme::STROKE_STRONG), StrokeKind::Inside);
+            painter.rect_stroke(
+                r.shrink(0.5),
+                white_cr,
+                Stroke::new(1.0, theme::STROKE_STRONG),
+                StrokeKind::Inside,
+            );
             let midi = base_midi + *s as u8;
             if midi.is_multiple_of(12) {
                 painter.text(
@@ -137,7 +158,12 @@ impl<'a> Keyboard<'a> {
                 );
             }
         }
-        let black_cr = CornerRadius { nw: 0, ne: 0, sw: 3, se: 3 };
+        let black_cr = CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: 3,
+            se: 3,
+        };
         for (s, r) in &black {
             let down = active == Some(*s);
             let fill = if down {
@@ -148,7 +174,12 @@ impl<'a> Keyboard<'a> {
                 BLACK_KEY
             };
             painter.rect_filled(*r, black_cr, fill);
-            painter.rect_stroke(*r, black_cr, Stroke::new(1.0, theme::BG), StrokeKind::Inside);
+            painter.rect_stroke(
+                *r,
+                black_cr,
+                Stroke::new(1.0, theme::BG),
+                StrokeKind::Inside,
+            );
         }
 
         // Emit the on/off transitions that crossed since last frame
@@ -157,7 +188,10 @@ impl<'a> Keyboard<'a> {
         for (s, slot) in held.iter_mut().enumerate() {
             let now = active == Some(s);
             if now != *slot {
-                events.push(KeyEvent { midi: base_midi + s as u8, down: now });
+                events.push(KeyEvent {
+                    midi: base_midi + s as u8,
+                    down: now,
+                });
                 *slot = now;
             }
         }
@@ -215,8 +249,14 @@ mod tests {
 
     #[test]
     fn black_keys_win_over_the_white_below() {
-        let black = vec![(1usize, Rect::from_min_size(pos2(10.0, 0.0), vec2(10.0, 30.0)))];
-        let white = vec![(0usize, Rect::from_min_size(pos2(0.0, 0.0), vec2(20.0, 50.0)))];
+        let black = vec![(
+            1usize,
+            Rect::from_min_size(pos2(10.0, 0.0), vec2(10.0, 30.0)),
+        )];
+        let white = vec![(
+            0usize,
+            Rect::from_min_size(pos2(0.0, 0.0), vec2(20.0, 50.0)),
+        )];
         // A point inside the overlap resolves to the black key
         assert_eq!(key_at(pos2(15.0, 10.0), &black, &white), Some(1));
         // A point only under the white key resolves to white

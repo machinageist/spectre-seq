@@ -42,7 +42,9 @@ impl CpalBackend {
                 return Ok(device);
             }
         }
-        Err(GeistError::UnsupportedBackend("named output device not found"))
+        Err(GeistError::UnsupportedBackend(
+            "named output device not found",
+        ))
     }
 
     // Find an input device by exact name
@@ -56,7 +58,9 @@ impl CpalBackend {
                 return Ok(device);
             }
         }
-        Err(GeistError::UnsupportedBackend("named input device not found"))
+        Err(GeistError::UnsupportedBackend(
+            "named input device not found",
+        ))
     }
 }
 
@@ -193,7 +197,10 @@ impl AudioBackend for CpalBackend {
             .play()
             .map_err(|_| GeistError::UnsupportedBackend("failed to start output stream"))?;
 
-        Ok(Box::new(CpalStream { _stream: stream, xruns }))
+        Ok(Box::new(CpalStream {
+            _stream: stream,
+            xruns,
+        }))
     }
 
     fn default_input_device(&self) -> GeistResult<DeviceInfo> {
@@ -251,7 +258,13 @@ impl AudioBackend for CpalBackend {
             .play()
             .map_err(|_| GeistError::UnsupportedBackend("failed to start input stream"))?;
 
-        Ok((Box::new(CpalStream { _stream: stream, xruns }), consumer))
+        Ok((
+            Box::new(CpalStream {
+                _stream: stream,
+                xruns,
+            }),
+            consumer,
+        ))
     }
 }
 

@@ -213,7 +213,10 @@ mod tests {
         let joined: OsString =
             std::env::join_paths([PathBuf::from("/a/lv2"), PathBuf::from("/b/lv2")]).unwrap();
         let parsed = parse_lv2_path(&joined);
-        assert_eq!(parsed, vec![PathBuf::from("/a/lv2"), PathBuf::from("/b/lv2")]);
+        assert_eq!(
+            parsed,
+            vec![PathBuf::from("/a/lv2"), PathBuf::from("/b/lv2")]
+        );
     }
 
     #[test]

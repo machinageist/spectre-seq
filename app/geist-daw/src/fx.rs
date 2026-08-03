@@ -53,7 +53,9 @@ impl FxChain {
     // Set the delay time in seconds on both channels
     pub fn set_delay_time(&mut self, seconds: f32) {
         let sr = self.sample_rate_hz as f32;
-        self.delay.delay_mut().set_delay_seconds(seconds, seconds, sr);
+        self.delay
+            .delay_mut()
+            .set_delay_seconds(seconds, seconds, sr);
     }
 
     // Set the delay feedback amount

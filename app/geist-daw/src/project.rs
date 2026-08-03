@@ -54,14 +54,38 @@ impl PatchState {
             id: 0,
             kind: PATCH_NODE_KIND.to_string(),
             params: vec![
-                ParamValue { id: PARAM_CUTOFF, value: self.cutoff_hz },
-                ParamValue { id: PARAM_RESONANCE, value: self.resonance },
-                ParamValue { id: PARAM_GAIN, value: self.gain },
-                ParamValue { id: PARAM_UNISON, value: self.unison_voices as f32 },
-                ParamValue { id: PARAM_DETUNE, value: self.detune_cents },
-                ParamValue { id: PARAM_DELAY, value: bool_to_f32(self.delay_on) },
-                ParamValue { id: PARAM_REVERB, value: bool_to_f32(self.reverb_on) },
-                ParamValue { id: PARAM_REVERB_MIX, value: self.reverb_mix },
+                ParamValue {
+                    id: PARAM_CUTOFF,
+                    value: self.cutoff_hz,
+                },
+                ParamValue {
+                    id: PARAM_RESONANCE,
+                    value: self.resonance,
+                },
+                ParamValue {
+                    id: PARAM_GAIN,
+                    value: self.gain,
+                },
+                ParamValue {
+                    id: PARAM_UNISON,
+                    value: self.unison_voices as f32,
+                },
+                ParamValue {
+                    id: PARAM_DETUNE,
+                    value: self.detune_cents,
+                },
+                ParamValue {
+                    id: PARAM_DELAY,
+                    value: bool_to_f32(self.delay_on),
+                },
+                ParamValue {
+                    id: PARAM_REVERB,
+                    value: bool_to_f32(self.reverb_on),
+                },
+                ParamValue {
+                    id: PARAM_REVERB_MIX,
+                    value: self.reverb_mix,
+                },
             ],
             state_blob: Vec::new(),
         });

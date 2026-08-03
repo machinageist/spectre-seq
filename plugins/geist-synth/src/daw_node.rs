@@ -325,7 +325,11 @@ mod tests {
             render(&mut sine, &[]);
             render(&mut saw, &[]);
         }
-        assert_ne!(render(&mut sine, &[]), render(&mut saw, &[]), "osc mix had no effect");
+        assert_ne!(
+            render(&mut sine, &[]),
+            render(&mut saw, &[]),
+            "osc mix had no effect"
+        );
     }
 
     #[test]
@@ -345,7 +349,11 @@ mod tests {
             render(&mut base, &[]);
             render(&mut shifted, &[]);
         }
-        assert_ne!(render(&mut base, &[]), render(&mut shifted, &[]), "osc B detune had no effect");
+        assert_ne!(
+            render(&mut base, &[]),
+            render(&mut shifted, &[]),
+            "osc B detune had no effect"
+        );
     }
 
     #[test]

@@ -59,8 +59,7 @@ impl eframe::App for Gallery {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.heading("Geist UI");
             ui.label(
-                egui::RichText::new("Tactile dark — VCV × Phase Plant")
-                    .color(theme::TEXT_MUTED),
+                egui::RichText::new("Tactile dark — VCV × Phase Plant").color(theme::TEXT_MUTED),
             );
             ui.separator();
 

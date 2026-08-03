@@ -39,9 +39,12 @@ pub fn draw(ui: &mut egui::Ui, browser: &mut BrowserModel, intents: &mut Vec<Com
 
     let matches = browser.matches();
     ui.label(
-        RichText::new(format!("{} result(s) — double-click to insert", matches.len()))
-            .small()
-            .color(theme::TEXT_MUTED),
+        RichText::new(format!(
+            "{} result(s) — double-click to insert",
+            matches.len()
+        ))
+        .small()
+        .color(theme::TEXT_MUTED),
     );
     ui.add_space(4.0);
 
@@ -56,10 +59,7 @@ pub fn draw(ui: &mut egui::Ui, browser: &mut BrowserModel, intents: &mut Vec<Com
                 // Signal-type color dot
                 let (dot, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
                 ui.painter().circle_filled(dot.center(), 4.0, color);
-                ui.selectable_label(
-                    selected,
-                    RichText::new(format!("{name}    {category}")),
-                )
+                ui.selectable_label(selected, RichText::new(format!("{name}    {category}")))
             });
 
             let label = resp.inner;

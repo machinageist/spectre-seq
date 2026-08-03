@@ -36,7 +36,12 @@ pub fn draw(ui: &mut egui::Ui, mixer: &mut MixerModel, intents: &mut Vec<Command
 }
 
 // One channel strip: name, pan, fader+meter, transport buttons, insert chips
-fn strip(ui: &mut egui::Ui, mixer: &mut MixerModel, index: usize, intents: &mut Vec<CommandIntent>) {
+fn strip(
+    ui: &mut egui::Ui,
+    mixer: &mut MixerModel,
+    index: usize,
+    intents: &mut Vec<CommandIntent>,
+) {
     let selected = mixer.selected == index;
     let name = mixer.channels[index].name.clone();
     let audible = mixer.is_audible(index);
@@ -63,7 +68,11 @@ fn strip(ui: &mut egui::Ui, mixer: &mut MixerModel, index: usize, intents: &mut 
                     .size(vec2(30.0, 150.0))
                     .show(ui);
                 // Dim the meter when the channel is muted or solo-gated out
-                let peak = if audible { mixer.channels[index].peak } else { 0.0 };
+                let peak = if audible {
+                    mixer.channels[index].peak
+                } else {
+                    0.0
+                };
                 Meter::new(peak)
                     .peak(mixer.channels[index].rms.max(peak))
                     .size(vec2(10.0, 150.0))
@@ -71,13 +80,22 @@ fn strip(ui: &mut egui::Ui, mixer: &mut MixerModel, index: usize, intents: &mut 
             });
 
             ui.horizontal(|ui| {
-                if ui.toggle_value(&mut mixer.channels[index].muted, "M").changed() {
+                if ui
+                    .toggle_value(&mut mixer.channels[index].muted, "M")
+                    .changed()
+                {
                     intents.push(CommandIntent::new("set_track_mute"));
                 }
-                if ui.toggle_value(&mut mixer.channels[index].soloed, "S").changed() {
+                if ui
+                    .toggle_value(&mut mixer.channels[index].soloed, "S")
+                    .changed()
+                {
                     intents.push(CommandIntent::new("set_track_solo"));
                 }
-                if ui.toggle_value(&mut mixer.channels[index].armed, "R").changed() {
+                if ui
+                    .toggle_value(&mut mixer.channels[index].armed, "R")
+                    .changed()
+                {
                     intents.push(CommandIntent::new("set_track_arm"));
                 }
             });

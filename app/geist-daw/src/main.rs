@@ -18,8 +18,8 @@ mod init;
 mod project;
 mod recorder;
 mod session;
-mod studio;
 mod startup;
+mod studio;
 
 use std::time::Duration;
 
@@ -77,7 +77,9 @@ fn run_gui(
             let app: Box<dyn eframe::App> = if classic {
                 Box::new(gui::GeistApp::new(engine, control))
             } else {
-                Box::new(studio::StudioApp::with_ui_state(engine, control, recorder, ui_state))
+                Box::new(studio::StudioApp::with_ui_state(
+                    engine, control, recorder, ui_state,
+                ))
             };
             Ok(app)
         }),

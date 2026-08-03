@@ -113,8 +113,9 @@ impl ClapBundle {
 
         // The clap_entry symbol's address IS the entry struct; read it as such
         let entry: *const clap_plugin_entry = unsafe {
-            let sym: Symbol<*const clap_plugin_entry> =
-                library.get(CLAP_ENTRY_SYMBOL).map_err(BundleError::Symbol)?;
+            let sym: Symbol<*const clap_plugin_entry> = library
+                .get(CLAP_ENTRY_SYMBOL)
+                .map_err(BundleError::Symbol)?;
             *sym
         };
         if entry.is_null() {
@@ -145,9 +146,7 @@ impl ClapBundle {
         // SAFETY: entry is live; the id is a static NUL-terminated C string
         let factory = unsafe {
             match (*entry).get_factory {
-                Some(get) => {
-                    get(CLAP_PLUGIN_FACTORY_ID.as_ptr()) as *const clap_plugin_factory
-                }
+                Some(get) => get(CLAP_PLUGIN_FACTORY_ID.as_ptr()) as *const clap_plugin_factory,
                 None => std::ptr::null(),
             }
         };
@@ -180,11 +179,7 @@ impl ClapBundle {
     // None if the factory cannot create or the id is unknown. The returned
     // plugin borrows this bundle's library and the host, so it must outlive
     // neither.
-    pub fn create_plugin(
-        &self,
-        plugin_id: &CStr,
-        host: &clap_host,
-    ) -> Option<*const clap_plugin> {
+    pub fn create_plugin(&self, plugin_id: &CStr, host: &clap_host) -> Option<*const clap_plugin> {
         // SAFETY: factory is live; id and host stay valid across the call
         unsafe {
             let create = (*self.factory).create_plugin?;
@@ -269,7 +264,9 @@ unsafe fn cstr_to_string(ptr: *const c_char) -> String {
     if ptr.is_null() {
         return String::new();
     }
-    unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned()
+    unsafe { CStr::from_ptr(ptr) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 // Read a null-terminated array of C strings into an owned Vec

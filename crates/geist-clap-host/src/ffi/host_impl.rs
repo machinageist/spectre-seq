@@ -129,7 +129,11 @@ unsafe extern "C" fn params_request_flush(_host: *const clap_host) {}
 // Gui requests; the stub host owns no window, so resize/show/hide are refused and
 // the notifications are no-ops until app-side embedding wires per-instance state
 unsafe extern "C" fn gui_resize_hints_changed(_host: *const clap_host) {}
-unsafe extern "C" fn gui_request_resize(_host: *const clap_host, _width: u32, _height: u32) -> bool {
+unsafe extern "C" fn gui_request_resize(
+    _host: *const clap_host,
+    _width: u32,
+    _height: u32,
+) -> bool {
     false
 }
 unsafe extern "C" fn gui_request_show(_host: *const clap_host) -> bool {

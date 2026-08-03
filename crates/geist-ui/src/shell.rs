@@ -379,7 +379,10 @@ fn scope(ui: &mut egui::Ui, frame: &ScopeFrame) {
                 pos2(x, rect.center().y - s.clamp(-1.0, 1.0) * amp)
             })
             .collect();
-        painter.add(egui::Shape::line(points, Stroke::new(1.0_f32, theme::AUDIO)));
+        painter.add(egui::Shape::line(
+            points,
+            Stroke::new(1.0_f32, theme::AUDIO),
+        ));
     }
 }
 

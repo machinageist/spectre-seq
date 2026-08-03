@@ -153,26 +153,71 @@ impl StudioSession {
         let mut assets = AssetMap::from_refs(offline_assets);
 
         // Macros node: master gain plus a full per-track patch and fx block
-        let mut params = vec![ParamValue { id: PARAM_GAIN, value: self.gain }];
+        let mut params = vec![ParamValue {
+            id: PARAM_GAIN,
+            value: self.gain,
+        }];
         for (track, state) in self.tracks.iter().enumerate() {
             let t = track as u32;
-            params.push(ParamValue { id: PARAM_TRACK_LEVEL_BASE + t, value: state.level });
-            params.push(ParamValue { id: PARAM_TRACK_PAN_BASE + t, value: state.pan });
-            params.push(ParamValue { id: PARAM_TRACK_CUTOFF_BASE + t, value: state.cutoff_hz });
-            params.push(ParamValue { id: PARAM_TRACK_RESONANCE_BASE + t, value: state.resonance });
-            params.push(ParamValue { id: PARAM_TRACK_DELAY_BASE + t, value: bool_to_f32(state.delay_on) });
-            params.push(ParamValue { id: PARAM_TRACK_DELAY_TIME_BASE + t, value: state.delay_time });
-            params.push(ParamValue { id: PARAM_TRACK_DELAY_FEEDBACK_BASE + t, value: state.delay_feedback });
-            params.push(ParamValue { id: PARAM_TRACK_DELAY_MIX_BASE + t, value: state.delay_mix });
-            params.push(ParamValue { id: PARAM_TRACK_REVERB_BASE + t, value: bool_to_f32(state.reverb_on) });
-            params.push(ParamValue { id: PARAM_TRACK_REVERB_MIX_BASE + t, value: state.reverb_mix });
-            params.push(ParamValue { id: PARAM_TRACK_OSC_MIX_BASE + t, value: state.osc_mix });
-            params.push(ParamValue { id: PARAM_TRACK_OSC_B_SEMIS_BASE + t, value: state.osc_b_semis });
+            params.push(ParamValue {
+                id: PARAM_TRACK_LEVEL_BASE + t,
+                value: state.level,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_PAN_BASE + t,
+                value: state.pan,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_CUTOFF_BASE + t,
+                value: state.cutoff_hz,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_RESONANCE_BASE + t,
+                value: state.resonance,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_DELAY_BASE + t,
+                value: bool_to_f32(state.delay_on),
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_DELAY_TIME_BASE + t,
+                value: state.delay_time,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_DELAY_FEEDBACK_BASE + t,
+                value: state.delay_feedback,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_DELAY_MIX_BASE + t,
+                value: state.delay_mix,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_REVERB_BASE + t,
+                value: bool_to_f32(state.reverb_on),
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_REVERB_MIX_BASE + t,
+                value: state.reverb_mix,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_OSC_MIX_BASE + t,
+                value: state.osc_mix,
+            });
+            params.push(ParamValue {
+                id: PARAM_TRACK_OSC_B_SEMIS_BASE + t,
+                value: state.osc_b_semis,
+            });
             for (i, &value) in state.amp_env.iter().enumerate() {
-                params.push(ParamValue { id: PARAM_TRACK_AMP_ENV_BASE + t * 4 + i as u32, value });
+                params.push(ParamValue {
+                    id: PARAM_TRACK_AMP_ENV_BASE + t * 4 + i as u32,
+                    value,
+                });
             }
             for (i, &value) in state.filter_env.iter().enumerate() {
-                params.push(ParamValue { id: PARAM_TRACK_FILTER_ENV_BASE + t * 4 + i as u32, value });
+                params.push(ParamValue {
+                    id: PARAM_TRACK_FILTER_ENV_BASE + t * 4 + i as u32,
+                    value,
+                });
             }
         }
         project.graph.nodes.push(NodeEntry {
@@ -240,13 +285,19 @@ impl StudioSession {
                     let asset = clip.asset_ref.as_ref().ok_or_else(|| {
                         ProjectError::Io(std::io::Error::new(
                             std::io::ErrorKind::InvalidData,
-                            format!("offline take has no asset reference: {}", clip.wav_path.display()),
+                            format!(
+                                "offline take has no asset reference: {}",
+                                clip.wav_path.display()
+                            ),
                         ))
                     })?;
                     assets.index_of_hash(&asset.content_hash).ok_or_else(|| {
                         ProjectError::Io(std::io::Error::new(
                             std::io::ErrorKind::InvalidData,
-                            format!("offline take asset is not indexed: {}", clip.wav_path.display()),
+                            format!(
+                                "offline take asset is not indexed: {}",
+                                clip.wav_path.display()
+                            ),
                         ))
                     })?
                 };
@@ -254,7 +305,11 @@ impl StudioSession {
                     id: clip.id,
                     start_ticks: beats_to_ticks(clip.start_beats),
                     length_ticks: beats_to_ticks(clip.len_beats),
-                    kind: ClipKind::Audio { asset_index, offset_ticks: 0, gain_db: 0.0 },
+                    kind: ClipKind::Audio {
+                        asset_index,
+                        offset_ticks: 0,
+                        gain_db: 0.0,
+                    },
                 });
             }
             project.tracks.push(TrackEntry {
@@ -303,19 +358,48 @@ impl StudioSession {
             state.soloed = entry.soloed;
             if let Some(node) = macros {
                 let t = index as u32;
-                let read = |base: u32| node.params.iter().find(|p| p.id == base + t).map(|p| p.value);
-                if let Some(v) = read(PARAM_TRACK_LEVEL_BASE) { state.level = v; }
-                if let Some(v) = read(PARAM_TRACK_PAN_BASE) { state.pan = v; }
-                if let Some(v) = read(PARAM_TRACK_CUTOFF_BASE) { state.cutoff_hz = v; }
-                if let Some(v) = read(PARAM_TRACK_RESONANCE_BASE) { state.resonance = v; }
-                if let Some(v) = read(PARAM_TRACK_DELAY_BASE) { state.delay_on = v >= 0.5; }
-                if let Some(v) = read(PARAM_TRACK_DELAY_TIME_BASE) { state.delay_time = v; }
-                if let Some(v) = read(PARAM_TRACK_DELAY_FEEDBACK_BASE) { state.delay_feedback = v; }
-                if let Some(v) = read(PARAM_TRACK_DELAY_MIX_BASE) { state.delay_mix = v; }
-                if let Some(v) = read(PARAM_TRACK_REVERB_BASE) { state.reverb_on = v >= 0.5; }
-                if let Some(v) = read(PARAM_TRACK_REVERB_MIX_BASE) { state.reverb_mix = v; }
-                if let Some(v) = read(PARAM_TRACK_OSC_MIX_BASE) { state.osc_mix = v; }
-                if let Some(v) = read(PARAM_TRACK_OSC_B_SEMIS_BASE) { state.osc_b_semis = v; }
+                let read = |base: u32| {
+                    node.params
+                        .iter()
+                        .find(|p| p.id == base + t)
+                        .map(|p| p.value)
+                };
+                if let Some(v) = read(PARAM_TRACK_LEVEL_BASE) {
+                    state.level = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_PAN_BASE) {
+                    state.pan = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_CUTOFF_BASE) {
+                    state.cutoff_hz = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_RESONANCE_BASE) {
+                    state.resonance = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_DELAY_BASE) {
+                    state.delay_on = v >= 0.5;
+                }
+                if let Some(v) = read(PARAM_TRACK_DELAY_TIME_BASE) {
+                    state.delay_time = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_DELAY_FEEDBACK_BASE) {
+                    state.delay_feedback = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_DELAY_MIX_BASE) {
+                    state.delay_mix = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_REVERB_BASE) {
+                    state.reverb_on = v >= 0.5;
+                }
+                if let Some(v) = read(PARAM_TRACK_REVERB_MIX_BASE) {
+                    state.reverb_mix = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_OSC_MIX_BASE) {
+                    state.osc_mix = v;
+                }
+                if let Some(v) = read(PARAM_TRACK_OSC_B_SEMIS_BASE) {
+                    state.osc_b_semis = v;
+                }
                 for i in 0..4u32 {
                     let amp_id = PARAM_TRACK_AMP_ENV_BASE + t * 4 + i;
                     if let Some(param) = node.params.iter().find(|p| p.id == amp_id) {
@@ -450,7 +534,10 @@ fn find_matching_take(project_path: &Path, asset: &AssetRef) -> Option<PathBuf> 
     let root = base_dir_of(project_path).join(project_assets_dir_name(project_path));
     let mut pending = vec![root];
     while let Some(dir) = pending.pop() {
-        let mut entries: Vec<_> = std::fs::read_dir(dir).ok()?.filter_map(Result::ok).collect();
+        let mut entries: Vec<_> = std::fs::read_dir(dir)
+            .ok()?
+            .filter_map(Result::ok)
+            .collect();
         entries.sort_by_key(|entry| entry.path());
         for entry in entries {
             let file_type = entry.file_type().ok()?;
@@ -493,10 +580,7 @@ pub fn save_to(session: &StudioSession, path: &Path) -> Result<(), ProjectError>
 }
 
 // Read a session from an explicit path, falling back to `defaults` per field
-pub fn load_from(
-    defaults: &StudioSession,
-    path: &Path,
-) -> Result<StudioSession, ProjectError> {
+pub fn load_from(defaults: &StudioSession, path: &Path) -> Result<StudioSession, ProjectError> {
     let project = load_from_path(path)?;
     Ok(StudioSession::from_project(&project, defaults, path))
 }
@@ -579,15 +663,30 @@ mod tests {
                 start_beats: 0.0,
                 len_beats: 8.0,
                 notes: vec![
-                    NoteSession { pitch: 60, start_beats: 0.0, len_beats: 1.0, velocity: 1.0 },
-                    NoteSession { pitch: 67, start_beats: 2.5, len_beats: 0.5, velocity: 1.0 },
+                    NoteSession {
+                        pitch: 60,
+                        start_beats: 0.0,
+                        len_beats: 1.0,
+                        velocity: 1.0,
+                    },
+                    NoteSession {
+                        pitch: 67,
+                        start_beats: 2.5,
+                        len_beats: 0.5,
+                        velocity: 1.0,
+                    },
                 ],
             },
             ClipSession {
                 id: 2,
                 start_beats: 16.0,
                 len_beats: 4.0,
-                notes: vec![NoteSession { pitch: 72, start_beats: 1.0, len_beats: 2.0, velocity: 1.0 }],
+                notes: vec![NoteSession {
+                    pitch: 72,
+                    start_beats: 1.0,
+                    len_beats: 2.0,
+                    velocity: 1.0,
+                }],
             },
         ];
         s
@@ -637,7 +736,10 @@ mod tests {
         assert_ne!(loaded_clip.wav_path, wav);
         assert!(loaded_clip.wav_path.starts_with(&project_dir));
         assert!(loaded_clip.verified);
-        assert_eq!(std::fs::read(&loaded_clip.wav_path).unwrap(), b"riff-take-bytes");
+        assert_eq!(
+            std::fs::read(&loaded_clip.wav_path).unwrap(),
+            b"riff-take-bytes"
+        );
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -728,7 +830,8 @@ mod tests {
 
     #[test]
     fn relink_candidate_requires_exact_size_and_hash() {
-        let path = std::env::temp_dir().join(format!("geist-relink-candidate-{}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("geist-relink-candidate-{}", std::process::id()));
         std::fs::write(&path, b"candidate-audio").unwrap();
         let asset = AssetRef {
             relative_path: "missing.wav".to_string(),

@@ -100,13 +100,17 @@ mod tests {
             Ok(Box::new(MockStream))
         }
         fn default_input_device(&self) -> GeistResult<DeviceInfo> {
-            Err(geist_core::errors::GeistError::UnsupportedBackend("mock has no input"))
+            Err(geist_core::errors::GeistError::UnsupportedBackend(
+                "mock has no input",
+            ))
         }
         fn start_input(
             &mut self,
             _config: &StreamConfig,
         ) -> GeistResult<(Box<dyn Stream>, crate::stream::CaptureConsumer)> {
-            Err(geist_core::errors::GeistError::UnsupportedBackend("mock has no input"))
+            Err(geist_core::errors::GeistError::UnsupportedBackend(
+                "mock has no input",
+            ))
         }
     }
 

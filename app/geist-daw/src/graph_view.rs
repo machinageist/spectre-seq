@@ -77,7 +77,8 @@ impl GraphView {
 
         // Nodes: draw, drag, and toggle bypass on click
         for i in 0..NODE_COUNT {
-            let node_rect = egui::Rect::from_min_size(self.positions[i], egui::vec2(NODE_W, NODE_H));
+            let node_rect =
+                egui::Rect::from_min_size(self.positions[i], egui::vec2(NODE_W, NODE_H));
             let id = ui.id().with(("graph_node", i));
             let response = ui.interact(node_rect, id, egui::Sense::click_and_drag());
             if response.dragged() {
@@ -89,20 +90,27 @@ impl GraphView {
                         *delay_on = !*delay_on;
                         // The classic chain is global; toggle every track's delay
                         for track in 0..NUM_TRACKS as u8 {
-                            control.send(EngineCommand::SetDelay { track, on: *delay_on });
+                            control.send(EngineCommand::SetDelay {
+                                track,
+                                on: *delay_on,
+                            });
                         }
                     }
                     REVERB => {
                         *reverb_on = !*reverb_on;
                         for track in 0..NUM_TRACKS as u8 {
-                            control.send(EngineCommand::SetReverb { track, on: *reverb_on });
+                            control.send(EngineCommand::SetReverb {
+                                track,
+                                on: *reverb_on,
+                            });
                         }
                     }
                     _ => {}
                 }
             }
 
-            let node_rect = egui::Rect::from_min_size(self.positions[i], egui::vec2(NODE_W, NODE_H));
+            let node_rect =
+                egui::Rect::from_min_size(self.positions[i], egui::vec2(NODE_W, NODE_H));
             draw_node(&painter, node_rect, labels[i], active[i], i);
         }
 

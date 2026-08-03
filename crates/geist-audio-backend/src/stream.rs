@@ -55,7 +55,11 @@ pub fn capture_ring(channels: u16, sample_rate_hz: u32) -> (CaptureProducer, Cap
     let (tx, rx) = RingBuffer::new(CAPTURE_RING_CAPACITY);
     (
         CaptureProducer { tx },
-        CaptureConsumer { channels, sample_rate_hz, rx },
+        CaptureConsumer {
+            channels,
+            sample_rate_hz,
+            rx,
+        },
     )
 }
 

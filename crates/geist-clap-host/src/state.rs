@@ -60,7 +60,10 @@ impl<'a> ClapState<'a> {
         let Some(load) = (unsafe { (*self.ext).load }) else {
             return false;
         };
-        let mut reader = SliceReader { data: bytes, pos: 0 };
+        let mut reader = SliceReader {
+            data: bytes,
+            pos: 0,
+        };
         let stream = make_istream(&mut reader as *mut SliceReader as *mut c_void);
         // SAFETY: plugin is live; stream is valid and its ctx points at reader for
         // the whole synchronous call
@@ -161,7 +164,9 @@ mod tests {
     // Invoke an ostream's write callback the way a plugin would
     fn write(stream: &clap_ostream, bytes: &[u8]) -> i64 {
         // SAFETY: stream.write is set; bytes is a valid readable region
-        unsafe { stream.write.unwrap()(stream, bytes.as_ptr() as *const c_void, bytes.len() as u64) }
+        unsafe {
+            stream.write.unwrap()(stream, bytes.as_ptr() as *const c_void, bytes.len() as u64)
+        }
     }
 
     // Invoke an istream's read callback into a buffer the way a plugin would
@@ -193,7 +198,10 @@ mod tests {
     #[test]
     fn istream_reads_in_chunks_then_signals_eof() {
         let data = [10u8, 20, 30, 40];
-        let mut reader = SliceReader { data: &data, pos: 0 };
+        let mut reader = SliceReader {
+            data: &data,
+            pos: 0,
+        };
         let stream = make_istream(&mut reader as *mut SliceReader as *mut c_void);
 
         let mut first = [0u8; 3];
