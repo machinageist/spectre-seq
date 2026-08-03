@@ -59,7 +59,14 @@ Acceptance: no observable behavior changed anywhere in the workspace.
 
 ## Slice D2 — Document skeleton, revision, transactions, history
 
-Covers acceptance criteria 2, 3, and 4.
+**Landed 2026-08-03.** Covers acceptance criteria 2, 3, and 4. Workspace tests: 671 -> 695.
+
+Two shapes the contract left open were settled during implementation:
+
+- **Undo stores `EffectSet`-scoped before-images**, not inverse commands. Undo is a restore, so exact identity and ordering are structural rather than something each command must get right. The identity allocator is deliberately excluded from snapshots: rewinding it would let a retired ID be handed out twice.
+- **Commands are a typed enum** with a `validate()` pass that touches nothing and an `apply()` that cannot fail, which makes "a rejection leaves the document byte-identical" a property of the shape rather than a convention.
+
+One consequence to carry forward: undo and redo advance the revision rather than rewinding it, since the contract requires monotonicity and projections rely on it to detect staleness. Dirty state therefore false-positives after an undo/redo round trip back to saved content. Conservative in the safe direction, and D6 may revisit it.
 
 Expected outcomes:
 
