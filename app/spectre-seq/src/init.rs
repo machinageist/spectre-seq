@@ -11,7 +11,7 @@
 
 use spectre_audio_backend::prelude::{AudioBackend, BlockBridge, CpalBackend, StreamConfig};
 use spectre_core::config::{AudioConfig, MAX_SAMPLE_RATE_HZ, MIN_SAMPLE_RATE_HZ};
-use spectre_core::errors::GeistResult;
+use spectre_core::errors::SpectreResult;
 
 use crate::control::{control_plane, EngineControl};
 use crate::engine::{
@@ -30,7 +30,7 @@ const POLYPHONY: usize = 16;
 
 // Open the default device, start the stream, and return the engine + UI control
 // `rolling` seeds whether the transport plays the sequence at startup
-pub fn start(rolling: bool) -> GeistResult<(Engine, EngineControl, Option<AudioRecorder>)> {
+pub fn start(rolling: bool) -> SpectreResult<(Engine, EngineControl, Option<AudioRecorder>)> {
     let mut backend = CpalBackend::new();
     let device = backend.default_output_device()?;
 

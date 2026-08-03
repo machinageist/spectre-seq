@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use spectre_core::errors::{GeistError, GeistResult};
+use spectre_core::errors::{SpectreError, SpectreResult};
 
 use crate::backend::{AudioBackend, RenderCallback, Stream};
 use crate::device::DeviceInfo;
@@ -32,33 +32,33 @@ impl CpalBackend {
     }
 
     // Find an output device by exact name
-    fn find_output_device(&self, name: &str) -> GeistResult<cpal::Device> {
+    fn find_output_device(&self, name: &str) -> SpectreResult<cpal::Device> {
         let devices = self
             .host
             .output_devices()
-            .map_err(|_| GeistError::UnsupportedBackend("cannot enumerate output devices"))?;
+            .map_err(|_| SpectreError::UnsupportedBackend("cannot enumerate output devices"))?;
         for device in devices {
             if device.name().map(|n| n == name).unwrap_or(false) {
                 return Ok(device);
             }
         }
-        Err(GeistError::UnsupportedBackend(
+        Err(SpectreError::UnsupportedBackend(
             "named output device not found",
         ))
     }
 
     // Find an input device by exact name
-    fn find_input_device(&self, name: &str) -> GeistResult<cpal::Device> {
+    fn find_input_device(&self, name: &str) -> SpectreResult<cpal::Device> {
         let devices = self
             .host
             .input_devices()
-            .map_err(|_| GeistError::UnsupportedBackend("cannot enumerate input devices"))?;
+            .map_err(|_| SpectreError::UnsupportedBackend("cannot enumerate input devices"))?;
         for device in devices {
             if device.name().map(|n| n == name).unwrap_or(false) {
                 return Ok(device);
             }
         }
-        Err(GeistError::UnsupportedBackend(
+        Err(SpectreError::UnsupportedBackend(
             "named input device not found",
         ))
     }
@@ -71,11 +71,11 @@ impl Default for CpalBackend {
 }
 
 // Describe a cpal device as backend-agnostic DeviceInfo
-fn describe(device: &cpal::Device) -> GeistResult<DeviceInfo> {
+fn describe(device: &cpal::Device) -> SpectreResult<DeviceInfo> {
     let name = device.name().unwrap_or_else(|_| "Unknown".to_string());
     let default = device
         .default_output_config()
-        .map_err(|_| GeistError::UnsupportedBackend("device has no default output config"))?;
+        .map_err(|_| SpectreError::UnsupportedBackend("device has no default output config"))?;
 
     let mut min_sr = default.sample_rate().0;
     let mut max_sr = default.sample_rate().0;
@@ -99,11 +99,11 @@ fn describe(device: &cpal::Device) -> GeistResult<DeviceInfo> {
 }
 
 // Describe a cpal input device as backend-agnostic DeviceInfo
-fn describe_input(device: &cpal::Device) -> GeistResult<DeviceInfo> {
+fn describe_input(device: &cpal::Device) -> SpectreResult<DeviceInfo> {
     let name = device.name().unwrap_or_else(|_| "Unknown".to_string());
     let default = device
         .default_input_config()
-        .map_err(|_| GeistError::UnsupportedBackend("device has no default input config"))?;
+        .map_err(|_| SpectreError::UnsupportedBackend("device has no default input config"))?;
 
     let mut min_sr = default.sample_rate().0;
     let mut max_sr = default.sample_rate().0;
@@ -131,19 +131,19 @@ impl AudioBackend for CpalBackend {
         "cpal"
     }
 
-    fn default_output_device(&self) -> GeistResult<DeviceInfo> {
+    fn default_output_device(&self) -> SpectreResult<DeviceInfo> {
         let device = self
             .host
             .default_output_device()
-            .ok_or(GeistError::UnsupportedBackend("no default output device"))?;
+            .ok_or(SpectreError::UnsupportedBackend("no default output device"))?;
         describe(&device)
     }
 
-    fn output_devices(&self) -> GeistResult<Vec<DeviceInfo>> {
+    fn output_devices(&self) -> SpectreResult<Vec<DeviceInfo>> {
         let devices = self
             .host
             .output_devices()
-            .map_err(|_| GeistError::UnsupportedBackend("cannot enumerate output devices"))?;
+            .map_err(|_| SpectreError::UnsupportedBackend("cannot enumerate output devices"))?;
         let mut infos = Vec::new();
         for device in devices {
             if let Ok(info) = describe(&device) {
@@ -157,13 +157,13 @@ impl AudioBackend for CpalBackend {
         &mut self,
         config: &StreamConfig,
         mut callback: Box<dyn RenderCallback>,
-    ) -> GeistResult<Box<dyn Stream>> {
+    ) -> SpectreResult<Box<dyn Stream>> {
         let device = match &config.device_name {
             Some(name) => self.find_output_device(name)?,
             None => self
                 .host
                 .default_output_device()
-                .ok_or(GeistError::UnsupportedBackend("no default output device"))?,
+                .ok_or(SpectreError::UnsupportedBackend("no default output device"))?,
         };
 
         let channels = config.audio.output_channels;
@@ -191,11 +191,11 @@ impl AudioBackend for CpalBackend {
                 },
                 None,
             )
-            .map_err(|_| GeistError::UnsupportedBackend("failed to build output stream"))?;
+            .map_err(|_| SpectreError::UnsupportedBackend("failed to build output stream"))?;
 
         stream
             .play()
-            .map_err(|_| GeistError::UnsupportedBackend("failed to start output stream"))?;
+            .map_err(|_| SpectreError::UnsupportedBackend("failed to start output stream"))?;
 
         Ok(Box::new(CpalStream {
             _stream: stream,
@@ -203,31 +203,31 @@ impl AudioBackend for CpalBackend {
         }))
     }
 
-    fn default_input_device(&self) -> GeistResult<DeviceInfo> {
+    fn default_input_device(&self) -> SpectreResult<DeviceInfo> {
         let device = self
             .host
             .default_input_device()
-            .ok_or(GeistError::UnsupportedBackend("no default input device"))?;
+            .ok_or(SpectreError::UnsupportedBackend("no default input device"))?;
         describe_input(&device)
     }
 
     fn start_input(
         &mut self,
         config: &StreamConfig,
-    ) -> GeistResult<(Box<dyn Stream>, CaptureConsumer)> {
+    ) -> SpectreResult<(Box<dyn Stream>, CaptureConsumer)> {
         let device = match &config.device_name {
             Some(name) => self.find_input_device(name)?,
             None => self
                 .host
                 .default_input_device()
-                .ok_or(GeistError::UnsupportedBackend("no default input device"))?,
+                .ok_or(SpectreError::UnsupportedBackend("no default input device"))?,
         };
 
         // Capture at the device's native input format; the consumer carries the
         // actual channel count and rate so the recorder can interpret frames.
         let default = device
             .default_input_config()
-            .map_err(|_| GeistError::UnsupportedBackend("device has no default input config"))?;
+            .map_err(|_| SpectreError::UnsupportedBackend("device has no default input config"))?;
         let channels = default.channels();
         let sample_rate = default.sample_rate().0;
         let cpal_config = cpal::StreamConfig {
@@ -252,11 +252,11 @@ impl AudioBackend for CpalBackend {
                 },
                 None,
             )
-            .map_err(|_| GeistError::UnsupportedBackend("failed to build input stream"))?;
+            .map_err(|_| SpectreError::UnsupportedBackend("failed to build input stream"))?;
 
         stream
             .play()
-            .map_err(|_| GeistError::UnsupportedBackend("failed to start input stream"))?;
+            .map_err(|_| SpectreError::UnsupportedBackend("failed to start input stream"))?;
 
         Ok((
             Box::new(CpalStream {

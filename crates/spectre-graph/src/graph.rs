@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 
 use spectre_core::config::AudioConfig;
-use spectre_core::errors::{GeistError, GeistResult};
+use spectre_core::errors::{SpectreError, SpectreResult};
 use spectre_core::ids::{NodeId, PortId};
 use spectre_core::port::{can_connect, PortDescriptor, PortDirection};
 
@@ -99,12 +99,12 @@ impl Graph {
 
     // Connect an output port to an input port after validating compatibility
     // Rejects unknown ports, illegal type/direction/channel pairings, and fan-in
-    pub fn connect(&mut self, src: PortId, dst: PortId) -> GeistResult<()> {
-        let out = self.ports.get(&src).ok_or(GeistError::InvalidPort(src))?;
-        let inp = self.ports.get(&dst).ok_or(GeistError::InvalidPort(dst))?;
+    pub fn connect(&mut self, src: PortId, dst: PortId) -> SpectreResult<()> {
+        let out = self.ports.get(&src).ok_or(SpectreError::InvalidPort(src))?;
+        let inp = self.ports.get(&dst).ok_or(SpectreError::InvalidPort(dst))?;
         can_connect(out, inp)?;
         if self.edges.iter().any(|e| e.dst == dst) {
-            return Err(GeistError::Internal("input port already connected"));
+            return Err(SpectreError::Internal("input port already connected"));
         }
         self.edges.push(Edge { src, dst });
         Ok(())
@@ -227,7 +227,7 @@ pub(crate) mod tests {
         let mut g = Graph::new();
         let (_a, _a_in, a_out) = add_stereo_node(&mut g);
         let ghost = PortId::new(9_999);
-        assert_eq!(g.connect(a_out, ghost), Err(GeistError::InvalidPort(ghost)));
+        assert_eq!(g.connect(a_out, ghost), Err(SpectreError::InvalidPort(ghost)));
     }
 
     #[test]

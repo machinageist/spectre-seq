@@ -49,7 +49,7 @@ Verification: `cargo test -p spectre-graph`; `cargo check --workspace`.
 
 ## Slice T1 — Descriptors and validation
 
-`spectre-core` only. `SignalDomain` (six variants; `Meter` is not among them), declared `SignalRate`, `BusLayout` with `Declared` parsed and compiler-rejected, `LaneSpec`, `FanInPolicy`, `EventCapacity`, and typed connection errors replacing `GeistError::Internal`. Normalized CV convention with the pitch-port octave relationship. `MAX_LANES = 32` lands here as a constant.
+`spectre-core` only. `SignalDomain` (six variants; `Meter` is not among them), declared `SignalRate`, `BusLayout` with `Declared` parsed and compiler-rejected, `LaneSpec`, `FanInPolicy`, `EventCapacity`, and typed connection errors replacing `SpectreError::Internal`. Normalized CV convention with the pitch-port octave relationship. `MAX_LANES = 32` lands here as a constant.
 
 The executor does not change; `spectre-graph` is updated only enough to keep compiling.
 

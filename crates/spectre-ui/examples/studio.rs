@@ -10,7 +10,7 @@ use eframe::egui;
 use spectre_ui::model::SessionModel;
 use spectre_ui::shell::draw_studio;
 use spectre_ui::state::UIState;
-use spectre_ui::theme::GeistTheme;
+use spectre_ui::theme::SpectreTheme;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -21,7 +21,7 @@ fn main() -> eframe::Result<()> {
         "Geist DAW — Studio",
         options,
         Box::new(|cc| {
-            GeistTheme::apply(&cc.egui_ctx);
+            SpectreTheme::apply(&cc.egui_ctx);
             Ok(Box::new(Studio::new()))
         }),
     )

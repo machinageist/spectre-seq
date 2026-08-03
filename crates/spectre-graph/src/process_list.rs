@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use spectre_core::config::AudioConfig;
 use spectre_core::context::ProcessContext;
-use spectre_core::errors::{GeistError, GeistResult};
+use spectre_core::errors::{SpectreError, SpectreResult};
 use spectre_core::events::{NoteEvent, ParameterChange};
 use spectre_core::ids::{NodeId, PortId};
 use spectre_core::transport::TransportSnapshot;
@@ -50,7 +50,7 @@ pub struct ProcessPlan {
 // Compile a graph into a buffer-routing plan in scheduled order
 // Feedback edges become a one-block delay: the consumer is ordered before its
 // producer and reads the producer's buffer from the previous block
-pub fn compile(graph: &Graph, config: &AudioConfig) -> GeistResult<ProcessPlan> {
+pub fn compile(graph: &Graph, config: &AudioConfig) -> SpectreResult<ProcessPlan> {
     let order = schedule(graph).order;
 
     // Assign a contiguous buffer range to each output port's channels
@@ -147,13 +147,13 @@ pub struct Executor {
 
 impl Executor {
     // Build an executor by taking prepared nodes out of the graph in plan order
-    pub fn new(mut graph: Graph, plan: ProcessPlan, config: &AudioConfig) -> GeistResult<Self> {
+    pub fn new(mut graph: Graph, plan: ProcessPlan, config: &AudioConfig) -> SpectreResult<Self> {
         graph.prepare_all(config);
         let mut nodes = Vec::with_capacity(plan.steps.len());
         for step in &plan.steps {
             let node = graph
                 .take_node(step.node)
-                .ok_or(GeistError::Internal("plan node missing"))?;
+                .ok_or(SpectreError::Internal("plan node missing"))?;
             nodes.push(node);
         }
         let frames = plan.frames;

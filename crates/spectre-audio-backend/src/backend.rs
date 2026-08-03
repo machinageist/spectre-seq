@@ -6,7 +6,7 @@
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-use spectre_core::errors::GeistResult;
+use spectre_core::errors::SpectreResult;
 
 use crate::device::DeviceInfo;
 use crate::stream::{CaptureConsumer, StreamConfig};
@@ -32,20 +32,20 @@ pub trait AudioBackend {
     fn name(&self) -> &str;
 
     // The system default output device, if one exists
-    fn default_output_device(&self) -> GeistResult<DeviceInfo>;
+    fn default_output_device(&self) -> SpectreResult<DeviceInfo>;
 
     // Every output-capable device the backend can see
-    fn output_devices(&self) -> GeistResult<Vec<DeviceInfo>>;
+    fn output_devices(&self) -> SpectreResult<Vec<DeviceInfo>>;
 
     // Open and start an output stream driving the render callback
     fn start_output(
         &mut self,
         config: &StreamConfig,
         callback: Box<dyn RenderCallback>,
-    ) -> GeistResult<Box<dyn Stream>>;
+    ) -> SpectreResult<Box<dyn Stream>>;
 
     // The system default input (capture) device, if one exists
-    fn default_input_device(&self) -> GeistResult<DeviceInfo>;
+    fn default_input_device(&self) -> SpectreResult<DeviceInfo>;
 
     // Open and start an input stream, returning the running stream plus the
     // app-thread consumer that drains captured frames. Default impls without a
@@ -53,7 +53,7 @@ pub trait AudioBackend {
     fn start_input(
         &mut self,
         config: &StreamConfig,
-    ) -> GeistResult<(Box<dyn Stream>, CaptureConsumer)>;
+    ) -> SpectreResult<(Box<dyn Stream>, CaptureConsumer)>;
 }
 
 #[cfg(test)]
@@ -75,10 +75,10 @@ mod tests {
         fn name(&self) -> &str {
             "mock"
         }
-        fn default_output_device(&self) -> GeistResult<DeviceInfo> {
+        fn default_output_device(&self) -> SpectreResult<DeviceInfo> {
             Ok(self.output_devices()?.remove(0))
         }
-        fn output_devices(&self) -> GeistResult<Vec<DeviceInfo>> {
+        fn output_devices(&self) -> SpectreResult<Vec<DeviceInfo>> {
             Ok(vec![DeviceInfo {
                 name: "Mock Output".to_string(),
                 max_input_channels: 0,
@@ -92,23 +92,23 @@ mod tests {
             &mut self,
             _config: &StreamConfig,
             mut callback: Box<dyn RenderCallback>,
-        ) -> GeistResult<Box<dyn Stream>> {
+        ) -> SpectreResult<Box<dyn Stream>> {
             // Drive one block so the test can observe the contract end to end
             let mut output = [0.0f32; 8];
             callback.render(&[], &mut output, 2);
             assert!(output.iter().all(|&s| s == 0.5));
             Ok(Box::new(MockStream))
         }
-        fn default_input_device(&self) -> GeistResult<DeviceInfo> {
-            Err(spectre_core::errors::GeistError::UnsupportedBackend(
+        fn default_input_device(&self) -> SpectreResult<DeviceInfo> {
+            Err(spectre_core::errors::SpectreError::UnsupportedBackend(
                 "mock has no input",
             ))
         }
         fn start_input(
             &mut self,
             _config: &StreamConfig,
-        ) -> GeistResult<(Box<dyn Stream>, crate::stream::CaptureConsumer)> {
-            Err(spectre_core::errors::GeistError::UnsupportedBackend(
+        ) -> SpectreResult<(Box<dyn Stream>, crate::stream::CaptureConsumer)> {
+            Err(spectre_core::errors::SpectreError::UnsupportedBackend(
                 "mock has no input",
             ))
         }

@@ -3,7 +3,7 @@
 // Description: Audio engine configuration shared by backend, graph, DSP, and tests.
 // Notes: Configuration is immutable once a stream starts unless rebuilt on the app thread.
 
-use crate::errors::{GeistError, GeistResult};
+use crate::errors::{SpectreError, SpectreResult};
 
 // Accepted sample-rate window covering pro-audio devices
 pub const MIN_SAMPLE_RATE_HZ: u32 = 8_000;
@@ -33,18 +33,18 @@ impl AudioConfig {
         block_size_frames: u32,
         input_channels: u16,
         output_channels: u16,
-    ) -> GeistResult<Self> {
+    ) -> SpectreResult<Self> {
         if !(MIN_SAMPLE_RATE_HZ..=MAX_SAMPLE_RATE_HZ).contains(&sample_rate_hz) {
-            return Err(GeistError::BadConfig("sample rate out of supported range"));
+            return Err(SpectreError::BadConfig("sample rate out of supported range"));
         }
         if !(MIN_BLOCK_FRAMES..=MAX_BLOCK_FRAMES).contains(&block_size_frames) {
-            return Err(GeistError::BadConfig("block size out of supported range"));
+            return Err(SpectreError::BadConfig("block size out of supported range"));
         }
         if input_channels > MAX_CHANNELS || output_channels > MAX_CHANNELS {
-            return Err(GeistError::BadConfig("channel count exceeds maximum"));
+            return Err(SpectreError::BadConfig("channel count exceeds maximum"));
         }
         if input_channels == 0 && output_channels == 0 {
-            return Err(GeistError::BadConfig("stream has no channels"));
+            return Err(SpectreError::BadConfig("stream has no channels"));
         }
         Ok(Self {
             sample_rate_hz,

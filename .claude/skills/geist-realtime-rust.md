@@ -34,7 +34,7 @@ Notes: Applies to audio-thread code, shared primitives, callbacks, graph process
 - Prefer enums for domain distinctions: `Signal`, `PortType`, `PortDirection`, transport events.
 - Prefer borrowed buffers in process context.
 - Make ownership and thread boundary visible in type names.
-- Return `GeistResult<T>` for recoverable app-thread errors.
+- Return `SpectreResult<T>` for recoverable app-thread errors.
 
 ## Audio-thread checklist
 

@@ -3,7 +3,7 @@
 // Description: Port metadata, direction, and compatibility rules for graph connections.
 // Notes: Port checks run on the app thread before a compiled graph reaches audio.
 
-use crate::errors::{GeistError, GeistResult};
+use crate::errors::{SpectreError, SpectreResult};
 use crate::ids::{NodeId, ParamId, PortId};
 
 // Whether a port consumes or produces signal
@@ -57,18 +57,18 @@ pub struct PortDescriptor {
 
 // Validate that an output port may feed an input port
 // Pure and allocation-free so graph edit code can call it directly
-pub fn can_connect(out: &PortDescriptor, inp: &PortDescriptor) -> GeistResult<()> {
+pub fn can_connect(out: &PortDescriptor, inp: &PortDescriptor) -> SpectreResult<()> {
     if out.direction != PortDirection::Output || inp.direction != PortDirection::Input {
-        return Err(GeistError::DirectionMismatch);
+        return Err(SpectreError::DirectionMismatch);
     }
     if !out.port_type.is_compatible_with(inp.port_type) {
-        return Err(GeistError::TypeMismatch {
+        return Err(SpectreError::TypeMismatch {
             expected: out.port_type,
             found: inp.port_type,
         });
     }
     if out.channels != inp.channels {
-        return Err(GeistError::ChannelMismatch {
+        return Err(SpectreError::ChannelMismatch {
             out_channels: out.channels,
             in_channels: inp.channels,
         });
@@ -109,7 +109,7 @@ mod tests {
     fn rejects_direction_mismatch() {
         let a = port(1, PortDirection::Output, PortType::Audio, 2);
         let b = port(2, PortDirection::Output, PortType::Audio, 2);
-        assert_eq!(can_connect(&a, &b), Err(GeistError::DirectionMismatch));
+        assert_eq!(can_connect(&a, &b), Err(SpectreError::DirectionMismatch));
     }
 
     #[test]
@@ -118,7 +118,7 @@ mod tests {
         let inp = port(2, PortDirection::Input, PortType::Note, 1);
         assert_eq!(
             can_connect(&out, &inp),
-            Err(GeistError::TypeMismatch {
+            Err(SpectreError::TypeMismatch {
                 expected: PortType::Audio,
                 found: PortType::Note
             })
@@ -131,7 +131,7 @@ mod tests {
         let inp = port(2, PortDirection::Input, PortType::Audio, 2);
         assert_eq!(
             can_connect(&out, &inp),
-            Err(GeistError::ChannelMismatch {
+            Err(SpectreError::ChannelMismatch {
                 out_channels: 1,
                 in_channels: 2
             })

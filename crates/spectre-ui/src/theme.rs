@@ -82,9 +82,9 @@ pub fn meter_color(fraction: f32) -> Color32 {
 }
 
 // The Geist tactile-dark theme; installs an egui Style for the whole context
-pub struct GeistTheme;
+pub struct SpectreTheme;
 
-impl GeistTheme {
+impl SpectreTheme {
     // Install the theme on an egui context; call once at startup
     pub fn apply(ctx: &egui::Context) {
         install_hyprland_font(ctx);
@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn hyprland_theme_applies_dracula_chrome() {
         let ctx = egui::Context::default();
-        GeistTheme::apply(&ctx);
+        SpectreTheme::apply(&ctx);
         let style = ctx.global_style();
         assert_eq!(style.visuals.panel_fill, PANEL);
         assert_eq!(style.visuals.selection.stroke.color, ACCENT);

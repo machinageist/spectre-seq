@@ -6,7 +6,7 @@
 //        state only; no engine, no project truth.
 
 use eframe::egui;
-use spectre_ui::theme::{self, GeistTheme, SignalKind};
+use spectre_ui::theme::{self, SpectreTheme, SignalKind};
 use spectre_ui::widgets::{Fader, Knob, Meter};
 
 fn main() -> eframe::Result<()> {
@@ -18,7 +18,7 @@ fn main() -> eframe::Result<()> {
         "Geist UI — Widget Gallery",
         options,
         Box::new(|cc| {
-            GeistTheme::apply(&cc.egui_ctx);
+            SpectreTheme::apply(&cc.egui_ctx);
             Ok(Box::new(Gallery::default()))
         }),
     )

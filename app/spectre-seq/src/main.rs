@@ -73,9 +73,9 @@ fn run_gui(
         options,
         Box::new(move |cc| {
             // Install the tactile-dark theme once before the first frame
-            spectre_ui::theme::GeistTheme::apply(&cc.egui_ctx);
+            spectre_ui::theme::SpectreTheme::apply(&cc.egui_ctx);
             let app: Box<dyn eframe::App> = if classic {
-                Box::new(gui::GeistApp::new(engine, control))
+                Box::new(gui::SpectreApp::new(engine, control))
             } else {
                 Box::new(studio::StudioApp::with_ui_state(
                     engine, control, recorder, ui_state,

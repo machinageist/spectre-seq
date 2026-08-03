@@ -22,7 +22,7 @@ pub mod transport;
 pub mod prelude {
     pub use crate::config::AudioConfig;
     pub use crate::context::ProcessContext;
-    pub use crate::errors::{GeistError, GeistResult};
+    pub use crate::errors::{SpectreError, SpectreResult};
     pub use crate::events::{MidiEvent, NoteEvent, NoteEventKind, ParameterChange, TransportEvent};
     pub use crate::ids::{
         AssetId, AutomationTargetId, ClipId, DeviceId, MappingId, NodeId, NoteId, ParamId,

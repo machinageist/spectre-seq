@@ -22,6 +22,6 @@ pub mod prelude {
     pub use crate::model::SessionModel;
     pub use crate::shell::{draw_studio, StudioResponse};
     pub use crate::state::{SelectedObject, UIState, UIStateError};
-    pub use crate::theme::{GeistTheme, SignalKind};
+    pub use crate::theme::{SpectreTheme, SignalKind};
     pub use crate::widgets::{Fader, KeyEvent, Keyboard, Knob, Meter, Taper};
 }

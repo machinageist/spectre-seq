@@ -11,7 +11,7 @@
 // =============================================================================
 
 use eframe::egui;
-use spectre_ui::theme::{self, GeistTheme};
+use spectre_ui::theme::{self, SpectreTheme};
 use spectre_ui::widgets::{Fader, Knob, Meter};
 
 use crate::control::{EngineCommand, EngineControl};
@@ -67,7 +67,7 @@ const COMPUTER_KEYS: [(egui::Key, u8); 13] = [
 ];
 
 // Playable synth window driving the audio engine over the control plane
-pub struct GeistApp {
+pub struct SpectreApp {
     // Held so the audio stream stays open for the window's lifetime
     _engine: Engine,
     control: EngineControl,
@@ -108,7 +108,7 @@ pub struct GeistApp {
     themed: bool,
 }
 
-impl GeistApp {
+impl SpectreApp {
     // Wrap a running engine and its control handle in a window
     pub fn new(engine: Engine, control: EngineControl) -> Self {
         let sample_rate_hz = engine.sample_rate_hz();
@@ -550,14 +550,14 @@ impl GeistApp {
     }
 }
 
-impl eframe::App for GeistApp {
+impl eframe::App for SpectreApp {
     // eframe 0.34 hands a root Ui; wrap content in panels via show_inside
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Clone the context (Arc-cheap) so the Ui stays free to borrow mutably
         let ctx = ui.ctx().clone();
         // Install the tactile-dark theme once, on the first frame
         if !self.themed {
-            GeistTheme::apply(&ctx);
+            SpectreTheme::apply(&ctx);
             self.themed = true;
         }
         self.handle_computer_keys(&ctx);

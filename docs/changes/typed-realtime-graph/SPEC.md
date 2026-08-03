@@ -56,7 +56,7 @@ Cycles are converted to hidden one-block delay. **This contradicts the product v
 
 Fan-in is rejected, not ordered.
 
-- `Graph::connect` (`crates/spectre-graph/src/graph.rs:106`) rejects a second edge into an already-connected input with `GeistError::Internal("input port already connected")`. `Internal` is documented at `crates/spectre-core/src/errors.rs:32` as "indicates a bug", so a legal user action reports as an engine defect.
+- `Graph::connect` (`crates/spectre-graph/src/graph.rs:106`) rejects a second edge into an already-connected input with `SpectreError::Internal("input port already connected")`. `Internal` is documented at `crates/spectre-core/src/errors.rs:32` as "indicates a bug", so a legal user action reports as an engine defect.
 - Independently, `compile` builds `feed: BTreeMap<PortId, PortId>` keyed on destination (`crates/spectre-graph/src/process_list.rs:68`). If fan-in were ever permitted at the graph layer, the last-inserted edge would silently win. Deterministic fan-in requires changes in both places.
 
 Channels are a bare count with no layout.
@@ -162,7 +162,7 @@ Connection validity, checked entirely on the app thread:
 5. Lane counts are compatible under the lane contract.
 6. The destination's `FanInPolicy` admits the new edge.
 
-Each failure is a distinct typed error naming both port ids and both descriptors. None of them is `GeistError::Internal`.
+Each failure is a distinct typed error naming both port ids and both descriptors. None of them is `SpectreError::Internal`.
 
 ## Domain and rate contract
 
@@ -481,7 +481,7 @@ Deferred to their own specs and interviews:
 ## Acceptance criteria
 
 1. Every compiled route carries its declared domain, rate, bus layout, and lane count; no two domains share an arena.
-2. A connection whose domain, rate, bus layout, lane count, or fan-in policy is incompatible is rejected on the app thread with a typed error naming both ports; no such rejection uses `GeistError::Internal`.
+2. A connection whose domain, rate, bus layout, lane count, or fan-in policy is incompatible is rejected on the app thread with a typed error naming both ports; no such rejection uses `SpectreError::Internal`.
 3. An event reaches exactly the destinations named by its compiled edges, at its declared sample offset, and no node can observe events on a port it does not own.
 4. A note-off, choke, or expression event resolves to the same `NoteInstanceId` as its note-on, through every intermediate note device.
 5. Control-rate signals are stored and evaluated at `CONTROL_PERIOD_FRAMES` resolution, and the control rate in hertz does not change when the block size changes.

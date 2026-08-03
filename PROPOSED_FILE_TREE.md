@@ -40,7 +40,7 @@ geistdaw/
 │   │       ├── events.rs               # NoteEvent, MidiEvent, TransportEvent
 │   │       ├── params.rs               # ParamId, ParamInfo, ParamValue, ParamRange
 │   │       ├── transport.rs            # AtomicTransport, TransportState, TempoMap
-│   │       └── errors.rs               # GeistError, GeistResult
+│   │       └── errors.rs               # SpectreError, SpectreResult
 │   │
 │   ├── spectre-document/                 # canonical app-thread project truth; depends only on spectre-core
 │   │   ├── Cargo.toml
