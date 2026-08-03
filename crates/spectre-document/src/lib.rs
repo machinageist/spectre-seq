@@ -16,6 +16,7 @@
 
 pub mod arrangement;
 pub mod identity;
+pub mod revision;
 
 // Stable surface for the canonical document model
 pub mod prelude {
@@ -23,4 +24,5 @@ pub mod prelude {
         Arrangement, ArrangementError, ArrangementTrack, ClipEntity, ClipLocation, RemovedClip,
     };
     pub use crate::identity::{ClipId, IdentityAllocator, TrackId};
+    pub use crate::revision::{Aggregate, DocumentRevision, EffectSet};
 }
