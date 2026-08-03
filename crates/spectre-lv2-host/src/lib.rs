@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-lv2-host/src/lib.rs
+// File: crates/spectre-lv2-host/src/lib.rs
 // Layer: LV2 host
 // Purpose: LV2 host entrypoint; presents the same AudioNode contract as CLAP
 // Status: Implemented incrementally; scanner first. Manifest parsing and binary

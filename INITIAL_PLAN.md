@@ -68,7 +68,7 @@ Notes: Preserved as historical planning context; living product authority is lin
 - Handle: audio i/o, parameter get/set, parameter flush, note events, MIDI, save/restore state (blob of bytes)
 - GUI: plugins that provide their own GUI get a raw window handle via `raw-window-handle` crate; your UI provides the parent
 - Isolation: each plugin runs in its own thread during `init`/`destroy`; audio processing is inline on audio thread (CLAP contract)
-- LV2 host in `geist-lv2-host`: lower priority, same `AudioNode` interface; use `lv2` crate (ISC licensed)
+- LV2 host in `spectre-lv2-host`: lower priority, same `AudioNode` interface; use `lv2` crate (ISC licensed)
 
 ---
 

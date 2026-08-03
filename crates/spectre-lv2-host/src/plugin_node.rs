@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-lv2-host/src/plugin_node.rs
+// File: crates/spectre-lv2-host/src/plugin_node.rs
 // Layer: LV2 host
 // Purpose: LV2PluginNode implements AudioNode
 // Status: Pseudocode scaffold; implementation intentionally pending.

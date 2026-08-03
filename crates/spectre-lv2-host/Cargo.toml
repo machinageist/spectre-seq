@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: crates/geist-lv2-host/Cargo.toml
+# File: crates/spectre-lv2-host/Cargo.toml
 # Layer: LV2 host
 # Purpose: LV2 plugin host; presents the same AudioNode contract as the CLAP host
 # Status: Implemented incrementally; scanner first. Graph and manifest/FFI deps
@@ -8,7 +8,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-lv2-host"
+name = "spectre-lv2-host"
 version = "0.1.0"
 edition = "2021"
 

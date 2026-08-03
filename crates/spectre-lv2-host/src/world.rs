@@ -1,13 +1,13 @@
 // =============================================================================
-// File: crates/geist-lv2-host/src/instance.rs
+// File: crates/spectre-lv2-host/src/world.rs
 // Layer: LV2 host
-// Purpose: Define instance responsibilities and integration boundaries.
+// Purpose: lilv world wrapper
 // Status: Pseudocode scaffold; implementation intentionally pending.
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
 // Pseudocode plan:
-// - Declare responsibility: Define instance responsibilities and integration boundaries.
+// - Declare responsibility: lilv world wrapper
 // - Define public types before behavior.
 // - Separate real-time-safe paths from UI/app paths.
 // - Prefer explicit errors over implicit panics.

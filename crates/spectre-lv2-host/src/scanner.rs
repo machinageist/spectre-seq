@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-lv2-host/src/scanner.rs
+// File: crates/spectre-lv2-host/src/scanner.rs
 // Layer: LV2 host
 // Purpose: Discover LV2 bundles in LV2_PATH or the platform's standard paths
 // Status: Implemented; LV2_PATH override plus a bounded, manifest-aware walk.

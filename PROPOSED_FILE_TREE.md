@@ -139,7 +139,7 @@ geistdaw/
 │   │           ├── mod.rs
 │   │           └── host_impl.rs        # clap_host_t vtable implementation
 │   │
-│   ├── geist-lv2-host/                 # LV2 plugin host (lower priority)
+│   ├── spectre-lv2-host/                 # LV2 plugin host (lower priority)
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs

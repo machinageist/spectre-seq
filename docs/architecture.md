@@ -39,7 +39,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | `geist-ui` | UI state, typed selection, commands, egui renderer, views, widgets, theme | Implemented incrementally |
 | `geist-vst-host` | VST3 host over raw `vst3` COM bindings; scanner, bundle, module, instance, `VstPluginNode` | Implemented, compile-checked; FFI crate, does not deny unsafe |
 | `geist-clap-host` | CLAP host over `clap-sys`; scanner, bundle, cache db, params, state, gui, instance, `ClapPluginNode` | Substantially implemented; **not on the active plan** per ADR 001 |
-| `geist-lv2-host` | LV2 host | Scanner only; `world.rs` and `instance.rs` are scaffolds |
+| `spectre-lv2-host` | LV2 host | Scanner only; `world.rs` and `instance.rs` are scaffolds |
 
 ### `plugins/`
 
@@ -74,7 +74,7 @@ spectre-core        (no workspace deps)
 spectre-config      (no workspace deps)
 spectre-dsp         (no workspace deps; rustfft)
 geist-project     (no workspace deps; serde/ciborium/toml/blake3)
-geist-lv2-host    (no workspace deps)
+spectre-lv2-host    (no workspace deps)
 xtask             (no workspace deps)
 
 geist-graph          -> spectre-core
@@ -107,7 +107,7 @@ worth naming because they are surprising:
 
 Five workspace members build and test but contribute nothing to the running
 binary: `geist-automation`, `geist-modular`, `geist-vst-host`, `geist-clap-host`,
-`geist-lv2-host`.
+`spectre-lv2-host`.
 
 ### Planned: `geist-document`
 
@@ -206,7 +206,7 @@ These are load-bearing gaps, not omissions from this document.
    it. `geist-clap-host` is substantially implemented (bundle, cache db, params,
    state, gui, instance, `ClapPluginNode`, FFI layer) despite ADR 001 describing it
    as a shelved scaffold — "shelved" is accurate about the *plan*, not about the
-   code. `geist-lv2-host` really is scanner-plus-scaffolds. `docs/clap_hosting.md`
+   code. `spectre-lv2-host` really is scanner-plus-scaffolds. `docs/clap_hosting.md`
    and `docs/plugin_sdk.md` remain scaffolds on purpose: documenting the CLAP host
    as authoritative would contradict ADR 001.
 6. **Only cpal exists as a backend.** `jack_backend.rs` and `pipewire_backend.rs`

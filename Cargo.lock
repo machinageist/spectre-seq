@@ -1563,10 +1563,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "geist-lv2-host"
-version = "0.1.0"
-
-[[package]]
 name = "geist-modular"
 version = "0.1.0"
 dependencies = [
@@ -3604,6 +3600,10 @@ dependencies = [
  "criterion",
  "rustfft",
 ]
+
+[[package]]
+name = "spectre-lv2-host"
+version = "0.1.0"
 
 [[package]]
 name = "spirv"

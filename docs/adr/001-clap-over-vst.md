@@ -32,7 +32,7 @@ Two facts changed the calculus:
 ## Decision
 
 - The plugin host targets **VST3 only**. CLAP and LV2 are dropped from the active plan;
-  `geist-clap-host` and `geist-lv2-host` remain as shelved scaffolds, not built.
+  `geist-clap-host` and `spectre-lv2-host` remain as shelved scaffolds, not built.
 - The host is built in a new crate **`geist-vst-host`** that **wraps the raw `vst3`
   COM bindings in a safe Rust API** — mirroring the original "wrap `clap-sys`"
   philosophy. The realtime hot path stays first-party IP rather than delegated to a
