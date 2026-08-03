@@ -211,7 +211,7 @@ Exit gate: complex polyphonic patches save/load exactly and run within bounded r
 ## Immediate work order
 
 1. Finish independent review of the product contract and roadmap.
-2. Specify the final app-thread `ProjectDocument`, arrangement authority, transaction boundary, and acknowledged realtime publication protocol.
+2. Specified in [`docs/changes/project-document/SPEC.md`](../changes/project-document/SPEC.md): the final app-thread `ProjectDocument`, arrangement authority, transaction boundary, and acknowledged realtime publication protocol. Implementation sequence is in that slice's `PLAN.md`, starting with slice D1.
 3. Extract canonical low-level vocabulary and durable identity in dependency-safe slices.
 4. Specify and implement the typed multi-rate realtime graph/publication path in narrow slices.
 5. Replace the paused canonical clip B2 unit with dependency-safe content, scene/launcher, warp, MPE/tuning, and durable-target sub-specifications.

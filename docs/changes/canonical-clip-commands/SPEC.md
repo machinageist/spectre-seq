@@ -11,7 +11,9 @@ Notes: Stable identity precedes command migration; UI and persistence migration 
 
 Slice A (stable track/clip identity) and Slice B (structural arrangement entities) are complete.
 
-Slice B2 and subsequent commands are paused. The accepted launcher, warp, MPE, tuning, hybrid-track, and durable-target requirements expose missing prerequisites in this earlier arrangement-only content model. `docs/product/PRODUCT_VISION.md` and `docs/product/ROADMAP.md` now govern its replacement with dependency-safe sub-specifications.
+Slice B2 and subsequent commands are paused. The accepted launcher, warp, MPE, tuning, hybrid-track, and durable-target requirements expose missing prerequisites in this earlier arrangement-only content model. `docs/product/PRODUCT_VISION.md` and `docs/product/ROADMAP.md` govern its replacement with dependency-safe sub-specifications.
+
+`docs/changes/project-document/SPEC.md` resolves the ownership question that paused this work: `ProjectDocument` owns durable truth and the canonical arrangement aggregate is one of its aggregates. Slice C reappears there as slice D3, behind a blocking checkpoint on clip-content ownership. Do not resume this document's slices directly.
 
 The content sections below preserve the pre-audit proposal for review history. They are not approved implementation instructions.
 
