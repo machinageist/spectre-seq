@@ -1,23 +1,21 @@
 <!--
 Author: Jeff
 Date: 2026-08-01
-Description: Draft ownership contract for canonical clip content under ProjectDocument.
-Notes: DRAFT FOR REVIEW; the Decisions required section holds product questions the repo owner must settle.
+Description: Ownership contract for canonical clip content under ProjectDocument.
+Notes: Accepted 2026-08-03; all seven decisions are settled in the decision record at the end.
 -->
 
 # Canonical Clip Content Ownership
 
 ## Status
 
-**Draft for review. Not accepted. Not implementation instructions.**
+**Accepted 2026-08-03.** All seven decisions are settled; `## Decision record` holds each one with its rejected alternatives and the reason it lost. `PLAN.md` accompanies this document.
 
-This sub-specification un-gates slice D3 of [`docs/changes/project-document/PLAN.md`](../project-document/PLAN.md), which is blocked on the clip-content ownership question.
+This sub-specification **un-gates slice D3** of [`docs/changes/project-document/PLAN.md`](../project-document/PLAN.md), which was blocked on the clip-content ownership question.
 
-[`docs/changes/project-document/SPEC.md`](../project-document/SPEC.md) is accepted and fixes the **owner**: `ProjectDocument` and its arrangement aggregate. It deliberately leaves the **payload** undecided. This document proposes the payload.
+[`docs/changes/project-document/SPEC.md`](../project-document/SPEC.md) fixes the **owner**: `ProjectDocument`. It deliberately left the **payload** undecided. This document fixes the payload, and decision 1a amends that spec's aggregate table to add a `clips` aggregate alongside `arrangement`.
 
-[`docs/changes/canonical-clip-commands/SPEC.md`](../canonical-clip-commands/SPEC.md) Slice B2 is paused prior thinking, not a baseline. This draft confirms parts of it, revises parts of it, and rejects one part of it outright.
-
-Nothing here is settled until `## Decisions required` is answered. Seven decisions change the shape of the first slice, so no `PLAN.md` accompanies this draft. See `## Planning status`.
+[`docs/changes/canonical-clip-commands/SPEC.md`](../canonical-clip-commands/SPEC.md) Slice B2 is paused prior thinking, not a baseline. This document confirms parts of it, revises parts of it, and rejects one part of it outright.
 
 References use post-D1 homes: `geist_core::time::MusicalTime`, `geist_core::ids`, `geist_document::arrangement`.
 
@@ -37,7 +35,7 @@ The legacy holders confirm the gap. `crates/geist-timeline/src/clip.rs` models a
 
 ## Ownership decision
 
-**Proposed.** Placement and content are separate durable facts with separate owners.
+**Accepted (decision 1).** Placement and content are separate durable facts with separate owners.
 
 - A **clip record** owns identity, kind, name, colour, and the kind-specific content payload. It knows nothing about where it sits.
 - A **placement** owns where one clip sits on one production surface, and the window through which that surface views the clip's content.
@@ -306,27 +304,25 @@ Ordering rationale: MIDI content depends on nothing outside `geist-core` and an 
 
 ## Planning status
 
-**No `PLAN.md` accompanies this draft.** Seven open decisions change the shape of `CC1`, the first slice, so any plan written now would be fiction:
+**`PLAN.md` is written.** Every decision that reshaped a slice boundary is answered, so the plan is no longer fiction:
 
-| Blocking decision | Slice it reshapes |
-| --- | --- |
-| 1 — content ownership model | CC1 entirely |
-| 2 — slice order and asset-registry position | CC3 gating |
-| 4a — `ClipExtent` typing | CC1 window model |
-| 5a — pitch and tuning model | CC2 note record |
-| 6a — lane overlap and clip ordering | CC1 placement, and the existing `rehome_clip` signature |
-| 6b — cross-surface copy versus move | CC1 invariants |
-| 7 — automation as a clip kind | CC1 `ClipKind` |
+| Decision | What it settled | Slice |
+| --- | --- | --- |
+| 1 | Content lives in its own `clips` aggregate | CC1 |
+| 2 | MIDI before audio; assets aggregate moves ahead of CC3 | CC2, CC3 |
+| 4a | `ClipExtent = Musical \| Source` | CC1 window model |
+| 5a | `NoteKey` + `PitchOffset` with a scoped `TuningId` | CC2 note record |
+| 6a | No lane overlap; order derived from start | CC1 placement, and the `rehome_clip` signature |
+| 6b | Cross-surface copy only | CC1 invariants |
+| 7 | `ClipKind = Audio \| Midi` | CC1 |
 
-Decisions 3, 4b, 4c, 5b, 5c, and 6c refine slices without changing their boundaries and can be settled during implementation review if the owner prefers.
-
-`PLAN.md` is written once the blocking rows are answered.
+Decisions 3, 4b, 4c, 5b, 5c, and 6c refine slices without changing their boundaries; each is folded into the contract above and named in the slice that implements it.
 
 ## Stop conditions
 
 Stop before the next slice when:
 
-- a blocking decision above is unanswered;
+- a slice would ship before the aggregate it depends on exists;
 - a slice would place clip content in more than one owner;
 - an edit would delete, scale, or renumber content that resize or trim should mask;
 - a note or region coordinate would depend on vector position, arena handle, or raw untyped integer;
@@ -337,9 +333,25 @@ Stop before the next slice when:
 
 ---
 
-## Decisions required
+## Decision record
 
-Seven decisions. Each lists concrete options, tradeoffs, and one recommendation. The owner decides; this draft does not.
+All seven were settled 2026-08-03, every one of them on the recommendation. Each entry keeps its rejected alternatives and the reason each lost, because that reasoning is why the contract above has its shape.
+
+| # | Accepted |
+| --- | --- |
+| 1 | Separate `clips` aggregate keyed by `ClipId`; aggregate-table amendment approved |
+| 2 | MIDI, then audio; assets aggregate moves ahead of the audio slice |
+| 3 | Eager deep copy, all four revisions adopted |
+| 4a | Typed `ClipExtent = Musical \| Source` |
+| 4b | One warp map: `Off \| On { markers, algorithm }` |
+| 4c | Fades in clip-relative `MusicalTime`, domain tag reserved |
+| 5a | `NoteKey` + `PitchOffset`, `TuningId` scoped |
+| 5b | Full note-expression set |
+| 5c | Note-relative time base, positional breakpoint keying |
+| 6a | Lane overlap forbidden, order derived from start |
+| 6b | Cross-surface copy only |
+| 6c | Note-off forced at the window boundary |
+| 7 | `ClipKind::Automation` removed |
 
 ### Decision 1 — Where clip content lives
 
@@ -350,7 +362,7 @@ Seven decisions. Each lists concrete options, tradeoffs, and one recommendation.
 - For: one type, one map, no referential invariant to enforce, smallest diff from today.
 - Against: content is welded to arrangement placement. The launcher needs a parallel clip type with duplicated content code, duplicated editors, and duplicated persistence. Capture becomes a cross-type conversion. Cross-track move reads and rewrites content, so a move bug can lose notes. Linked instances later require redesigning the entity.
 
-**Option B — Separate `clips` aggregate keyed by `ClipId`; placements reference it.** *(This draft's proposal.)*
+**Option B — Separate `clips` aggregate keyed by `ClipId`; placements reference it.** *(Accepted.)*
 
 - For: one clip record serves both surfaces. Editors, persistence, and duplication address content by `ClipId` regardless of surface. Cross-track move provably cannot touch content. Capture is a copy, so independence is structural. A later `ContentId` layer re-keys one map instead of redesigning entities.
 - Against: two aggregates must stay referentially consistent, and clip creation spans both. Amends the accepted aggregate table.
@@ -360,9 +372,9 @@ Seven decisions. Each lists concrete options, tradeoffs, and one recommendation.
 - For: linked clips need no migration later.
 - Against: the vision explicitly defers linked-content semantics until propagation, unlinking, persistence, and undo are specified, and the roadmap warns against introducing implicit shared mutable editing. Ships an indirection with no user-visible feature, and every edit path must immediately answer "does this mutate shared content?" — the exact question the deferral exists to avoid.
 
-**Recommendation: Option B.** It is the only option that gives the launcher clips without a parallel type, and it keeps Option C reachable as an internal re-key rather than a redesign. Mandate that all content access goes through a document accessor keyed by `ClipId`, never direct map indexing, so the later change stays contained.
+**Accepted: Option B.** It is the only option that gives the launcher clips without a parallel type, and it keeps Option C reachable as an internal re-key rather than a redesign. Mandate that all content access goes through a document accessor keyed by `ClipId`, never direct map indexing, so the later change stays contained.
 
-**Sub-decision 1a — amending the accepted spec.** Option B adds a `clips` row to the `project-document/SPEC.md` aggregate table and re-scopes `arrangement` to placement. Approve the amendment, or reject it and nest content inside `arrangement` — which would make the launcher aggregate reach into the arrangement aggregate for its own clips. **Recommendation: approve the amendment.**
+**Sub-decision 1a — amending the accepted spec.** Option B adds a `clips` row to the `project-document/SPEC.md` aggregate table and re-scopes `arrangement` to placement. Approve the amendment, or reject it and nest content inside `arrangement` — which would make the launcher aggregate reach into the arrangement aggregate for its own clips. **Accepted: the amendment is approved.**
 
 ### Decision 2 — Payload slice order
 
@@ -373,7 +385,7 @@ Seven decisions. Each lists concrete options, tradeoffs, and one recommendation.
 - For: one migration, one persistence change.
 - Against: audio needs the asset registry and automation needs durable target identity, neither of which exists. The slice blocks on both, so `D3` stays blocked on both. This is what made B2 unlandable.
 
-**Option B — MIDI, then audio, then automation.** *(This draft's proposal.)*
+**Option B — MIDI, then audio, then automation.** *(Accepted.)*
 
 - For: MIDI depends on nothing outside `geist-core`, and an empty MIDI clip is a complete user object, so `D3` becomes provable at the earliest point. Audio waits only for the asset registry. Automation waits for target identity.
 - Against: the app's real content today is recorded audio takes, so the legacy audio path stays authoritative longer than the legacy MIDI path.
@@ -383,7 +395,7 @@ Seven decisions. Each lists concrete options, tradeoffs, and one recommendation.
 - For: shortens the legacy-audio compatibility window.
 - Against: pulls the asset registry, warp, and source-coordinate typing into the slice that un-gates `D3`. Largest, riskiest first slice.
 
-**Recommendation: Option B**, with a plan change: **move the assets aggregate sub-slice ahead of CC3.** `project-document/PLAN.md` currently orders D7 as tracks and devices, assets, conductor, mappings, after D3–D6. Audio clip content must not ship against a registry that cannot resolve it, because an always-unresolved audio clip is exactly the "simulated behaviour" the vision forbids.
+**Accepted: Option B**, with a plan change: **move the assets aggregate sub-slice ahead of CC3.** `project-document/PLAN.md` currently orders D7 as tracks and devices, assets, conductor, mappings, after D3–D6. Audio clip content must not ship against a registry that cannot resolve it, because an always-unresolved audio clip is exactly the "simulated behaviour" the vision forbids.
 
 ### Decision 3 — What duplication copies versus shares
 
@@ -401,9 +413,9 @@ Revisions to the prior proposal:
 3. **`NoteId` uniqueness widens from arrangement-scope to document-scope.** Launcher clips share the domain, and the document owns the allocator.
 4. **Unresolved automation targets are preserved by identity, not relinked.** The prior spec covered offline audio but not target identity across duplication.
 
-**Alternative the owner may prefer: copy-on-write content sharing for duplicates.** Cheaper duplication of large clips, but it reintroduces exactly the implicit shared mutable editing the roadmap warns against and makes "did this edit affect the other clip?" unanswerable without reading internals. **Recommendation: reject; keep eager deep copy.** Clip content is small; media is the large thing, and media is already shared.
+**Alternative the owner may prefer: copy-on-write content sharing for duplicates.** Cheaper duplication of large clips, but it reintroduces exactly the implicit shared mutable editing the roadmap warns against and makes "did this edit affect the other clip?" unanswerable without reading internals. **Accepted: rejected; eager deep copy is kept.** Clip content is small; media is the large thing, and media is already shared.
 
-**Recommendation: confirm the prior rule, adopt all four revisions.**
+**Accepted: the prior rule is confirmed and all four revisions are adopted.**
 
 ### Decision 4 — Warp, tempo interpretation, and extent
 
@@ -416,24 +428,24 @@ Revisions to the prior proposal:
 Today `ClipEntity.duration` is `MusicalTime`. An unwarped audio region has a fixed length in *seconds*, which is not a fixed length in bars.
 
 - **Option A — extent is always `MusicalTime`; tempo-map edits rescale unwarped clips.** Keeps one placement model, but makes a conductor edit mutate every unwarped clip record. Undo of a tempo change becomes an undo of N clip edits. Rejected as a history and transaction hazard.
-- **Option B — typed `ClipExtent = Musical | Source`.** *(Proposed.)* Unwarped audio keeps a sample-domain durable length; warped audio and MIDI keep musical length. Tempo edits mutate no clip. Costs a conductor resolution step in layout and playback, which those paths already need. Directly satisfies invariant 8's "sample-domain source coordinates remain explicit."
+- **Option B — typed `ClipExtent = Musical | Source`.** *(Accepted.)* Unwarped audio keeps a sample-domain durable length; warped audio and MIDI keep musical length. Tempo edits mutate no clip. Costs a conductor resolution step in layout and playback, which those paths already need. Directly satisfies invariant 8's "sample-domain source coordinates remain explicit."
 - **Option C — extent is always `MusicalTime`; tempo change is absorbed by masking.** Nothing is destroyed, but an unwarped clip's audio drifts away from its own right edge as tempo changes, and the clip fills with silence. Surprising, and unlike any DAW in the category.
 
-**Recommendation: Option B.** Note the consequence: `ClipEntity.duration: MusicalTime` as shipped today changes type in CC1.
+**Accepted: Option B.** Note the consequence: `ClipEntity.duration: MusicalTime` as shipped today changes type in CC1.
 
 #### Sub-decision 4b — how many warp mechanisms
 
-- **Option A — `WarpMode::Off | On { markers, algorithm }`, where a plain stretch is exactly two markers.** *(Proposed.)* One mapping mechanism. Source tempo is derived for display, never stored twice.
+- **Option A — `WarpMode::Off | On { markers, algorithm }`, where a plain stretch is exactly two markers.** *(Accepted.)* One mapping mechanism. Source tempo is derived for display, never stored twice.
 - **Option B — warp flag plus a stored clip tempo plus an optional marker list**, as Live models it. Familiar, but three overlapping sources of the same mapping truth, and the classic source of "which one wins" bugs.
 
-**Recommendation: Option A.**
+**Accepted: Option A.**
 
 #### Sub-decision 4c — fade coordinate domain
 
 - **Option A — fades in clip-relative `MusicalTime`.** Consistent with the window, masking, and resize; fades stay musically placed under warping. A tempo change alters their audible length.
 - **Option B — fades in source frames or absolute time.** Audibly stable, correct for de-click and edit crossfades, but a second coordinate domain inside the window and awkward under warp.
 
-**Recommendation: Option A** for the first slice, with a reserved per-fade domain tag if edit crossfades later need Option B semantics. Low confidence; this one is genuinely close.
+**Accepted: Option A** for the first slice, with a reserved per-fade domain tag if edit crossfades later need Option B semantics. Low confidence; this one is genuinely close.
 
 ### Decision 5 — MPE and tuning in the note model
 
@@ -442,23 +454,23 @@ Today `ClipEntity.duration` is `MusicalTime`. An unwarped audio region has a fix
 #### Sub-decision 5a — durable pitch
 
 - **Option A — `key: u8` only.** Today's model. Twelve-tone equal temperament becomes a schema limitation, which the vision explicitly forbids.
-- **Option B — `NoteKey` plus finite `PitchOffset` semitones; tuning systems at project and device scope under `TuningId`.** *(Proposed.)* Notes stay tuning-agnostic, so switching a tuning rewrites nothing and transposition still means something. MPE per-note bend is a separate continuous expression dimension, distinct from static detune.
+- **Option B — `NoteKey` plus finite `PitchOffset` semitones; tuning systems at project and device scope under `TuningId`.** *(Accepted.)* Notes stay tuning-agnostic, so switching a tuning rewrites nothing and transposition still means something. MPE per-note bend is a separate continuous expression dimension, distinct from static detune.
 - **Option C — store frequency per note.** Loses scale-degree identity; transposition, tuning switching, and scale-aware editing all break. Rejected.
 - **Option D — store `(scale_degree, TuningId)` per note.** Maximum fidelity, but puts tuning resolution on every note and forces a tuning sub-spec into CC2.
 
-**Recommendation: Option B.** Declare `TuningId` now with content deferred, so the reference exists and resolves to 12-TET by default.
+**Accepted: Option B.** Declare `TuningId` now with content deferred, so the reference exists and resolves to 12-TET by default.
 
 #### Sub-decision 5b — expression dimension set
 
 - **Option A — MPE three: per-note pitch, pressure, timbre.** Smallest, covers MPE controllers.
-- **Option B — the full plugin note-expression set: pitch/tuning, volume, pan, vibrato, expression, brightness, pressure.** *(Proposed.)* Lossless round trip with hosted plugins and with the first-party instruments, which is the interoperability the vision requires. Costs a wider enum and more editor surface later.
+- **Option B — the full plugin note-expression set: pitch/tuning, volume, pan, vibrato, expression, brightness, pressure.** *(Accepted.)* Lossless round trip with hosted plugins and with the first-party instruments, which is the interoperability the vision requires. Costs a wider enum and more editor surface later.
 
-**Recommendation: Option B.** The enum is cheap now and lossy interop is expensive to unwind. Either way the dimension is a typed enum, never a free-form string.
+**Accepted: Option B.** The enum is cheap now and lossy interop is expensive to unwind. Either way the dimension is a typed enum, never a free-form string.
 
 #### Sub-decision 5c — expression time base and breakpoint identity
 
-- **Time base — note-relative** *(proposed)*: expression travels intact when a note moves or is copied. **Clip-relative** alternative: simpler to draw against the clip grid, but moving a note silently detaches its expression. **Recommendation: note-relative.**
-- **Breakpoint identity — positional key** *(proposed)*: at most one point per dimension per tick; setting an existing position replaces its value and outgoing shape. Position is a durable coordinate, not a vector index, so this satisfies the identity constraint. **Alternative:** allocate a `BreakpointId` domain for stable point identity under multi-point drags. **Recommendation: positional keying**, with the same rule applied to clip-local automation points, unless the owner wants multi-point gestures to preserve point identity across a drag — in which case decide now, because retrofitting point identity means a persistence migration.
+- **Time base — note-relative** *(accepted)*: expression travels intact when a note moves or is copied. **Clip-relative** alternative: simpler to draw against the clip grid, but moving a note silently detaches its expression. **Accepted: note-relative.**
+- **Breakpoint identity — positional key** *(accepted)*: at most one point per dimension per tick; setting an existing position replaces its value and outgoing shape. Position is a durable coordinate, not a vector index, so this satisfies the identity constraint. **Alternative:** allocate a `BreakpointId` domain for stable point identity under multi-point drags. **Accepted: positional keying**, with the same rule applied to clip-local automation points, unless the owner wants multi-point gestures to preserve point identity across a drag — in which case decide now, because retrofitting point identity means a persistence migration.
 
 ### Decision 6 — Cross-track move, ordering, and undo identity
 
@@ -470,30 +482,30 @@ Checked and consistent: cross-track move preserves `ClipId`; content is untouche
 
 Today `ArrangementTrack` holds a durable `Vec<ClipId>` and `rehome_clip` takes an explicit index, which permits two clips at the same start on one track with no defined playback arbitration.
 
-- **Option A — forbid overlap on a lane; order derived from start.** *(Recommended.)* The aggregate gains a strong invariant, playback arbitration is unambiguous, and the index parameter disappears along with a class of ordering bugs. "Drop a clip over an existing one and trim it" becomes an explicit composite transaction in the editing milestone. Take lanes arrive later as additive sub-lanes without breaking the invariant.
+- **Option A — forbid overlap on a lane; order derived from start.** *(Accepted.)* The aggregate gains a strong invariant, playback arbitration is unambiguous, and the index parameter disappears along with a class of ordering bugs. "Drop a clip over an existing one and trim it" becomes an explicit composite transaction in the editing milestone. Take lanes arrive later as additive sub-lanes without breaking the invariant.
 - **Option B — permit overlap; keep durable order.** Matches the code as written and defers the collision-resolution edit, but forces this spec to define render arbitration for overlapping audio on one lane — a scheduler decision made by accident.
 
-**Recommendation: Option A.** Note the consequence: `rehome_clip`, `ClipLocation`, and `RemovedClip` change shape in CC1/D3.
+**Accepted: Option A.** Note the consequence: `rehome_clip`, `ClipLocation`, and `RemovedClip` change shape in CC1/D3.
 
 #### Sub-decision 6b — cross-surface transfer
 
-- **Option A — copy only.** *(Recommended.)* A `ClipId` never changes surface, so "one clip, one placement, one surface, for life" is a provable invariant. Matches the vision's "arrangement capture creates independent clip entities" without exception.
+- **Option A — copy only.** *(Accepted.)* A `ClipId` never changes surface, so "one clip, one placement, one surface, for life" is a provable invariant. Matches the vision's "arrangement capture creates independent clip entities" without exception.
 - **Option B — true move between arrangement and launcher.** Saves an identity on drag-out, but weakens the invariant to "one placement in one of two aggregates" and makes undo of a cross-surface move span two placement models plus an extent conversion.
 
-**Recommendation: Option A.**
+**Accepted: Option A.**
 
 #### Sub-decision 6c — playback of a note that overruns the window
 
-- **Option A — force note-off at the window boundary; durable duration unchanged.** *(Recommended.)* Matches the category's behaviour and keeps the non-destructive rule.
+- **Option A — force note-off at the window boundary; durable duration unchanged.** *(Accepted.)* Matches the category's behaviour and keeps the non-destructive rule.
 - **Option B — let the note ring past the clip edge.** Musically useful for tails, but means a clip can sound after its own end, which complicates launcher stop, arrangement arbitration, and voice accounting.
 
-**Recommendation: Option A**, with Option B reachable later as a per-clip flag rather than a model change.
+**Accepted: Option A**, with Option B reachable later as a per-clip flag rather than a model change.
 
-### Decision 7 — Automation as a clip kind *(raised by this draft)*
+### Decision 7 — Automation as a clip kind *(raised by this document, not by the paused spec)*
 
 **Question.** The paused proposal made automation a third `ClipKind` with a typed target and a clip-relative curve. The accepted vision instead names three distinct parameter-control layers that "do not share one undifferentiated data model": arrangement automation in project musical time, clip-local automation in clip-relative time, and realtime modulation.
 
 - **Option A — keep `ClipKind::Automation`.** Preserves the prior proposal and the current `geist_timeline::Clip` shape. But it collapses layers one and two into one representation, and it makes arrangement automation inherit clip placement, ordering, duplication, and launcher-slot semantics that arrangement automation does not want.
-- **Option B — remove it.** *(Proposed.)* Arrangement automation becomes lanes in the `automation` aggregate keyed by durable target in project time. Clip-local automation becomes envelopes owned by a clip record in clip-relative time. `ClipKind` is `Audio | Midi`. This matches both the vision's layering and the Live/Bitwig category the product targets.
+- **Option B — remove it.** *(Accepted.)* Arrangement automation becomes lanes in the `automation` aggregate keyed by durable target in project time. Clip-local automation becomes envelopes owned by a clip record in clip-relative time. `ClipKind` is `Audio | Midi`. This matches both the vision's layering and the Live/Bitwig category the product targets.
 
-**Recommendation: Option B.** It also retires the persisted `ClipKind::Automation { lane_index: usize }`, a vector index used as a durable reference, which has to go regardless.
+**Accepted: Option B.** It also retires the persisted `ClipKind::Automation { lane_index: usize }`, a vector index used as a durable reference, which has to go regardless.

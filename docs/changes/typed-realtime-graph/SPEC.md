@@ -1,15 +1,17 @@
 <!--
 Author: Jeff
 Date: 2026-08-01
-Description: Draft product and architecture contract for the typed multi-rate realtime render graph.
-Notes: DRAFT FOR REVIEW. Fills in what a render generation contains; the publication protocol is already fixed by docs/changes/project-document/SPEC.md.
+Description: Product and architecture contract for the typed multi-rate realtime render graph.
+Notes: Accepted 2026-08-03; all seventeen decisions are settled in the decision record at the end.
 -->
 
 # Typed Multi-Rate Realtime Graph
 
 ## Status
 
-**Draft. Not accepted.** This document proposes a design and records an audit. It does not settle the seventeen questions in `## Decisions required`; those belong to the repository owner. No slice starts until the decisions gating it are answered.
+**Accepted 2026-08-03.** All seventeen questions are settled; `## Decision record` holds each one with its rejected alternatives and the reason it lost.
+
+Three decisions were settled against this document's own recommendation, and their consequences are folded into the contract below rather than left in the record: `CONTROL_PERIOD_FRAMES` is 8 rather than 16, `MAX_LANES` is 32 rather than 16, and sub-block cycle scheduling with a one-sample floor lands in this milestone rather than at Milestone 12. The third is a scope increase to Milestone 3; see `## Cycle, delay, and latency contract` and ADR 006.
 
 This spec targets roadmap Milestone 3 and immediate work order item 4. It is the content half of a contract whose protocol half is already accepted:
 
@@ -96,7 +98,7 @@ The accepted protocol is not reopened. This spec places its content inside it.
 | Fixed by project-document SPEC | Filled in by this spec |
 | --- | --- |
 | `RenderGeneration` is immutable, app-thread-built, `GenerationId`-identified | The generation payload is a `RenderPlan` plus its typed arenas |
-| Publication is a swap the audio thread cannot block on | The swap carries the plan, not the device instances (proposed; decision 8) |
+| Publication is a swap the audio thread cannot block on | The swap carries the plan, not the device instances (decision 8) |
 | Audio thread acknowledges the executing `GenerationId` | Adoption additionally waits on a control-sequence precondition |
 | Bounded sequenced control stream with sample offsets | Message *types* per domain and how each addresses a compiled destination |
 | Saturation and rejection reconcile explicitly | Which per-domain counters the audio thread publishes so reconciliation can be specific |
@@ -138,7 +140,7 @@ PortDescriptor {
 SignalDomain = Audio | Cv | Gate | Note | Midi | Parameter
 ```
 
-`Meter` leaves the connectable set (proposed; decision 4). Analysis that feeds back *into* the graph is `Cv`. Analysis that feeds the UI is a node-declared outlet, not an edge.
+`Meter` leaves the connectable set (decision 4). Analysis that feeds back *into* the graph is `Cv`. Analysis that feeds the UI is a node-declared outlet, not an edge — a `MeterCell`-backed atomic or a bounded ring, never a compiled route. `PRODUCT_VISION.md` line 83 still lists meters and analysis feedback as a signal domain; it is one, but it is not a routable one. That clarification is recorded in the vision.
 
 `BusLayout` is extensible from day one but only two variants compile in v1:
 
@@ -164,20 +166,30 @@ Each failure is a distinct typed error naming both port ids and both descriptors
 
 ## Domain and rate contract
 
-| Domain | Rate | Storage | Fan-in default (proposed) |
+| Domain | Rate | Storage | Fan-in default |
 | --- | --- | --- | --- |
 | `Audio` | Audio | `f32` per frame per channel per lane | `Sum` |
 | `Cv` | Audio or Control, declared per port | `f32` per point per channel per lane | `Sum` |
 | `Gate` | Audio or Control, declared per port | `f32` per point per lane | `Max` |
 | `Note` | Event | bounded timestamped `NoteEventOut` run | `Merge` |
 | `Midi` | Event | bounded timestamped `MidiEvent` run | `Merge` |
-| `Parameter` | Control | `f32` per point, over one base value | `Sum` of modulation |
+| `Parameter` | Control | `f32` per point, over one base value | `Sum` of modulation over exactly one base |
 
-`Cv` and `Gate` carry a declared rate rather than a fixed one (proposed; decision 1). A control-rate `Cv` port and an audio-rate `Cv` port are the same domain and cannot connect to each other without a visible rate adapter. This keeps one cable colour per domain while making the cost and the conversion visible, and it satisfies the vision requirement that audio-rate modulation exist only where a destination declares it.
+`Cv` and `Gate` carry a declared rate rather than a fixed one (decision 1). A control-rate `Cv` port and an audio-rate `Cv` port are the same domain and cannot connect to each other without a visible rate adapter. This keeps one cable colour per domain while making the cost and the conversion visible, and it satisfies the vision requirement that audio-rate modulation exist only where a destination declares it.
 
-Control-rate storage is a reduced-resolution buffer, not one scalar per block. A control buffer holds `ceil(frames / CONTROL_PERIOD_FRAMES)` points; the final point may cover fewer frames. `CONTROL_PERIOD_FRAMES` is a compile-time constant so the control rate in hertz is independent of the block size — changing the buffer size from 128 to 64 frames must not change how modulation sounds. Value pending decision 5.
+CV values are normalized (decision 2): bipolar `-1..1`, unipolar `0..1`, sharing the number space of `ParamRange` and automation. Ports that declare themselves pitch CV carry one additional fixed relationship — `1.0` equals one octave — so the modular instrument has a pitch convention without every mixer and effect destination speaking volts. This is a persisted convention; changing it after patches exist is a migration.
+
+Control-rate storage is a reduced-resolution buffer, not one scalar per block. A control buffer holds `ceil(frames / CONTROL_PERIOD_FRAMES)` points; the final point may cover fewer frames.
+
+```
+CONTROL_PERIOD_FRAMES: usize = 8
+```
+
+That is 6 kHz at 48 kHz: 16 points per 128-frame block, 8 per 64-frame block (decision 5). It is a compile-time constant and never a project setting, so the control rate in hertz is independent of block size — changing the buffer from 128 to 64 frames must not change how modulation sounds, and a project must render identically on two machines. A project-configurable value would make renders non-reproducible and performance fixtures non-comparable.
 
 Every control-rate consumer declares how it reads a control buffer: `Hold` (step at each point) or `Ramp` (linear between points). `Ramp` is the default for parameters and CV; `Hold` is the default for gates.
+
+Inside a strongly-connected component the control grid no longer aligns to chunk boundaries; see `## Cycle, delay, and latency contract`.
 
 ## Buffer and arena contract
 
@@ -233,11 +245,18 @@ ProcessContext<'a> {
 
 Event routes are per-block arena runs, not rings. A producer writes its run during its step; the consumer reads it later in the same block. No cross-thread machinery is involved and nothing is retained between blocks.
 
-Capacity. Each event output port declares `max_events_per_block`. The compiler sums declarations into the arena size and records per-port ranges. A producer that would exceed its declared capacity has its excess event dropped and increments a per-port overflow counter published to the app thread. Overflow policy pending decision 13; the stuck-note hazard is the reason it needs an owner's answer.
+Capacity. Each event output port declares `max_events_per_block`. The compiler sums declarations into the arena size and records per-port ranges. A producer that would exceed its declared capacity has its excess event dropped and increments a per-port overflow counter published to the app thread.
+
+Overflow policy is per domain (decision 13):
+
+- **`Note` ports reserve headroom.** A declared tail of each note run is writable only by note-off and choke events. An ordinary note-on that would exceed the unreserved capacity is dropped and counted; a note-off never is. Overflow therefore cannot produce a stuck note, which is the worst failure mode in the system and worth the more complex writer.
+- **`Midi` ports drop newest and count.** MIDI overflow degrades gracefully and does not justify the reserve machinery.
+
+Proving capacity at compile time was rejected: a producer whose output depends on a randomization stage — an arpeggiator, a chance device — cannot bound its output honestly, so the guarantee would be fiction.
 
 Ordering. Every event run is sorted by `sample_offset` ascending. Within one offset, order is production order for a single source. For fan-in, the merge key is `(sample_offset, route_ordinal, source_position)`, giving a total order that is stable across runs and across sessions. The merge is a bounded k-way merge over already-sorted runs; it allocates nothing.
 
-Note identity. The realtime note event carries `NoteInstanceId: NonZeroU32`, unique among sounding notes within one generation lifetime, minted by whatever originates the note — the clip scheduler, live MIDI input, or a note device such as an arpeggiator that creates notes of its own. Every note-off and every expression event references the instance id of its note-on. Durable `NoteId` from `ProjectDocument` does not enter the audio thread; the scheduler owns the mapping in both directions (proposed; decision 12). The current `note_id: i32` with the `-1` sentinel (`crates/geist-core/src/events.rs:26`) is retained only inside the VST3 and MIDI interop adapters, where the sentinel convention is required.
+Note identity. The realtime note event carries `NoteInstanceId: NonZeroU32`, unique among sounding notes within one generation lifetime, minted by whatever originates the note — the clip scheduler, live MIDI input, or a note device such as an arpeggiator that creates notes of its own. Every note-off and every expression event references the instance id of its note-on. Durable `NoteId` from `ProjectDocument` does not enter the audio thread; the scheduler owns the mapping in both directions (decision 12). Live MIDI input, arpeggiators, and chord devices have no durable document identity and cannot mint one on the callback; vision invariant 9 is about editing, undo, expression editing, and persistence, which are all document concerns. The current `note_id: i32` with the `-1` sentinel (`crates/geist-core/src/events.rs:26`) is retained only inside the VST3 and MIDI interop adapters, where the sentinel convention is required.
 
 Note expression is in the type from the first slice, even before any producer emits it, so devices are not rewritten when MPE lands:
 
@@ -267,11 +286,11 @@ The result is a control-rate buffer the node reads through `ctx.param(key)`. Eva
 
 Audio-rate modulation exists only where a parameter destination declares `accepts_audio_rate: true`. Everywhere else, an audio-rate source into a parameter requires a visible downsampling adapter.
 
-Control-stream addressing. Messages carry the durable `(DeviceId, ParamKey)` pair. Each generation carries a sorted route index built on the app thread; the audio thread resolves a message with a bounded binary search over it. A message whose target is absent from the current generation increments an unresolved counter and is dropped, never guessed (proposed; decision 9). The consequence that matters: a knob turn in flight during a graph edit is still applied after the swap, because the address does not depend on the generation.
+Control-stream addressing. Messages carry the durable `(DeviceId, ParamKey)` pair. Each generation carries a sorted route index built on the app thread; the audio thread resolves a message with a bounded binary search over it. A message whose target is absent from the current generation increments an unresolved counter and is dropped, never guessed (decision 9). The consequence that matters: a knob turn in flight during a graph edit is still applied after the swap, because the address does not depend on the generation.
 
 ## Meter and analysis contract
 
-Meters flow out of the realtime graph toward the UI. They are not edges (proposed; decision 4).
+Meters flow out of the realtime graph toward the UI. They are not edges (decision 4).
 
 A node declares meter outlets in its descriptor. Each outlet is backed by an app-thread-allocated publication object shared by `Arc`:
 
@@ -292,7 +311,7 @@ FanInPolicy = Single | Sum | Max | Merge | Reject
 
 `Single` rejects a second edge with a typed error, not `Internal`. `Sum` and `Max` apply to stream domains. `Merge` applies to event domains.
 
-Determinism requires an order. Each input port owns an **ordered list of incoming route ordinals**, persisted by the document (proposed; decision 6). The compiler emits contributors in that order; the executor accumulates in that order. Float addition is not associative, so without a persisted order the same project can render different samples after a reload. The ordinal is also what a user reorders when the summing order is musically meaningful.
+Determinism requires an order. Each input port owns an **ordered list of incoming route ordinals**, persisted by the document (decision 6). The compiler emits contributors in that order; the executor accumulates in that order. Float addition is not associative, so without a persisted order the same project can render different samples after a reload. The ordinal is also what a user reorders when the summing order is musically meaningful.
 
 ## Adapter contract
 
@@ -302,7 +321,7 @@ Adapters are ordinary nodes with durable identity, declared latency, and inspect
 | --- | --- | --- |
 | `CvUpsample` | control rate to audio rate | `Hold`, `Ramp`, or one-pole smoothing with a declared time constant |
 | `CvDownsample` | audio rate to control rate | `Pick`, `Mean`, or `Peak` per control point |
-| `MonoToStereo` | `Mono` to `Stereo` | gain law, pending decision 16 |
+| `MonoToStereo` | `Mono` to `Stereo` | gain law, default `Copy` (decision 16) |
 | `StereoToMono` | `Stereo` to `Mono` | `Sum`, `Mean`, or `LeftOnly` |
 | `NoteToMidi` / `MidiToNote` | note and MIDI domains | declared lossy fields, channel mapping |
 | `GateToNote` / `NoteToGate` | gate and note domains | voice allocation policy, fixed key or key source |
@@ -327,9 +346,17 @@ LaneSpec = Fixed(u16) | Inherit | Reduce(ReduceOp) | Broadcast
 - `Reduce(op)` — an input that collapses `n` lanes to one by `Sum`, `Mean`, `Max`, or `First`. This is the explicit voice-domain exit the vision requires.
 - `Broadcast` — an input that accepts one lane and presents `n`.
 
-Lane resolution runs at compile time by propagation from sources through `Inherit` ports, then validation. An unresolvable or contradictory lane count is a typed rejection naming the ports. A lane-count mismatch on an edge is a rejection; the editor offers a `LaneBroadcast` or `LaneReduce` adapter (proposed; decision 14).
+Lane resolution runs at compile time by propagation from sources through `Inherit` ports, then validation. An unresolvable or contradictory lane count is a typed rejection naming the ports.
 
-Buffer layout is lane-major: a poly stereo audio cable occupies `lanes × channels × frames`, so one lane's channels are contiguous and per-lane processing is a slice walk. `MAX_LANES` bounds arena growth; value pending decision 15.
+There is no implicit lane broadcast, not even 1-to-N (decision 14). A lane-count mismatch on an edge is a compile rejection, and the editor auto-inserts a visible `LaneBroadcast` or `LaneReduce` on the offending drag — one user gesture, and the persisted patch still shows exactly what happens to the signal. Vision line 93 requires an explicit adapter for voice-domain crossings, and the same editor-assisted pattern covers mono-to-stereo, so there is one rule rather than two.
+
+Buffer layout is lane-major: a poly stereo audio cable occupies `lanes × channels × frames`, so one lane's channels are contiguous and per-lane processing is a slice walk.
+
+```
+MAX_LANES: u16 = 32
+```
+
+32 lanes (decision 15) rather than the VCV-conventional 16. A poly stereo audio cable at 128 frames therefore costs 32 KB, and that arena lives on the audio thread beside the `DeviceTable`. Raising or lowering it later is a constant change, not a format change. A per-project value was rejected: it makes arena sizing and reproducibility project-dependent and stops performance fixtures being comparable.
 
 Per-voice modulation stays inside its lane domain. A global modulator reaching a polyphonic destination passes through a `LaneBroadcast`; a per-voice signal leaving the instrument passes through a `LaneReduce`. There is no implicit crossing in either direction.
 
@@ -345,12 +372,26 @@ Compilation:
 4. A feedback-break node declares its domain and its delay. `AudioFeedbackDelay` declares delay in frames; `EventFeedbackDelay` declares delay in blocks. The delay is a parameter the user sees and sets.
 5. The plan records every break, its node, its domain, and its delay, so the UI can show where a loop closes and what it costs.
 
-Minimum delay. Sub-block graph feedback requires splitting a strongly-connected component into chunks and iterating it, which is a scheduler this milestone should not ship. The proposal is a one-block minimum for graph-level feedback, with short feedback living inside a node — which is what `geist-dsp` comb and delay lines already do. The delay element declares its delay in *frames* regardless, so a later sub-block scheduler is a compiler upgrade and not a contract break. Pending decision 10.
+Minimum delay. **Graph-level feedback resolves to one sample, and the sub-block scheduler ships in this milestone** (decision 10). This is a deliberate scope increase: both this document's recommendation and the roadmap placed sub-block scheduling at Milestone 12, with a one-block minimum until then. The owner chose capability over budget, because a one-block floor means no graph-level Karplus-Strong, resonator, or physical modeling — the flagship modular instrument would ship unable to express its defining patches.
+
+What the floor requires:
+
+1. **Strongly-connected components are scheduled as chunks.** Nodes outside every SCC are block-processed exactly as described above. Nodes inside an SCC iterate at the declared frame floor.
+2. **`SCC_FRAME_FLOOR = 1`.** One sample. Only SCC members pay per-sample dispatch; the rest of the graph is untouched. This is what VCV Rack does globally, and it is why VCV is CPU-hungry — here the cost is confined to declared cycles.
+3. **The executor gains a second execution path.** Block dispatch and per-sample dispatch are two modes in `process_list.rs`, not one mode with a parameter. A node inside an SCC is called once per sample with single-frame slices.
+4. **Compilation still rejects undeclared cycles.** An SCC without a declared feedback-break element is a compile error, exactly as above. The floor changes what a break element *costs*, not whether one is required. Vision line 87 is satisfied: the delay is a node the user placed and can see.
+5. **The plan records SCC membership**, its frame floor, and its iteration count, so the UI can show where a loop closes and what it costs.
+
+Open at the scheduler slice, and blocking it: **how control-rate values behave inside an SCC.** At a one-sample floor, chunk boundaries no longer align to the 8-frame control grid, so a control buffer point spans eight iterations. Interpolating per sample and holding per chunk are both defensible and they sound different. This is settled when the scheduler is specified, not guessed at during implementation.
+
+Performance consequence to own: `CONTROL_PERIOD_FRAMES = 8`, `MAX_LANES = 32`, and this floor were each chosen independently and each spend from the same 64-frame budget. The release fixture set needs a large-SCC patch specifically, because no existing bench would find that cliff.
 
 Latency. Two kinds of delay must not be confused:
 
 - **Semantic delay** changes what the user hears in a loop. It is never inserted by the compiler.
-- **Compensating delay** aligns parallel paths the user already expects to be aligned. The compiler may insert it (proposed; decision 11).
+- **Compensating delay** aligns parallel paths the user already expects to be aligned. The compiler inserts it and reports every insertion (decision 11).
+
+Vision line 87 does not forbid the second. It is scoped entirely to feedback cycles — "the compiler does not silently convert arbitrary cycles into hidden one-block latency" — and line 89 requires latency behavior be "deterministic and visible," not absent. Reported plugin delay compensation satisfies both. The alternative, hand-aligning every send, parallel chain, and latent plugin, is unusable.
 
 Each node descriptor declares `latency_frames` on the app thread, so the compiler computes path latency without touching node instances. The compiler computes arrival latency at every summing input and every bus boundary, inserts compensating delay on the shorter paths, and records every insertion in the plan so the total and per-path figures are readable by the UI and by the recording path. Compensation is skipped inside a strongly-connected component and reported as skipped. A latency change is a structural change and produces a new generation.
 
@@ -369,7 +410,7 @@ RenderGeneration {
 }
 ```
 
-Device instances are **not** in the generation (proposed; decision 8). They live in an audio-thread-owned `DeviceTable` — a fixed-capacity `Vec<Option<Box<dyn AudioNode>>>` — and the plan addresses them by slot.
+Device instances are **not** in the generation (decision 8). They live in an audio-thread-owned `DeviceTable` — a fixed-capacity `Vec<Option<Box<dyn AudioNode>>>` — and the plan addresses them by slot. This is the most consequential decision in the spec; ADR 005 records it and its consequences for `swap.rs`.
 
 The reason is state continuity. Under today's design, `Executor::new` (`crates/geist-graph/src/process_list.rs:150`) takes node instances out of the graph by move. Recompiling therefore means reconstructing every node, which discards filter state, delay lines, and sounding voices on every graph edit. A DAW cannot glitch every device when a user adds an effect.
 
@@ -431,7 +472,7 @@ Deferred to their own specs and interviews:
 - Evaluation precedence between arrangement automation, clip automation, and realtime modulation. The vision defers it to a dedicated parameter-control specification; this spec fixes only storage and routing.
 - The hybrid track aggregate, device chain projection, and chain/graph round-trip. Milestone 4.
 - Durable device, module, and rack identity beyond the `DeviceId` and `ParamKey` this spec consumes. Milestone 1 and Milestone 12.
-- Sub-block feedback scheduling for strongly-connected components. Named as a later compiler upgrade.
+- ~~Sub-block feedback scheduling for strongly-connected components.~~ **No longer a non-goal.** Decision 10 moved it into this milestone at a one-sample floor.
 - Declared multichannel layouts beyond mono and stereo. Descriptors are extensible; the compiler is not.
 - Voice allocation policy inside the flagship instruments.
 - VST3 bus negotiation and note-expression mapping. Milestone 13, though the note and bus descriptors here are what it will map onto.
@@ -455,30 +496,33 @@ Deferred to their own specs and interviews:
 14. Nothing allocates, deallocates, locks, logs, formats, or performs I/O on the callback, proven by a debug allocator guard under graph-swap stress.
 15. Retired plans, arenas, device instances, and meter publication objects are dropped on the app thread.
 16. Every bounded queue publishes a saturation or overflow counter, and the app reconciles explicitly rather than advancing mirrors.
-17. Callback benchmarks meet the 48 kHz / 128-frame baseline and the 64-frame stress mode on reproducible fixtures.
+17. Callback benchmarks meet the 48 kHz / 128-frame baseline and the 64-frame stress mode on reproducible fixtures, including a fixture whose graph contains a large strongly-connected component.
 18. `BusLayout::Declared` round-trips through validation and persistence while the v1 compiler rejects it with a distinct, actionable error.
+19. A node inside a strongly-connected component iterates at `SCC_FRAME_FLOOR`; a node outside every component is block-processed, and the two dispatch paths produce identical output for a graph with no cycles.
+20. Every strongly-connected component's membership, frame floor, and iteration count appear in the compiled plan.
 
 ## Slice boundaries
 
-Provisional. The gating decisions are named per slice; see `PLAN.md`.
+All gating decisions are settled; see `## Decision record` and `PLAN.md`.
 
-- **T1 — Descriptors and validation.** `SignalDomain`, declared `SignalRate`, `BusLayout`, `LaneSpec`, `FanInPolicy`, `EventCapacity`, typed connection errors. `geist-core` only. No executor change. *Gated by decisions 1, 2, 3, 4, 15.*
-- **T2 — Ownership skeleton.** Device table, plan-and-arena generation payload, `GenerationId` and `requires_control_sequence` on the swap, acknowledgement ring, allocator guard. Audio domain only; behavior otherwise preserved. *Gated by decision 8.*
-- **T3 — Streams.** Per-domain arenas for audio, CV, and gate; control-rate buffers; ordered summing fan-in; `CvUpsample` and `CvDownsample`. *Gated by decisions 1, 5, 6, 7.*
-- **T4 — Events.** Note and MIDI arenas, per-route delivery, deterministic merge, `NoteInstanceId`, expression variants, capacity and overflow counters. Removes the global slices from `ProcessContext`. *Gated by decisions 12, 13.*
-- **T5 — Parameters.** `(DeviceId, ParamKey)` addressing, route index, control-stream resolution, base/modulation/clamp/smooth layering, `accepts_audio_rate` declarations. *Gated by decision 9.*
-- **T5a — Single-track spike.** One instrument, one effect, one meter, driven end to end by the compiled graph, proving the typed contract against real audio before more layers land. *Gated by decision 17.*
-- **T6 — Cycles and latency.** Feedback-break declaration, cycle rejection, `AudioFeedbackDelay` and `EventFeedbackDelay`, declared latency, compensation. Inverts the current feedback test. *Gated by decisions 10, 11.*
-- **T7 — Buses.** Mono and stereo as first-class layouts, `MonoToStereo` and `StereoToMono`, `Declared` rejection path. *Gated by decision 16.*
-- **T8 — Lanes.** Lane propagation and validation, lane-major layout, `LaneSplit`, `LaneMerge`, `LaneReduce`, `LaneBroadcast`. *Gated by decisions 14, 15.*
-- **T9 — Meters and analysis.** Node-declared outlets, atomic and ring publication, reclaim. *Gated by decision 4.*
-- **T10 — Fixtures and gates.** Reproducible performance fixtures, overload tests, graph-swap stress, callback benchmarks at both block sizes.
+- **T1 — Descriptors and validation.** `SignalDomain`, declared `SignalRate`, `BusLayout`, `LaneSpec`, `FanInPolicy`, `EventCapacity`, typed connection errors. `geist-core` only. No executor change.
+- **T2 — Ownership skeleton.** Device table, plan-and-arena generation payload, `GenerationId` and `requires_control_sequence` on the swap, acknowledgement ring, allocator guard. Audio domain only; behavior otherwise preserved.
+- **T3 — Streams.** Per-domain arenas for audio, CV, and gate; control-rate buffers at `CONTROL_PERIOD_FRAMES = 8`; ordered summing fan-in; `CvUpsample` and `CvDownsample`.
+- **T4 — Events.** Note and MIDI arenas, per-route delivery, deterministic merge, `NoteInstanceId`, expression variants, reserved note-off headroom, capacity and overflow counters. Removes the global slices from `ProcessContext`.
+- **T5 — Parameters.** `(DeviceId, ParamKey)` addressing, route index, control-stream resolution, base/modulation/clamp/smooth layering, `accepts_audio_rate` declarations.
+- **T5a — Single-track spike.** One instrument, one effect, one meter, driven end to end by the compiled graph, proving the typed contract against real audio before lanes, buses, and cycles land on top of it.
+- **T6 — Cycles and latency.** Feedback-break declaration, cycle rejection, `AudioFeedbackDelay` and `EventFeedbackDelay`, declared latency, compensation. Inverts the current feedback test.
+- **T6a — Sub-block SCC scheduler.** Component detection, chunked iteration at `SCC_FRAME_FLOOR = 1`, the per-sample dispatch path, and plan recording of component membership. Carries a blocking checkpoint on control-value behavior inside a component.
+- **T7 — Buses.** Mono and stereo as first-class layouts, `MonoToStereo` and `StereoToMono`, `Declared` rejection path.
+- **T8 — Lanes.** Lane propagation and validation, lane-major layout at `MAX_LANES = 32`, `LaneSplit`, `LaneMerge`, `LaneReduce`, `LaneBroadcast`.
+- **T9 — Meters and analysis.** Node-declared outlets, atomic and ring publication, reclaim.
+- **T10 — Fixtures and gates.** Reproducible performance fixtures including a large-SCC patch, overload tests, graph-swap stress, callback benchmarks at both block sizes.
 
 ## Stop conditions
 
 Stop before a slice when:
 
-- a decision gating that slice in `## Decisions required` is unanswered;
+- the control-value behavior checkpoint on T6a is unresolved;
 - the design would require the compiler to insert a semantic conversion;
 - a graph edit would reset device DSP state;
 - a plan could reference a device slot that is not installed;
@@ -487,9 +531,29 @@ Stop before a slice when:
 - a bounded queue would saturate without a counter and an explicit reconciliation path;
 - independent review has unresolved findings.
 
-## Decisions required
+## Decision record
 
-Every item below is an open product or architecture question with a real fork. Recommendations are the author's, not accepted positions.
+All seventeen were settled 2026-08-03. Each entry keeps its rejected alternatives and the reason each lost, because that reasoning is why the contract above has its shape. Three were settled against the recommendation and are marked.
+
+| # | Accepted |
+| --- | --- |
+| 1 | One `Cv` domain, rate declared per port |
+| 2 | Normalized, with `1.0` = one octave on pitch CV ports |
+| 3 | `Gate` is a stream |
+| 4 | `Meter` is a node-declared outlet, not connectable |
+| 5 | `CONTROL_PERIOD_FRAMES = 8` **(against recommendation)** |
+| 6 | Fan-in order is persisted route ordinals |
+| 7 | `Audio`/`Cv` sum, `Gate` max, `Note`/`Midi` merge, one base per parameter |
+| 8 | Audio-thread `DeviceTable`; generations carry only the plan |
+| 9 | Durable `(DeviceId, ParamKey)` addressing |
+| 10 | Sub-block SCC scheduling in this milestone, one-sample floor **(against recommendation, twice)** |
+| 11 | Compensating delay permitted and reported |
+| 12 | Runtime `NoteInstanceId` on the callback |
+| 13 | Reserved note-off headroom; MIDI drops newest |
+| 14 | No implicit lane broadcast; editor-assisted adapter |
+| 15 | `MAX_LANES = 32` **(against recommendation)** |
+| 16 | Upmix by copy, downmix by mean |
+| 17 | `geist-document` owns the editor; T5a spike lands mid-sequence |
 
 ### 1. Is `Cv` one domain with a declared rate, or two domains?
 
@@ -497,7 +561,7 @@ Every item below is an open product or architecture question with a real fork. R
 - **B. Two domains, `CvControl` and `CvAudio`.** The type system alone prevents mismatches and the UI can colour them differently. Cost: doubles the domain count and every adapter table, and modules that legitimately work at either rate must declare two variants.
 - **C. CV is always audio-rate, as in VCV Rack.** Simplest and most flexible. Cost: a project with a few hundred modulation routes pays audio-rate cost for LFOs and envelopes that do not need it, which directly threatens the 64-frame stress target.
 
-**Recommendation: A.** It preserves the vision's requirement that audio-rate modulation exist only where declared, without doubling the type surface. C is the wrong default for a DAW even though it is right for the rack; A lets the rack declare audio-rate ports everywhere while the mixer does not.
+**Accepted: A.** It preserves the vision's requirement that audio-rate modulation exist only where declared, without doubling the type surface. C is the wrong default for a DAW even though it is right for the rack; A lets the rack declare audio-rate ports everywhere while the mixer does not.
 
 ### 2. What is the numeric convention for CV?
 
@@ -505,7 +569,7 @@ Every item below is an open product or architecture question with a real fork. R
 - **B. Volt-style.** `±5 V` range, `1 V/oct` pitch. Matches VCV Rack, Eurorack literature, and every module concept a modular user already knows.
 - **C. Normalized with a fixed octave convention.** `-1..1` generally, and `1.0 = 1 octave` on ports declared as pitch CV.
 
-**Recommendation: C.** It keeps one number space shared with parameters and automation while giving the flagship modular instrument the pitch relationship it needs. B would make every mixer and effect modulation destination speak volts for no benefit. This choice is effectively permanent once patches are persisted, so it needs an explicit answer now.
+**Accepted: C.** It keeps one number space shared with parameters and automation while giving the flagship modular instrument the pitch relationship it needs. B would make every mixer and effect modulation destination speak volts for no benefit. This choice is effectively permanent once patches are persisted.
 
 ### 3. Is `Gate` a stream or an event domain?
 
@@ -513,14 +577,14 @@ Every item below is an open product or architecture question with a real fork. R
 - **B. Event, timestamped triggers.** Much cheaper — a bar of silence costs zero — and integrates naturally with note scheduling and MIDI clock.
 - **C. Both, as two domains.**
 
-**Recommendation: A.** Gate as a stream is what makes the modular instrument behave correctly, and the vision names gates and triggers alongside CV rather than alongside notes. B's cost saving is real but it makes comparators, slew, and analog-style envelopes awkward. C is not worth the surface area in v1.
+**Accepted: A.** Gate as a stream is what makes the modular instrument behave correctly, and the vision names gates and triggers alongside CV rather than alongside notes. B's cost saving is real but it makes comparators, slew, and analog-style envelopes awkward. C is not worth the surface area in v1.
 
 ### 4. Is `Meter` a routable port domain, or a node-declared outlet?
 
 - **A. Node-declared outlet, not connectable.** Meters are a graph-to-UI side channel backed by atomic cells and bounded rings. Analysis consumed by devices is `Cv`. Matches how `MeterCell` already works.
 - **B. Keep `Meter` connectable.** A meter edge could feed an analysis device or a UI node placed in the graph.
 
-**Recommendation: A.** A meter edge is not a signal edge — it has no consumer inside the graph, no ordering constraints, and no latency. Keeping it in the connectable set invites a domain with no defined semantics. This removes a variant the vision lists as a signal domain, so it needs an explicit owner decision rather than a silent design choice; "meters and analysis feedback" is still satisfied, just not as an edge.
+**Accepted: A.** A meter edge is not a signal edge — it has no consumer inside the graph, no ordering constraints, and no latency. Keeping it in the connectable set invites a domain with no defined semantics. This removes a variant the vision lists as a signal domain; "meters and analysis feedback" is still satisfied, just not as an edge. The clarification is recorded in `PRODUCT_VISION.md`.
 
 ### 5. What is `CONTROL_PERIOD_FRAMES`?
 
@@ -529,24 +593,24 @@ Every item below is an open product or architecture question with a real fork. R
 - **C. 32 frames.** 1.5 kHz at 48 kHz. 4 points at 128 frames, 2 at 64. Cheapest, audibly steppy for fast envelopes.
 - **D. One value per block.** Simplest, but modulation resolution then changes with buffer size, so a project sounds different at 64 frames than at 128.
 
-**Recommendation: B**, fixed as a constant rather than a project setting. D is disqualified by the requirement that buffer size not change the sound. A project-configurable value would make renders non-reproducible across machines and performance fixtures non-comparable.
+**Accepted: A, against the recommendation of B.** 8 frames, fixed as a constant rather than a project setting. The recommendation was 16 on cost grounds; the owner chose the smoother grid. D is disqualified by the requirement that buffer size not change the sound, and a project-configurable value would make renders non-reproducible across machines and performance fixtures non-comparable. This doubles control-buffer work against the 64-frame stress target, and it is one of three answers that spend from that same budget — see `## Cycle, delay, and latency contract`.
 
 ### 6. Is fan-in order persisted, or derived?
 
 - **A. Persisted per-input route ordinals.** Bit-reproducible summing across reloads and machines. The user can reorder contributions. Cost: another durable ordering to allocate, persist, and restore exactly through undo.
 - **B. Derived from source `NodeId` order.** Free, deterministic within a session. Cost: a reload that reallocates node ids can change summing order, so a bounce is not bit-identical to the previous bounce.
 
-**Recommendation: A.** Bit-reproducible renders are a professional expectation and float addition is not associative. The identity cost is one ordinal per edge and Milestone 1 is already defining `RouteId`.
+**Accepted: A.** Bit-reproducible renders are a professional expectation and float addition is not associative. The identity cost is one ordinal per edge and Milestone 1 is already defining `RouteId`.
 
 ### 7. What is the default fan-in policy per domain?
 
-Proposed defaults: `Audio` and `Cv` sum; `Gate` takes the maximum; `Note` and `Midi` merge; `Parameter` sums modulation over a single base. Sub-questions the owner should confirm:
+Defaults: `Audio` and `Cv` sum; `Gate` takes the maximum; `Note` and `Midi` merge; `Parameter` sums modulation over a single base. Three sub-questions:
 
 - Should `Gate` fan-in be `Max` (OR-like, matches modular expectation) or `Sum` (can exceed the gate ceiling)?
 - Should a parameter destination accept multiple *base* sources at all, or exactly one base plus any number of modulations?
 - Should `Audio` inputs default to `Sum` or to `Single`, forcing an explicit mixer node? `Single` is more explicit and matches today's behavior; `Sum` is what every DAW user expects when dropping a second cable on an input.
 
-**Recommendation:** `Max` for gates, exactly one base per parameter, `Sum` for audio. Audio `Sum` is the one place implicitness is worth it, because summing is the universally understood meaning of two cables into one input and no information is lost.
+**Accepted:** `Max` for gates, exactly one base per parameter, `Sum` for audio. Audio `Sum` is the one place implicitness is worth it, because summing is the universally understood meaning of two cables into one input and no information is lost.
 
 ### 8. Who owns device instances?
 
@@ -554,7 +618,7 @@ Proposed defaults: `Audio` and `Cv` sum; `Gate` takes the maximum; `Note` and `M
 - **B. Retire, reclaim, rebuild.** The app asks the audio thread to hand the generation back, moves surviving instances into a new plan, republishes. Cost: a gap where the audio thread has no graph, or a large amount of double-buffering machinery.
 - **C. Audio-thread-owned `DeviceTable`; generations carry only the plan.** Instances are installed and removed by control messages that move a `Box`. State survives by construction. Cost: the audio thread holds instances not referenced by the current plan until an explicit removal, and adoption must wait on a control sequence.
 
-**Recommendation: C.** It is the only option that satisfies "adding an effect must not glitch the other twenty devices." The cost is one extra field on the generation and one precondition in `poll_swap`. This is the most consequential decision in the spec: T2 and the shape of `swap.rs` both depend on it.
+**Accepted: C.** It is the only option that satisfies "adding an effect must not glitch the other twenty devices." The cost is one extra field on the generation and one precondition in `poll_swap`. This is the most consequential decision in the spec: T2 and the shape of `swap.rs` both depend on it.
 
 ### 9. How does a control message address its destination?
 
@@ -562,7 +626,7 @@ Proposed defaults: `Audio` and `Cv` sum; `Gate` takes the maximum; `Note` and `M
 - **B. Durable `(DeviceId, ParamKey)` plus a per-generation sorted index.** Survives swaps. Cost: a bounded binary search per message.
 - **C. Both — durable key plus a slot hint validated against the generation stamp.** Fast path plus correctness. Cost: larger messages and two code paths.
 
-**Recommendation: B.** The lookup is a handful of comparisons against a cache-resident sorted array, and the app thread never needs to know which generation is live in order to send control. C is a later optimization if profiling ever justifies it.
+**Accepted: B.** The lookup is a handful of comparisons against a cache-resident sorted array, and the app thread never needs to know which generation is live in order to send control. C is a later optimization if profiling ever justifies it.
 
 ### 10. What is the minimum graph feedback delay?
 
@@ -570,14 +634,14 @@ Proposed defaults: `Audio` and `Cv` sum; `Gate` takes the maximum; `Note` and `M
 - **B. Sub-block, via strongly-connected-component chunk scheduling with a declared frame floor.** Enables short feedback in the patchable rack. Cost: a real scheduler, per-chunk dispatch overhead, and a hard performance cliff if the floor is set too low.
 - **C. Reject sub-block feedback permanently.** Same as A with no upgrade path declared.
 
-**Recommendation: A for this milestone, with B declared as a Milestone 12 compiler upgrade.** The delay element declares frames from the start so the upgrade changes the scheduler and not the persisted patch format. The owner should confirm that a modular instrument starting without one-sample feedback is acceptable, because that is the visible consequence at Milestone 12.
+**Accepted: B, in this milestone, with a one-sample frame floor. This overrides the recommendation twice over** — both on timing (now, not Milestone 12) and on floor (one sample, not one block). The reason is that a one-block floor means no graph-level Karplus-Strong, resonator, or physical modeling, so the flagship modular instrument would ship unable to express its defining patches. The delay element declares frames either way, so the persisted patch format is unaffected. What this costs is a second dispatch path in the executor and an open question about control values inside a component; both are recorded in `## Cycle, delay, and latency contract` and ADR 006.
 
 ### 11. May the compiler insert compensating delay?
 
 - **A. Yes, and it must report every insertion.** Standard DAW plugin delay compensation; parallel paths align as users expect. Cost: it is technically an insertion the user did not ask for, which sits close to the vision's "no hidden conversion" line.
 - **B. No. The user places every delay, including compensation.** Absolutely explicit. Cost: unusable — every send, every parallel chain, and every latent plugin would require manual alignment.
 
-**Recommendation: A**, with the distinction written into the vision: *semantic* delay is never inserted, *corrective* delay may be, and every corrective insertion is recorded in the plan and visible in the UI. The owner should confirm this reading of vision line 87, since a literal reading forbids all automatic insertion.
+**Accepted: A**, with the distinction written into the vision: *semantic* delay is never inserted, *corrective* delay may be, and every corrective insertion is recorded in the plan and visible in the UI. The draft's worry that a literal reading of line 87 forbids all automatic insertion does not survive checking: line 87 is scoped entirely to feedback cycles, and line 89 requires latency behavior be "deterministic and visible," not absent.
 
 ### 12. What identity does a note carry on the audio thread?
 
@@ -585,7 +649,7 @@ Proposed defaults: `Audio` and `Cv` sum; `Gate` takes the maximum; `Note` and `M
 - **B. Durable `NoteId` from the document**, carried all the way through the graph.
 - **C. Both fields on every note event.**
 
-**Recommendation: A.** Notes originating from live MIDI input, an arpeggiator, or a chord device have no durable document identity and cannot mint one on the callback. Vision invariant 9 is about editing, undo, expression editing, and persistence — all document concerns. B would force every note-creating device to fabricate durable ids in realtime. C doubles the event size for a field most consumers never read.
+**Accepted: A.** Notes originating from live MIDI input, an arpeggiator, or a chord device have no durable document identity and cannot mint one on the callback. Vision invariant 9 is about editing, undo, expression editing, and persistence — all document concerns. B would force every note-creating device to fabricate durable ids in realtime. C doubles the event size for a field most consumers never read.
 
 ### 13. What is the event overflow policy?
 
@@ -593,14 +657,14 @@ Proposed defaults: `Audio` and `Cv` sum; `Gate` takes the maximum; `Note` and `M
 - **B. Reserve headroom in every event queue that only note-off and choke may use.** No stuck notes from overflow. Cost: a more complex writer, and the reserve is idle in the common case.
 - **C. Prove capacity at compile time and treat overflow as a bug.** Cleanest contract. Cost: requires every producer to bound its output, which an arpeggiator with a randomization stage cannot always do honestly.
 
-**Recommendation: B for the note domain, A for MIDI.** A stuck note is the worst failure mode in the system and it is worth a few reserved slots. MIDI overflow degrades gracefully and does not need the machinery.
+**Accepted: B for the note domain, A for MIDI.** A stuck note is the worst failure mode in the system and it is worth a few reserved slots. MIDI overflow degrades gracefully and does not need the machinery.
 
 ### 14. Is implicit 1-to-N lane broadcast allowed?
 
 - **A. No. Every lane-count change is an explicit adapter,** and the editor auto-inserts a visible `LaneBroadcast` on the offending drag. Matches vision line 95 literally, which lists broadcast alongside reduction, split, and merge.
 - **B. Yes for 1-to-N only.** Broadcast is lossless and unambiguous, so it arguably is not the "hidden conversion" the vision forbids. Matches VCV Rack ergonomics exactly.
 
-**Recommendation: A with editor assistance.** The graph stays literally explicit, the persisted patch shows exactly what happens, and the user still performs one gesture. The same pattern then covers mono-to-stereo, so there is one rule instead of two. The owner should confirm that editor-assisted adapter insertion is acceptable product design, because it is the thing that makes A tolerable.
+**Accepted: A with editor assistance.** The graph stays literally explicit, the persisted patch shows exactly what happens, and the user still performs one gesture. The same pattern then covers mono-to-stereo, so there is one rule instead of two. Editor-assisted adapter insertion is confirmed as product design; it is the thing that makes A tolerable.
 
 ### 15. What is `MAX_LANES`?
 
@@ -608,14 +672,14 @@ Proposed defaults: `Audio` and `Cv` sum; `Gate` takes the maximum; `Note` and `M
 - **B. 32.** More headroom for dense polyphonic patches. 32 KB per poly stereo cable.
 - **C. Per-project configurable.** Cost: arena sizing and reproducibility both become project-dependent.
 
-**Recommendation: A.** It is the ecosystem convention, it bounds arena growth predictably, and raising it later is a constant change rather than a format change. C should be rejected outright because it makes performance fixtures non-comparable.
+**Accepted: B, against the recommendation of A.** 32 lanes rather than the VCV-conventional 16. The recommendation was 16 on arena-growth grounds; the owner chose headroom for dense polyphonic patches. Raising or lowering it later is a constant change rather than a format change either way. C is rejected outright because it makes performance fixtures non-comparable. This doubles worst-case poly arena size, and that arena now lives on the audio thread beside the `DeviceTable`.
 
 ### 16. What are the mono/stereo conversion laws?
 
 - **Upmix.** Copy to both channels (correlated, `+3 dB` perceived) versus scale by `0.707` (constant power, level-preserving).
 - **Downmix.** `Sum` (can clip), `Mean` (level-preserving, `-6 dB` on correlated material), or `LeftOnly`.
 
-**Recommendation:** upmix by copy, downmix by mean, both exposed as a parameter on the adapter with those as defaults. Copy-on-upmix is what every DAW does when a mono track hits a stereo bus, and mean-on-downmix is what avoids clipping. The owner should confirm, because changing these later changes the level of existing projects.
+**Accepted:** upmix by copy, downmix by mean, both exposed as a parameter on the adapter with those as defaults. Copy-on-upmix is what every DAW does when a mono track hits a stereo bus, and mean-on-downmix is what avoids clipping. Changing these later changes the level of existing projects, so they are fixed here.
 
 ### 17. Where does the typed graph live, and does it ship without a consumer?
 
@@ -624,4 +688,4 @@ Two related boundary questions:
 - **Crate boundary.** Does `geist-graph` keep the mutable app-thread `Graph` editor, or does `geist_document::graph` become the editor — the Milestone 4 aggregate the project-document spec already names as owning devices, chains, routing, sends, and returns — with `geist-graph` reduced to compile-and-execute?
 - **Sequencing.** Milestone 3 delivers no user-visible behavior until Milestone 4 attaches the hybrid track, because `app::engine::SynthProcessor` bypasses the graph entirely. Is it acceptable to build ten slices of engine with no production consumer, or should a thin Milestone 4 spike land mid-sequence to prove the contract against real audio?
 
-**Recommendation:** `geist-graph` becomes compile-and-execute only, with the durable graph model owned by `geist-document`, matching the aggregate table already accepted. And land the minimal T5a spike — one instrument, one effect, one meter, driven by the compiled graph — so the typed contract is proven against real audio before lanes, buses, and cycles are built on top of it. Ten slices validated only by unit tests is a large uncontrolled bet.
+**Accepted:** `geist-graph` becomes compile-and-execute only, with the durable graph model owned by `geist-document`, matching the aggregate table already accepted. And land the minimal T5a spike — one instrument, one effect, one meter, driven by the compiled graph — so the typed contract is proven against real audio before lanes, buses, and cycles are built on top of it. Ten slices validated only by unit tests is a large uncontrolled bet.

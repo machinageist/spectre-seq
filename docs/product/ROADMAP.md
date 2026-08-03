@@ -88,16 +88,21 @@ Exit gate: one document owns durable DAW truth; UI, persistence, and audio publi
 
 ### Milestone 3 — Typed realtime render and publication contract
 
+Contract accepted 2026-08-03: [`docs/changes/typed-realtime-graph/SPEC.md`](../changes/typed-realtime-graph/SPEC.md), sequenced in its `PLAN.md`. Three answers reshaped this milestone — `CONTROL_PERIOD_FRAMES = 8`, `MAX_LANES = 32`, and sub-block cycle scheduling pulled forward from Milestone 12.
+
 - Replace metadata-only graph typing with compiled routes for audio, CV, gate, note/event, MIDI, parameter, and meter domains.
 - Route events and parameter changes only to compiled destinations with sample offsets and stable note identity.
 - Add control-rate buffers, bounded timestamped event queues, deterministic fan-in, explicit rate adapters, and polyphonic-lane split/merge/reduce/broadcast.
 - Support mono and stereo audio buses first with explicit upmix/downmix adapters; keep bus descriptors extensible to declared multichannel layouts without implicit conversion.
 - Require explicit visible domain-appropriate delay/feedback elements for every cycle; remove hidden automatic one-block cycle conversion from the production contract and include declared latency in compensation.
+- Schedule strongly-connected components as chunks iterated at a one-sample frame floor, with a second per-sample dispatch path in the executor. Moved here from Milestone 12 by decision 10; see ADR 006.
+- Own device instances in an audio-thread `DeviceTable` so a graph edit does not reset unrelated devices' DSP state; generations carry the plan only. ADR 005.
+- Land a single-track spike — one instrument, one effect, one meter on the compiled graph — mid-sequence, so the typed contract meets real audio before lanes, buses, and cycles are built on it.
 - Publish immutable/movable render generations with sequence/version acknowledgement; queue saturation must not silently advance app mirrors.
 - Retire graph executors, plugin instances, and replaced audio assets off the callback.
 - Define sample-accurate transport/tempo slices and scheduler boundaries rather than block-start approximation.
 - Keep compilation, allocation, deallocation, locks, logging, and I/O off the callback; enforce this with allocator guards, overload tests, graph-swap stress, and callback benchmarks.
-- Establish reproducible performance fixtures around the 48 kHz/128-frame mainstream eight-core baseline and 64-frame live stress mode, including graph size, active tracks, voice count, device/modulation density, recording, graph swaps, and plugin teardown.
+- Establish reproducible performance fixtures around the 48 kHz/128-frame mainstream eight-core baseline and 64-frame live stress mode, including graph size, active tracks, voice count, device/modulation density, recording, graph swaps, plugin teardown, and a large strongly-connected component.
 
 Exit gate: audio, note, control, MIDI, and polyphonic routes execute independently; rejected/overloaded publication reconciles explicitly; callback work is bounded and allocation/deallocation-free.
 
@@ -198,6 +203,7 @@ Exit gate: the instrument supports deep modern electronic sound design while rem
 - Let each rack patch declare stable typed external ports so it can occupy instrument, audio-effect, note/event-device, or modulation roles.
 - Add audio, CV, gate, note/event, parameter, utility, generator, processor, sequencing, logic, and I/O modules.
 - Add explicit voice-domain adapters, feedback/latency indication, macros, scopes, debugging, and a production-quality patch editor.
+- Sub-block feedback scheduling is no longer part of this milestone; decision 10 moved it to Milestone 3, so the rack arrives on a scheduler that already supports one-sample feedback.
 
 Exit gate: complex polyphonic patches save/load exactly and run within bounded realtime budgets.
 
@@ -213,8 +219,8 @@ Exit gate: complex polyphonic patches save/load exactly and run within bounded r
 1. Finish independent review of the product contract and roadmap.
 2. Specified in [`docs/changes/project-document/SPEC.md`](../changes/project-document/SPEC.md): the final app-thread `ProjectDocument`, arrangement authority, transaction boundary, and acknowledged realtime publication protocol. Implementation sequence is in that slice's `PLAN.md`, starting with slice D1.
 3. Extract canonical low-level vocabulary and durable identity in dependency-safe slices.
-4. Specify and implement the typed multi-rate realtime graph/publication path in narrow slices.
-5. Replace the paused canonical clip B2 unit with dependency-safe content, scene/launcher, warp, MPE/tuning, and durable-target sub-specifications.
+4. Specified and accepted in [`docs/changes/typed-realtime-graph/SPEC.md`](../changes/typed-realtime-graph/SPEC.md): the typed multi-rate realtime graph and publication path. Implement in narrow slices from its `PLAN.md`, starting with T0a.
+5. Specified and accepted in [`docs/changes/canonical-clip-content/SPEC.md`](../changes/canonical-clip-content/SPEC.md): clip content ownership, replacing the paused canonical clip B2 unit. Its `PLAN.md` slice CC1 is the same slice as project-document D3. Scene/launcher and durable-target sub-specifications remain unwritten.
 6. Return to canonical clip commands only when the correct aggregate can enforce and persist every affected identity atomically.
 
 No UI gesture routing, broad persistence migration, flagship-synth rewrite, or modular-rack implementation begins without its dedicated interview and change specification.

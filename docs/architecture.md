@@ -253,6 +253,38 @@ Recorded so a future session does not re-derive them:
   relocation into `geist-core`. Per the roadmap it is revised only after authority
   boundaries are accepted, so expect it to lag.
 
+## Accepted changes the code has not caught up to
+
+Recorded 2026-08-03, when `docs/changes/typed-realtime-graph/SPEC.md` and
+`docs/changes/canonical-clip-content/SPEC.md` were accepted. Each of these is a
+decision the code contradicts today. None is a bug report; they are scheduled work.
+
+- **`PortType::Meter` leaves the connectable set.** `crates/geist-core/src/port.rs:19`
+  declares it as a routable variant. Decision 4 makes meters node-declared outlets
+  backed by atomic cells, never edges. `SignalDomain` will have six variants.
+- **`SignalRate` finally gains a consumer.** `crates/geist-core/src/signal.rs:23` has
+  had no reader outside its own tests. Decision 1 makes rate a declared per-port
+  property that the compiler validates and the executor acts on.
+- **The silent one-block cycle conversion becomes the explicit SCC path.**
+  `crates/geist-graph/src/process_list.rs:54` discards `.feedback`;
+  `crates/geist-graph/src/topology.rs:93` never fails and `:136` skips back-edges.
+  Slice T6 turns that into a rejection and gives `topological_order`
+  (`topology.rs:18`) its first real caller; slice T6a adds the sub-block scheduler.
+  See ADR 006.
+- **Device instances leave the executor.** `Executor::new`
+  (`crates/geist-graph/src/process_list.rs:150`) moves node instances out of the
+  graph, which is why a graph edit resets all DSP state. Decision 8 moves them to an
+  audio-thread `DeviceTable`. See ADR 005.
+- **`ClipEntity.duration` becomes `ClipExtent`.** `crates/geist-document/src/arrangement.rs`
+  types it as `MusicalTime`. Decision 4a makes it `Musical | Source` so unwarped audio
+  keeps a sample-domain length and a tempo edit mutates no clip record.
+- **`rehome_clip`, `ClipLocation`, and `RemovedClip` change shape.** Decision 6a
+  forbids overlap on an arrangement lane and derives order from start, which removes
+  the explicit index parameter those three carry.
+- **Clip content moves to its own aggregate.** `arrangement` is re-scoped to placement;
+  a new `clips` aggregate owns records. Decision 1 amends the accepted aggregate table
+  in `docs/changes/project-document/SPEC.md`.
+
 ## Validation
 
 - `cargo test --workspace` is the workspace gate.

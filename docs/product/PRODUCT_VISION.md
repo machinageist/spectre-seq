@@ -82,9 +82,15 @@ Geist distinguishes signal domains explicitly:
 - parameter-control streams;
 - meters and analysis feedback.
 
+Meters and analysis feedback are a distinguished domain but not a *routable* one. A meter is a node-declared outlet published to the UI through atomic cells and bounded rings; it is never a compiled edge, because a meter edge has no consumer inside the graph, no ordering constraint, and no latency. Analysis consumed by a device is control voltage. Recorded 2026-08-03 by `docs/changes/typed-realtime-graph/SPEC.md` decision 4.
+
 The first production graph supports mono and stereo audio buses as first-class layouts. Upmix and downmix are explicit adapters rather than hidden connection behavior. Bus descriptors remain extensible to declared multichannel layouts for later surround, spatial, and complex plugin I/O support.
 
 Every feedback cycle contains an explicit visible delay or feedback element. The compiler does not silently convert arbitrary cycles into hidden one-block latency. Audio/CV and event/control domains use declared domain-appropriate delay modules so causality, latency, and persisted patch behavior remain inspectable.
+
+This paragraph is scoped to feedback cycles and does not forbid latency compensation. **Semantic** delay — delay that changes what the user hears in a loop — is never inserted by the compiler. **Corrective** delay, which aligns parallel paths the user already expects to be aligned, may be inserted, and every insertion is recorded in the compiled plan and visible in the UI. That satisfies the requirement below that latency behavior be deterministic and visible. Recorded 2026-08-03 by `docs/changes/typed-realtime-graph/SPEC.md` decision 11.
+
+Graph-level feedback resolves to a single sample. Strongly-connected components are scheduled as chunks and iterated at a declared frame floor of one sample, so a rack patch can express plucked strings, waveguides, and modal resonators rather than only block-scale feedback. Decision 10 and ADR 006.
 
 Every exposed parameter supports automation and control-rate modulation. Audio-rate modulation is allowed only for destinations that explicitly declare and implement it. Rate conversion, smoothing, latency, and feedback behavior must be deterministic and visible.
 

@@ -77,19 +77,20 @@ Tests must prove that a rejected transaction leaves document, history, revision,
 
 Covers acceptance criteria 5 and 6.
 
-Blocking design checkpoint. Do not start until the clip-content ownership question that paused `docs/changes/canonical-clip-commands/` Slice B2 is resolved. `SPEC.md` fixes the owner; it does not decide the payload.
+**Un-gated 2026-08-03.** The checkpoint that blocked this slice is resolved by `docs/changes/canonical-clip-content/SPEC.md`, accepted the same day. Its three questions were answered as:
 
-Questions to resolve:
+- Clip content lives in a **separate `clips` aggregate** keyed by `ClipId`; placements reference it (decision 1). The aggregate table above is amended accordingly.
+- Payloads land as **MIDI, then audio** (decision 2), with the assets aggregate pulled ahead of the audio slice. Automation is no longer a clip payload at all (decision 7).
+- Cross-track move preserves `ClipId` and cannot touch content, because content is in a different aggregate. Cross-surface transfer is copy-only (decision 6b).
 
-- Whether clip content lives on the clip entity or in a separately owned content aggregate.
-- Whether audio region state, MIDI notes, and automation payloads arrive together or in separate sub-slices.
-- Cross-track move and undo identity semantics, confirmed against the D2 history contract.
+**This slice is written up as CC1 in `docs/changes/canonical-clip-content/PLAN.md`.** The two documents describe one slice from two sides; execute it from there, since that is where the content decisions live.
 
 Expected outcomes:
 
 - The canonical arrangement under document ownership, mutated only through transactions.
 - Create, delete, move, cross-track move, and right resize as transactions.
-- Exact undo and redo restoration of identity, ordering, start, and duration.
+- Exact undo and redo restoration of identity, ordering, start, and extent.
+- No two clips overlapping on one arrangement lane (decision 6a); clip order derived from start rather than stored, so `rehome_clip`, `ClipLocation`, and `RemovedClip` change shape.
 
 This un-pauses canonical-clip-commands Slice C with the correct owner.
 
@@ -110,7 +111,9 @@ Provisional drag feedback stays disposable local state; pointer release submits 
 
 ## Slice D5 — Publication protocol
 
-Blocking design checkpoint. The render-generation *content* boundary must be settled against Milestone 3 first. `SPEC.md` fixes the protocol and explicitly leaves generation content as whatever the engine needs today.
+**Un-gated 2026-08-03.** The render-generation content boundary is settled by `docs/changes/typed-realtime-graph/SPEC.md`, accepted the same day. A generation carries a `RenderPlan`, its typed per-domain arenas, a sorted route index, and plan latency — **but not device instances**, which live in an audio-thread-owned `DeviceTable` (decision 8, ADR 005). Adoption gains one precondition: a generation declares `requires_control_sequence` and is adopted only once the audio thread has applied it.
+
+Reuse `crates/geist-graph/src/swap.rs` rather than inventing a second mechanism; it already refuses to drop on the callback. This slice is the same boundary as that plan's slice T2 and should be reviewed jointly with it.
 
 Covers acceptance criteria 8, 9, and 10.
 
@@ -141,7 +144,9 @@ Pre-v1 prototype format breaks are permitted with explicit diagnostics and fixtu
 
 ## Slice D7 — Remaining domains
 
-Each domain is its own sub-slice and each needs its content sub-spec before it starts. Order: tracks and devices, assets, conductor, mappings.
+Each domain is its own sub-slice and each needs its content sub-spec before it starts.
+
+**Order amended 2026-08-03.** The assets aggregate moves ahead of the audio clip-content slice, per `canonical-clip-content/SPEC.md` decision 2, where it appears as slice CC2a. Audio clip content must not ship against a registry that cannot resolve it, because an always-unresolved audio clip is exactly the simulated behavior invariant 11 forbids. Remaining order: assets (early, before CC3), then tracks and devices, conductor, mappings.
 
 Every sub-slice enforces the unresolved-reference contract for its own domain, and none begins before the corresponding roadmap milestone work it depends on.
 

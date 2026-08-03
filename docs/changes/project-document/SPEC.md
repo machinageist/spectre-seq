@@ -48,15 +48,21 @@ One app-thread-owned `ProjectDocument` owns every durable project fact. UI model
 | `identity` | Every durable ID allocator | this spec |
 | `meta` | Format version, dirty state, save/recovery metadata; project package layout | D6 |
 | `tracks` | Ordered hybrid track records and track order | Milestone 4 |
-| `arrangement` | Canonical clip entities, ownership, ordering, placement | Milestone 5 |
-| `launcher` | Scenes, ordered scene list, track/scene slots | Milestone 5 |
-| `graph` | Devices, chains, routing, sends, returns | Milestone 4 |
-| `assets` | Managed asset registry, verified/offline state | Milestone 2 slice 7 |
+| `clips` | Clip records: identity, kind, name, colour, typed content payload | `canonical-clip-content/SPEC.md` |
+| `arrangement` | Arrangement placements: owning `TrackId`, start, window, lane membership | `canonical-clip-content/SPEC.md` |
+| `launcher` | Scenes, ordered scene list, track/scene slot placements | Milestone 5 |
+| `graph` | Devices, chains, routing, sends, returns — **the durable graph editor** | `typed-realtime-graph/SPEC.md` |
+| `assets` | Managed asset registry, verified/offline state | `canonical-clip-content/PLAN.md` slice CC2a |
 | `conductor` | Tempo map, time signatures, metronome, count-in, groove, loop region, punch points | Milestone 5 |
 | `automation` | Durable targets and curves | Milestone 5 |
 | `mappings` | Controller mappings, macros, remote pages | Milestone 4 |
 
 An aggregate may be an empty typed owner until its content sub-spec lands. An empty aggregate is still the named authority for its domain; no other type may hold that domain's durable state once its slice completes.
+
+**Amended 2026-08-03** by two accepted sub-specs:
+
+- `canonical-clip-content/SPEC.md` decision 1a splits clip content from clip placement. `clips` is a new sibling aggregate owning content; `arrangement` is re-scoped to placement only. The reason is the launcher: content welded to arrangement placement would force a parallel clip type with duplicated editors and persistence. It also makes cross-track move provably unable to touch content.
+- `typed-realtime-graph/SPEC.md` decision 17 confirms `graph` as the durable graph *editor*, with `geist-graph` reduced to compile-and-execute. There is one routing authority, not two.
 
 ### The named arrangement aggregate
 
