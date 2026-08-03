@@ -4,8 +4,8 @@
 // Description: Canonical 960-PPQ musical-time primitives.
 // Notes: Float-mediated conversions preserve adjacent 960-PPQ tick resolution.
 //
-// File: crates/geist-timeline/src/time.rs
-// Layer: timeline
+// File: crates/geist-core/src/time.rs
+// Layer: core primitives
 // Purpose: Canonical 960-PPQ musical-time primitives
 // Status: Implemented; opaque ticks, checked arithmetic, and beat quantization.
 // Contract: Keep comments terse, declarative, and synchronized with code.
@@ -17,8 +17,8 @@ pub const TICKS_PER_QUARTER: u32 = 960;
 // Largest tick count whose adjacent 1/960-beat step remains distinct in f64
 pub const MAX_EXACT_MUSICAL_TIME_TICKS: u64 = 1_u64 << (f64::MANTISSA_DIGITS - 1);
 
-// Largest integer represented exactly by f64
-pub(crate) const MAX_EXACT_F64_INTEGER: u64 = 1_u64 << f64::MANTISSA_DIGITS;
+// Largest integer represented exactly by f64; sample-domain guards read it across crates
+pub const MAX_EXACT_F64_INTEGER: u64 = 1_u64 << f64::MANTISSA_DIGITS;
 
 // Nonnegative musical position or duration in canonical ticks
 #[repr(transparent)]

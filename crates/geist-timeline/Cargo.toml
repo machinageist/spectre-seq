@@ -13,3 +13,5 @@ edition = "2021"
 
 [dependencies]
 geist-core = { path = "../geist-core" }
+# Compatibility window; the prelude re-exports relocated document types
+geist-document = { path = "../geist-document" }

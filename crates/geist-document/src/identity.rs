@@ -4,8 +4,8 @@
 // Description: Stable canonical track and clip identity.
 // Notes: IDs are never zero or reused; allocation is app-thread-owned.
 //
-// File: crates/geist-timeline/src/identity.rs
-// Layer: timeline
+// File: crates/geist-document/src/identity.rs
+// Layer: document
 // Purpose: Nonzero stable IDs and checked app-thread allocation
 // Status: Implemented; nonzero IDs and independent checked sequences.
 // Contract: Keep comments terse, declarative, and synchronized with code.
