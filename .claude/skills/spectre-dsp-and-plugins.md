@@ -10,7 +10,7 @@ Description: DSP and plugin suite implementation guide
 Notes: Use for spectre-dsp, spectre-synth, spectre-fx, and spectre-modular
 -->
 
-# Geist DSP And Plugins
+# Spectre DSP And Plugins
 
 ## Responsibility
 

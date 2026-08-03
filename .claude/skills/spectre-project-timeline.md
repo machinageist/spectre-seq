@@ -10,7 +10,7 @@ Description: Timeline, automation, and persistence guide
 Notes: Use for transport, clips, automation, modulation, save/load, schema, migration, assets, autosave
 -->
 
-# Geist Project Timeline
+# Spectre Project Timeline
 
 ## Responsibility
 

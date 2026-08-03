@@ -10,7 +10,7 @@ Description: Audio backend implementation guide
 Notes: Use for cpal, PipeWire, JACK, stream config, device selection, and callback integration
 -->
 
-# Geist Audio Backend
+# Spectre Audio Backend
 
 ## Responsibility
 

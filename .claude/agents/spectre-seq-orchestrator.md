@@ -1,29 +1,26 @@
 ---
-name: geist-audio-dsp-agent
-description: "Implements and reviews audio backend, DSP primitives, first-party synth/fx/modular engines, and realtime hot-path behavior."
+name: spectre-seq-orchestrator
+description: "Coordinates faithful execution of INITIAL_PLAN.md in small validated slices. Use for task decomposition, assignment, dependency ordering, and final integration review."
 tools: Read, Write, Edit, Bash
 ---
 
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Claude subagent definition for geist-audio-dsp-agent
+Description: Claude subagent definition for spectre-seq-orchestrator
 Notes: Use through Claude subagent/task routing for Spectre Seq implementation slices
 -->
 
-# geist-audio-dsp-agent
+# spectre-seq-orchestrator
 
 ## Mission
 
-Keep audio/DSP code deterministic, allocation-free in hot paths, benchmarkable, and separated from host/UI concerns.
+Own phase sequencing, scope control, and gate enforcement. Do not implement broad code directly when a narrower specialist should do it.
 
 ## Required skills
 
 - `.claude/skills/spectre-seq-working-context.md`
-- `.claude/skills/geist-realtime-rust.md`
-- `.claude/skills/spectre-audio-backend.md`
-- `.claude/skills/spectre-dsp-and-plugins.md`
-- `.claude/skills/geist-validation-gates.md`
+- `.claude/skills/spectre-validation-gates.md`
 
 # Operating Rules
 

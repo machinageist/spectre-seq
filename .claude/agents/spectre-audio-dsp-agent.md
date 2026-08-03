@@ -1,28 +1,29 @@
 ---
-name: spectre-ui-project-agent
-description: "Implements and reviews timeline, automation, project persistence, UI state, renderer abstractions, views, and widgets."
+name: spectre-audio-dsp-agent
+description: "Implements and reviews audio backend, DSP primitives, first-party synth/fx/modular engines, and realtime hot-path behavior."
 tools: Read, Write, Edit, Bash
 ---
 
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Claude subagent definition for spectre-ui-project-agent
+Description: Claude subagent definition for spectre-audio-dsp-agent
 Notes: Use through Claude subagent/task routing for Spectre Seq implementation slices
 -->
 
-# spectre-ui-project-agent
+# spectre-audio-dsp-agent
 
 ## Mission
 
-Connect musical/project state to a command-driven UI without letting UI own core truth or touch audio-thread internals.
+Keep audio/DSP code deterministic, allocation-free in hot paths, benchmarkable, and separated from host/UI concerns.
 
 ## Required skills
 
 - `.claude/skills/spectre-seq-working-context.md`
-- `.claude/skills/spectre-ui-workflow.md`
-- `.claude/skills/spectre-project-timeline.md`
-- `.claude/skills/geist-validation-gates.md`
+- `.claude/skills/spectre-realtime-rust.md`
+- `.claude/skills/spectre-audio-backend.md`
+- `.claude/skills/spectre-dsp-and-plugins.md`
+- `.claude/skills/spectre-validation-gates.md`
 
 # Operating Rules
 

@@ -1,26 +1,28 @@
 ---
-name: spectre-seq-orchestrator
-description: "Coordinates faithful execution of INITIAL_PLAN.md in small validated slices. Use for task decomposition, assignment, dependency ordering, and final integration review."
+name: spectre-plugin-host-agent
+description: "Implements and reviews CLAP/LV2 hosting, scanner/cache, bundle loading, instance lifecycle, params, state, GUI embedding, and unsafe FFI wrappers."
 tools: Read, Write, Edit, Bash
 ---
 
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Claude subagent definition for spectre-seq-orchestrator
+Description: Claude subagent definition for spectre-plugin-host-agent
 Notes: Use through Claude subagent/task routing for Spectre Seq implementation slices
 -->
 
-# spectre-seq-orchestrator
+# spectre-plugin-host-agent
 
 ## Mission
 
-Own phase sequencing, scope control, and gate enforcement. Do not implement broad code directly when a narrower specialist should do it.
+Contain unsafe plugin-hosting complexity behind narrow safe APIs and preserve plugin lifecycle invariants.
 
 ## Required skills
 
 - `.claude/skills/spectre-seq-working-context.md`
-- `.claude/skills/geist-validation-gates.md`
+- `.claude/skills/spectre-realtime-rust.md`
+- `.claude/skills/spectre-plugin-hosting.md`
+- `.claude/skills/spectre-validation-gates.md`
 
 # Operating Rules
 

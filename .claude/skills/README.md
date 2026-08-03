@@ -12,11 +12,11 @@ Load `spectre-seq-working-context` first for all repo work.
 ## Skills
 
 - `spectre-seq-working-context`: repository shape, phase order, execution posture, skill map.
-- `geist-realtime-rust`: realtime audio Rust safety and comment rules.
+- `spectre-realtime-rust`: realtime audio Rust safety and comment rules.
 - `spectre-graph-engine`: graph topology, routing, process-list compilation, atomic swap.
 - `spectre-audio-backend`: platform audio I/O and callback boundary.
 - `spectre-dsp-and-plugins`: pure DSP and first-party plugin suite.
-- `geist-plugin-hosting`: CLAP/LV2 host and FFI boundaries.
+- `spectre-plugin-hosting`: CLAP/LV2 host and FFI boundaries.
 - `spectre-ui-workflow`: UI state, renderer, views, widgets, command flow.
 - `spectre-project-timeline`: timeline, automation, modulation, persistence.
-- `geist-validation-gates`: preflight/build/behavior/alignment gates.
+- `spectre-validation-gates`: preflight/build/behavior/alignment gates.

@@ -1,5 +1,5 @@
 ---
-name: geist-validation-gates
+name: spectre-validation-gates
 description: "Load before reviewing or declaring any Spectre Seq slice complete. Defines preflight, implementation, review, and completion gates for faithful execution of the plan."
 ---
 
@@ -10,7 +10,7 @@ Description: Validation gates for Spectre Seq slices
 Notes: Use for reviews, task handoffs, CI expectations, and stop/go decisions
 -->
 
-# Geist Validation Gates
+# Spectre Validation Gates
 
 ## Gate model
 

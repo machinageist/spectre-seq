@@ -10,7 +10,7 @@ Description: Graph engine implementation guide
 Notes: Use for spectre-graph topology, routing, process lists, and lock-free swap work
 -->
 
-# Geist Graph Engine
+# Spectre Graph Engine
 
 ## Responsibility
 

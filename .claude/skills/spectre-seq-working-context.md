@@ -67,14 +67,14 @@ Notes: Non-obvious context, design decisions
 
 ## Skill loading map
 
-- Core IDs, ports, events, params, transport: load `geist-realtime-rust`.
-- Graph, topology, process list, channels: load `spectre-graph-engine` and `geist-realtime-rust`.
-- Audio backends and callbacks: load `spectre-audio-backend` and `geist-realtime-rust`.
-- DSP, synth, fx, modular utilities: load `spectre-dsp-and-plugins` and `geist-realtime-rust`.
-- CLAP/LV2 hosting: load `geist-plugin-hosting` and `geist-realtime-rust`.
+- Core IDs, ports, events, params, transport: load `spectre-realtime-rust`.
+- Graph, topology, process list, channels: load `spectre-graph-engine` and `spectre-realtime-rust`.
+- Audio backends and callbacks: load `spectre-audio-backend` and `spectre-realtime-rust`.
+- DSP, synth, fx, modular utilities: load `spectre-dsp-and-plugins` and `spectre-realtime-rust`.
+- CLAP/LV2 hosting: load `spectre-plugin-hosting` and `spectre-realtime-rust`.
 - Timeline, automation, persistence: load `spectre-project-timeline`.
 - UI work: load `spectre-ui-workflow`.
-- Any review: load `geist-validation-gates` plus the domain skill.
+- Any review: load `spectre-validation-gates` plus the domain skill.
 
 ## Completion rule
 

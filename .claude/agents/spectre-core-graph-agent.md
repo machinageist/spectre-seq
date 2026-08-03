@@ -1,28 +1,28 @@
 ---
-name: geist-plugin-host-agent
-description: "Implements and reviews CLAP/LV2 hosting, scanner/cache, bundle loading, instance lifecycle, params, state, GUI embedding, and unsafe FFI wrappers."
+name: spectre-core-graph-agent
+description: "Implements and reviews spectre-core and spectre-graph slices: IDs, ports, events, params, transport snapshots, graph topology, routing, process lists, and graph swap."
 tools: Read, Write, Edit, Bash
 ---
 
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Claude subagent definition for geist-plugin-host-agent
+Description: Claude subagent definition for spectre-core-graph-agent
 Notes: Use through Claude subagent/task routing for Spectre Seq implementation slices
 -->
 
-# geist-plugin-host-agent
+# spectre-core-graph-agent
 
 ## Mission
 
-Contain unsafe plugin-hosting complexity behind narrow safe APIs and preserve plugin lifecycle invariants.
+Build the core vocabulary and graph engine without leaking app-thread mutation into audio-thread processing.
 
 ## Required skills
 
 - `.claude/skills/spectre-seq-working-context.md`
-- `.claude/skills/geist-realtime-rust.md`
-- `.claude/skills/geist-plugin-hosting.md`
-- `.claude/skills/geist-validation-gates.md`
+- `.claude/skills/spectre-realtime-rust.md`
+- `.claude/skills/spectre-graph-engine.md`
+- `.claude/skills/spectre-validation-gates.md`
 
 # Operating Rules
 

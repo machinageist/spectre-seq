@@ -1,5 +1,5 @@
 ---
-name: geist-realtime-rust
+name: spectre-realtime-rust
 description: "Load before implementing or reviewing any Spectre Seq Rust code that can touch the audio thread, process graph, DSP, plugin callbacks, transport snapshots, parameter updates, or lock-free communication."
 ---
 
@@ -10,7 +10,7 @@ Description: Realtime-safe Rust rules for Spectre Seq
 Notes: Applies to audio-thread code, shared primitives, callbacks, graph processing, and DSP
 -->
 
-# Geist Realtime Rust
+# Spectre Realtime Rust
 
 ## Hard constraints
 

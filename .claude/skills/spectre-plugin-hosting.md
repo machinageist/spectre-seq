@@ -1,5 +1,5 @@
 ---
-name: geist-plugin-hosting
+name: spectre-plugin-hosting
 description: "Load when implementing or reviewing CLAP or LV2 hosting, plugin scanning, metadata cache, dynamic bundle loading, host FFI, instance lifecycle, plugin params, GUI embedding, or plugin state save/restore."
 ---
 
@@ -10,7 +10,7 @@ Description: External plugin hosting guide
 Notes: Use for CLAP/LV2 scanner, DB, bundle loading, instances, params, GUI, state, and FFI
 -->
 
-# Geist Plugin Hosting
+# Spectre Plugin Hosting
 
 ## Responsibility
 
