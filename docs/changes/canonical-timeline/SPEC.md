@@ -15,7 +15,7 @@ Approved for implementation with 960 PPQ as the canonical arrangement timebase.
 
 Geist currently has conflicting arrangement models:
 
-- `geist-timeline` stores clip and note placement in absolute samples.
+- `spectre-timeline` stores clip and note placement in absolute samples.
 - `geist-ui` and `StudioApp` store arrangement placement in floating-point beats.
 - Project persistence stores floating-point beats.
 - App-level diffing translates UI mutations directly into engine commands.
@@ -36,7 +36,7 @@ This prevents one authoritative timeline, deterministic editing, complete undo/r
 
 ### Ownership
 
-- `geist-timeline::Timeline` becomes arrangement truth.
+- `spectre-timeline::Timeline` becomes arrangement truth.
 - UI timeline structures become disposable projections.
 - UI interactions emit typed edit intents; they do not own durable arrangement mutation.
 - The app thread executes reversible commands against the canonical timeline.
@@ -102,4 +102,4 @@ The first slice does not migrate placements, patterns, commands, UI models, proj
 6. Constant-tempo tick/sample conversion matches known values.
 7. Mid-timeline tempo changes integrate correctly in both directions.
 8. Existing beat/sample APIs remain behaviorally compatible for nonzero sample rates.
-9. `cargo test -p geist-timeline`, `cargo check --workspace`, and `git diff --check` pass.
+9. `cargo test -p spectre-timeline`, `cargo check --workspace`, and `git diff --check` pass.

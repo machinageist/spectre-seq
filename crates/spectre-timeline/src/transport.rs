@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-timeline/src/transport.rs
+// File: crates/spectre-timeline/src/transport.rs
 // Layer: timeline
 // Purpose: play/pause/record/loop state machine
 // Status: Implemented; transport state, playhead advance, snapshot publication.

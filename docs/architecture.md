@@ -32,7 +32,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | `spectre-graph` | Graph model, topology/scheduling, plan compilation, block executor, executor swap, built-in nodes | Implemented; not on the app's audio path (see below) |
 | `spectre-dsp` | Oscillators, filters, envelopes, LFOs, fx primitives, FFT, math/SIMD helpers, benches | Implemented incrementally |
 | `spectre-audio-backend` | Backend abstraction, `BlockBridge`, cpal backend, capture ring, xrun counter | cpal implemented; JACK and PipeWire are scaffolds |
-| `geist-timeline` | Transport, tempo map, playhead, arena clips/patterns, legacy `Timeline`, canonical `Arrangement`/`ClipEntity`, identity | Mixed; see "Competing arrangement authorities" |
+| `spectre-timeline` | Transport, tempo map, playhead, arena clips/patterns, legacy `Timeline`, canonical `Arrangement`/`ClipEntity`, identity | Mixed; see "Competing arrangement authorities" |
 | `spectre-automation` | Curves, lanes, routes, modulation matrix, evaluator | Implemented; **no consumer in the app binary** |
 | `spectre-project` | On-disk project schema, CBOR serialize, TOML settings, blake3 asset map, migration, autosave | Implemented; **zero workspace dependencies** — a standalone serde DTO tree |
 | `spectre-config` | Workflow profile schema, TOML loader, keybindings, command intents, validation | Implemented |
@@ -79,7 +79,7 @@ xtask             (no workspace deps)
 
 spectre-graph          -> spectre-core
 spectre-audio-backend  -> spectre-core
-geist-timeline       -> spectre-core
+spectre-timeline       -> spectre-core
 spectre-automation     -> spectre-core
 geist-ui             -> spectre-config
 
@@ -90,7 +90,7 @@ geist-fx             -> spectre-core, spectre-graph, spectre-dsp
 geist-modular        -> spectre-core, spectre-graph
 
 app/geist-daw        -> spectre-core, spectre-graph, spectre-audio-backend,
-                        geist-synth, geist-fx, geist-timeline,
+                        geist-synth, geist-fx, spectre-timeline,
                         spectre-project, geist-ui, spectre-config
 ```
 
@@ -101,7 +101,7 @@ worth naming because they are surprising:
   data model, not a projection of an in-memory one. Converting between it and live
   app state is `app/geist-daw/src/session.rs`'s job.
 - **`geist-ui` depends only on `spectre-config`.** It does not see `spectre-core` or
-  `geist-timeline`; it owns its own renderer-facing `SessionModel` and
+  `spectre-timeline`; it owns its own renderer-facing `SessionModel` and
   `TimelineModel` types. The app binary is the only place UI types and engine types
   meet.
 
@@ -223,13 +223,13 @@ the central problem `docs/changes/project-document/SPEC.md` exists to fix.
 
 | Owner | Path | Consumers today |
 | --- | --- | --- |
-| `geist_timeline::Timeline` | `crates/geist-timeline/src/track.rs:91` | None outside its own crate; legacy arena handles, sample placement |
-| `spectre_document::Arrangement` | `crates/spectre-document/src/arrangement.rs` | None yet; canonical `ClipEntity` model, unwired. Relocated out of `geist-timeline` by slice D1 and still re-exported from `geist_timeline::prelude` for the compatibility window |
+| `spectre_timeline::Timeline` | `crates/spectre-timeline/src/track.rs:91` | None outside its own crate; legacy arena handles, sample placement |
+| `spectre_document::Arrangement` | `crates/spectre-document/src/arrangement.rs` | None yet; canonical `ClipEntity` model, unwired. Relocated out of `spectre-timeline` by slice D1 and still re-exported from `spectre_timeline::prelude` for the compatibility window |
 | `app::engine::Arrangement` | `app/geist-daw/src/engine.rs:259` | The audio thread; the only one that makes sound |
 | `geist_ui::model::TimelineModel` | `crates/geist-ui/src/model.rs:295` | Passed `&mut` into `views::arrangement`, so the view mutates it directly |
 | `app::session::StudioSession` | `app/geist-daw/src/session.rs` | The de-facto persistence model, in float beats |
 
-The app binary uses exactly one item from `geist-timeline`: `Transport`
+The app binary uses exactly one item from `spectre-timeline`: `Transport`
 (`app/geist-daw/src/engine.rs:20`). Neither canonical arrangement model is
 reachable from the running DAW.
 

@@ -22,8 +22,8 @@ This spec satisfies roadmap Milestone 2 and immediate work order item 2. It unbl
 
 Five owners currently hold overlapping durable arrangement and project truth:
 
-- `geist_timeline::Timeline` (`crates/geist-timeline/src/track.rs:91`) — legacy arena handles, sample placement.
-- `geist_timeline::Arrangement` (`crates/geist-timeline/src/arrangement.rs`) — canonical entities, zero consumers.
+- `spectre_timeline::Timeline` (`crates/spectre-timeline/src/track.rs:91`) — legacy arena handles, sample placement.
+- `spectre_timeline::Arrangement` (`crates/spectre-timeline/src/arrangement.rs`) — canonical entities, zero consumers.
 - `app::engine::Arrangement` (`app/geist-daw/src/engine.rs:259`) — audio-thread copy, fixed `NUM_TRACKS`.
 - `geist_ui::model::TimelineModel` (`crates/geist-ui/src/model.rs:295`) — renderer-facing, directly mutated.
 - `app::session::StudioSession` (`app/geist-daw/src/session.rs:121`) — de-facto persistence model in float beats.
@@ -66,9 +66,9 @@ An aggregate may be an empty typed owner until its content sub-spec lands. An em
 
 ### The named arrangement aggregate
 
-`spectre_document::arrangement::Arrangement` is the final arrangement authority. It is the entity model already implemented in `crates/geist-timeline/src/arrangement.rs`, relocated. Every other arrangement representation is demoted:
+`spectre_document::arrangement::Arrangement` is the final arrangement authority. It is the entity model already implemented in `crates/spectre-timeline/src/arrangement.rs`, relocated. Every other arrangement representation is demoted:
 
-- `geist_timeline::Timeline` — legacy, frozen, deleted in slice 8.
+- `spectre_timeline::Timeline` — legacy, frozen, deleted in slice 8.
 - `app::engine::Arrangement` — becomes render-generation content, not an authority.
 - `geist_ui::model::TimelineModel` — becomes a read-only projection.
 - `app::session::StudioSession` — becomes a persistence adapter, then deleted.
@@ -83,9 +83,9 @@ Dependency direction:
 - `spectre-document` depends on `spectre-core` only.
 - `spectre-project` depends on `spectre-document` and owns schema, serialization, migration, and the project package.
 - `geist-ui` depends on `spectre-document` for read-only projections and typed intent types.
-- `spectre-document` never depends on `geist-timeline`, `spectre-project`, `geist-ui`, or the app.
+- `spectre-document` never depends on `spectre-timeline`, `spectre-project`, `geist-ui`, or the app.
 
-`MusicalTime`, `TICKS_PER_QUARTER`, and the canonical identity allocator relocate out of `geist-timeline`. `geist-timeline` re-exports them during the compatibility window so no consumer breaks in the same slice as the move. `PROPOSED_FILE_TREE.md` is revised to match once slice 1 lands.
+`MusicalTime`, `TICKS_PER_QUARTER`, and the canonical identity allocator relocate out of `spectre-timeline`. `spectre-timeline` re-exports them during the compatibility window so no consumer breaks in the same slice as the move. `PROPOSED_FILE_TREE.md` is revised to match once slice 1 lands.
 
 ## Transaction contract
 
@@ -238,14 +238,14 @@ Deferred to their own specs and interviews: launcher content and launch quantiza
 
 ## Slice boundaries
 
-- **D1 — Crate skeleton and vocabulary relocation.** Create `spectre-document`; move shared vocabulary to `spectre-core`; re-export from `geist-timeline`. No behavior change.
+- **D1 — Crate skeleton and vocabulary relocation.** Create `spectre-document`; move shared vocabulary to `spectre-core`; re-export from `spectre-timeline`. No behavior change.
 - **D2 — Document skeleton, revision, transactions, history.** Typed empty aggregates, transaction and result types, history with its failure semantics.
 - **D3 — Arrangement domain onto the document.** Canonical arrangement under document ownership; create, delete, move, cross-track move, right resize as transactions. This un-pauses canonical-clip-commands Slice C with the correct owner.
 - **D4 — Projection contract and arrangement UI projection.** Revision-stamped projections; UI reads projections and emits intents; parity tests.
 - **D5 — Publication protocol.** Render generations with acknowledged `GenerationId`, sequenced control stream with applied-sequence acknowledgement, saturation reconciliation, reclaim queue, callback guards and benchmarks.
 - **D6 — Persistence projection.** `spectre-project` serializes the document; versioned schema; atomic candidate-then-replace load validation; project package layout; migration fixtures.
 - **D7 — Remaining domains.** Tracks and devices, assets, conductor, mappings absorbed as sub-slices, each with its own content sub-spec. Each sub-slice enforces the unresolved-reference contract for its own domain.
-- **D8 — Delete legacy authorities.** Remove `StudioSession`, `app::engine::Arrangement` as authority, `geist_timeline::Timeline`, and UI-owned durable state once deletion criteria hold.
+- **D8 — Delete legacy authorities.** Remove `StudioSession`, `app::engine::Arrangement` as authority, `spectre_timeline::Timeline`, and UI-owned durable state once deletion criteria hold.
 
 ## Stop conditions
 

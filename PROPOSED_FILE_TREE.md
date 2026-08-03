@@ -148,7 +148,7 @@ geistdaw/
 │   │       ├── instance.rs
 │   │       └── plugin_node.rs          # LV2PluginNode implements AudioNode
 │   │
-│   ├── geist-timeline/                 # legacy arena timeline; D8 deletes what spectre-document replaces
+│   ├── spectre-timeline/                 # legacy arena timeline; D8 deletes what spectre-document replaces
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs                  # prelude re-exports the relocated document/core types

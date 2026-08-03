@@ -19,9 +19,9 @@ Notes: Execute and commit one independently validated slice at a time.
 
 Files:
 
-- Add `crates/geist-timeline/src/time.rs`.
-- Update `crates/geist-timeline/src/lib.rs`.
-- Update `crates/geist-timeline/src/tempo.rs`.
+- Add `crates/spectre-timeline/src/time.rs`.
+- Update `crates/spectre-timeline/src/lib.rs`.
+- Update `crates/spectre-timeline/src/tempo.rs`.
 - Update this plan after verification.
 
 Tasks:
@@ -36,7 +36,7 @@ Tasks:
 
 Verification:
 
-- `cargo test -p geist-timeline`
+- `cargo test -p spectre-timeline`
 - `cargo check --workspace`
 - `cargo test --workspace`
 - `git diff --check`

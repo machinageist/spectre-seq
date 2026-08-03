@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-timeline/src/clip.rs
+// File: crates/spectre-timeline/src/clip.rs
 // Layer: timeline
 // Purpose: Clip enum: AudioClip, MidiClip, AutomationClip
 // Status: Implemented; three clip kinds plus automation breakpoint evaluation.

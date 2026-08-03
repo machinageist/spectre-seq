@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: crates/geist-timeline/Cargo.toml
+# File: crates/spectre-timeline/Cargo.toml
 # Layer: timeline
 # Purpose: Arrangement, clips, transport, and undo/redo; app-thread timeline model.
 # Status: Implemented incrementally; arena foundation first.
@@ -7,7 +7,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-timeline"
+name = "spectre-timeline"
 version = "0.1.0"
 edition = "2021"
 

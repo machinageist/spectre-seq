@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-timeline/src/lib.rs
+// File: crates/spectre-timeline/src/lib.rs
 // Layer: timeline
 // Purpose: Arrangement, clips, transport, and undo/redo timeline model
 // Status: Implemented incrementally; arena foundation first.

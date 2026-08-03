@@ -1,6 +1,6 @@
 ---
 name: spectre-project-timeline
-description: "Load when implementing or reviewing `geist-timeline`, `spectre-automation`, `spectre-project`, transport, tempo maps, tracks, clips, patterns, automation lanes, modulation routes, project schema, migration, asset maps, settings, or autosave."
+description: "Load when implementing or reviewing `spectre-timeline`, `spectre-automation`, `spectre-project`, transport, tempo maps, tracks, clips, patterns, automation lanes, modulation routes, project schema, migration, asset maps, settings, or autosave."
 ---
 
 <!--

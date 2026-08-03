@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-timeline/src/track.rs
+// File: crates/spectre-timeline/src/track.rs
 // Layer: timeline
 // Purpose: Track { id, clip_ids, armed, muted, soloed } and Timeline assembly
 // Status: Implemented; tracks place clips; Timeline emits notes per block.

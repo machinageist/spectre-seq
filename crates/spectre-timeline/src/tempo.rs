@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-timeline/src/tempo.rs
+// File: crates/spectre-timeline/src/tempo.rs
 // Layer: timeline
 // Purpose: TempoMap: BPM automation, time signature changes
 // Status: Implemented; piecewise-constant tempo + time-signature change points.

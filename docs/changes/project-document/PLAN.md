@@ -26,21 +26,21 @@ Files:
 - Add `crates/spectre-document/src/lib.rs`.
 - Add `crates/spectre-core/src/time.rs`.
 - Update `crates/spectre-core/src/lib.rs`.
-- Move `crates/geist-timeline/src/time.rs` into `spectre-core`.
-- Move `crates/geist-timeline/src/identity.rs` into `spectre-document`.
-- Move `crates/geist-timeline/src/arrangement.rs` into `spectre-document`.
-- Update `crates/geist-timeline/src/lib.rs`.
-- Update `crates/geist-timeline/Cargo.toml`.
+- Move `crates/spectre-timeline/src/time.rs` into `spectre-core`.
+- Move `crates/spectre-timeline/src/identity.rs` into `spectre-document`.
+- Move `crates/spectre-timeline/src/arrangement.rs` into `spectre-document`.
+- Update `crates/spectre-timeline/src/lib.rs`.
+- Update `crates/spectre-timeline/Cargo.toml`.
 - Update `PROPOSED_FILE_TREE.md` after the move verifies.
 - Update this plan after verification.
 
 Tasks:
 
-1. [x] Create `spectre-document` with `#![deny(unsafe_code)]` and `spectre-core` as its only dependency. The workspace `members` glob `crates/*` picks it up, so the root manifest needs no edit. Write a real manifest header matching `crates/geist-timeline/Cargo.toml`, not the pseudocode-scaffold header older manifests carry.
-2. [x] Move `MusicalTime`, `TICKS_PER_QUARTER`, `MAX_EXACT_MUSICAL_TIME_TICKS`, and their tests from `geist-timeline` to `spectre-core::time`; add them to the `spectre-core` prelude.
-3. [x] Move the `IdSequence` and `IdentityAllocator` machinery to `spectre-document`. `ClipId` and `TrackId` already live in `spectre-core::ids` and stay there; `crates/geist-timeline/src/identity.rs:14` only re-exports them.
+1. [x] Create `spectre-document` with `#![deny(unsafe_code)]` and `spectre-core` as its only dependency. The workspace `members` glob `crates/*` picks it up, so the root manifest needs no edit. Write a real manifest header matching `crates/spectre-timeline/Cargo.toml`, not the pseudocode-scaffold header older manifests carry.
+2. [x] Move `MusicalTime`, `TICKS_PER_QUARTER`, `MAX_EXACT_MUSICAL_TIME_TICKS`, and their tests from `spectre-timeline` to `spectre-core::time`; add them to the `spectre-core` prelude.
+3. [x] Move the `IdSequence` and `IdentityAllocator` machinery to `spectre-document`. `ClipId` and `TrackId` already live in `spectre-core::ids` and stay there; `crates/spectre-timeline/src/identity.rs:14` only re-exports them.
 4. [x] Move `Arrangement`, `ClipEntity`, `ArrangementTrack`, `ClipLocation`, `RemovedClip`, and `ArrangementError` to `spectre-document::arrangement` with their tests.
-5. [x] Re-export every moved item from `geist_timeline::prelude` for the compatibility window so no consumer breaks in this slice.
+5. [x] Re-export every moved item from `spectre_timeline::prelude` for the compatibility window so no consumer breaks in this slice.
 6. [x] Add the durable nonzero ID family to `spectre-core::ids` — `AssetId`, `SceneId`, `DeviceId`, `ParamKey`, `RouteId`, `NoteId`, `MappingId`, `AutomationTargetId`. Scope amendment: without it, D2 and the Wave 2 vocabulary slice both edit `crates/spectre-core/src/lib.rs` concurrently. The `define_nonzero_id!` macro already exists, so this adds no behavior.
 7. [x] Confirm the workspace test count did not drop; every moved test runs at its new home.
 8. [x] Resolve independent spec and code review findings.
@@ -50,7 +50,7 @@ Verification:
 
 - `cargo test -p spectre-core`
 - `cargo test -p spectre-document`
-- `cargo test -p geist-timeline`
+- `cargo test -p spectre-timeline`
 - `cargo check --workspace`
 - `cargo test --workspace`
 - `git diff --check`
@@ -158,9 +158,9 @@ Delete only when all four deletion criteria in `SPEC.md` hold for the domain:
 
 - `app::session::StudioSession`;
 - `app::engine::Arrangement` as an authority;
-- `geist_timeline::Timeline` and the legacy arena placement path;
+- `spectre_timeline::Timeline` and the legacy arena placement path;
 - UI-owned durable state;
-- the `geist_timeline::prelude` compatibility re-exports added in D1.
+- the `spectre_timeline::prelude` compatibility re-exports added in D1.
 
 Update `docs/architecture.md`, `docs/realtime_rules.md`, and `PROPOSED_FILE_TREE.md` to implementation truth in this slice.
 

@@ -31,7 +31,7 @@ Five accepted product requirements broke the earlier arrangement-only content pr
 4. **MPE and tuning.** Per-note pitch, pressure, timbre, and non-12-TET tuning must be reachable from the first note model, not bolted onto `key: u8`.
 5. **Three parameter-control layers.** Arrangement automation in project time, clip-local automation in clip-relative time, and realtime modulation do not share one data model. A single `ClipKind::Automation` collapses the first two.
 
-The legacy holders confirm the gap. `crates/geist-timeline/src/clip.rs` models audio as a raw `source: u64` with no warp state, MIDI as an arena `Index` into a sample-positioned `Pattern` with no note identity, and automation as a third clip kind with untyped breakpoints. `crates/spectre-project/src/schema.rs` persists `ClipKind::Audio { asset_index: usize }` and `ClipKind::Automation { lane_index: usize }` — vector positions used as durable references — and `NoteEntry` with no note identity at all.
+The legacy holders confirm the gap. `crates/spectre-timeline/src/clip.rs` models audio as a raw `source: u64` with no warp state, MIDI as an arena `Index` into a sample-positioned `Pattern` with no note identity, and automation as a third clip kind with untyped breakpoints. `crates/spectre-project/src/schema.rs` persists `ClipKind::Audio { asset_index: usize }` and `ClipKind::Automation { lane_index: usize }` — vector positions used as durable references — and `NoteEntry` with no note identity at all.
 
 ## Ownership decision
 
@@ -52,7 +52,7 @@ This amends the aggregate table in the accepted `project-document/SPEC.md`:
 | `arrangement` | Arrangement placements: owning `TrackId`, start, window; lane membership | re-scoped to placement only |
 | `launcher` | Launcher placements: track/scene slot occupancy, window, launch settings | unchanged; consumes the same clip records |
 
-`spectre_document::clips` is the only owner of clip content. `spectre_document::arrangement` holds no payload. Neither `geist_timeline::Clip`, `geist_timeline::Pattern`, nor `spectre_project::schema::ClipKind` may hold clip content once its slice completes.
+`spectre_document::clips` is the only owner of clip content. `spectre_document::arrangement` holds no payload. Neither `spectre_timeline::Clip`, `spectre_timeline::Pattern`, nor `spectre_project::schema::ClipKind` may hold clip content once its slice completes.
 
 ### Why the split
 
@@ -505,7 +505,7 @@ Today `ArrangementTrack` holds a durable `Vec<ClipId>` and `rehome_clip` takes a
 
 **Question.** The paused proposal made automation a third `ClipKind` with a typed target and a clip-relative curve. The accepted vision instead names three distinct parameter-control layers that "do not share one undifferentiated data model": arrangement automation in project musical time, clip-local automation in clip-relative time, and realtime modulation.
 
-- **Option A — keep `ClipKind::Automation`.** Preserves the prior proposal and the current `geist_timeline::Clip` shape. But it collapses layers one and two into one representation, and it makes arrangement automation inherit clip placement, ordering, duplication, and launcher-slot semantics that arrangement automation does not want.
+- **Option A — keep `ClipKind::Automation`.** Preserves the prior proposal and the current `spectre_timeline::Clip` shape. But it collapses layers one and two into one representation, and it makes arrangement automation inherit clip placement, ordering, duplication, and launcher-slot semantics that arrangement automation does not want.
 - **Option B — remove it.** *(Accepted.)* Arrangement automation becomes lanes in the `automation` aggregate keyed by durable target in project time. Clip-local automation becomes envelopes owned by a clip record in clip-relative time. `ClipKind` is `Audio | Midi`. This matches both the vision's layering and the Live/Bitwig category the product targets.
 
 **Accepted: Option B.** It also retires the persisted `ClipKind::Automation { lane_index: usize }`, a vector index used as a durable reference, which has to go regardless.

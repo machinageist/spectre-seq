@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-timeline/src/pattern.rs
+// File: crates/spectre-timeline/src/pattern.rs
 // Layer: timeline
 // Purpose: Pattern: note grid for piano roll / step seq
 // Status: Implemented; note list emitting NoteEvents for a sample window.

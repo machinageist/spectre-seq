@@ -89,7 +89,7 @@ Notes: Preserved as historical planning context; living product authority is lin
 
 ## Phase 6 — Timeline Engine (Weeks 14–20)
 
-- `geist-timeline`: transport state machine, clip model, pattern sequencer
+- `spectre-timeline`: transport state machine, clip model, pattern sequencer
 - Transport: BPM (with automation), time signature, play/pause/record/loop — state is an `Arc<AtomicTransport>` readable from audio thread
 - Clip types: audio clip (sample playback via `rubato` for pitch/time), MIDI clip (note event sequence), automation clip (breakpoint envelope)
 - Pattern sequencer: step sequencer + piano roll data model; emits `NoteEvent` stream into the graph

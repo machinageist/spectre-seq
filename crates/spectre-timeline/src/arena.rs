@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-timeline/src/arena.rs
+// File: crates/spectre-timeline/src/arena.rs
 // Layer: timeline
 // Purpose: Arena<T> allocator for clips
 // Status: Implemented; generational arena with free-list slot reuse.

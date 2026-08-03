@@ -23,7 +23,7 @@ geist-synth = { path = "../../plugins/geist-synth" }
 # Effects nodes for the post-synth device chain
 geist-fx = { path = "../../plugins/geist-fx" }
 # Transport and tempo for the DAW playhead
-geist-timeline = { path = "../../crates/geist-timeline" }
+spectre-timeline = { path = "../../crates/spectre-timeline" }
 # Project file format for saving and loading the session patch
 spectre-project = { path = "../../crates/spectre-project" }
 # Lock-free SPSC queue for UI-to-audio commands

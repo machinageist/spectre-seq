@@ -1509,7 +1509,6 @@ dependencies = [
  "eframe",
  "geist-fx",
  "geist-synth",
- "geist-timeline",
  "geist-ui",
  "hound",
  "rfd",
@@ -1519,6 +1518,7 @@ dependencies = [
  "spectre-core",
  "spectre-graph",
  "spectre-project",
+ "spectre-timeline",
 ]
 
 [[package]]
@@ -1545,14 +1545,6 @@ dependencies = [
  "spectre-core",
  "spectre-dsp",
  "spectre-graph",
-]
-
-[[package]]
-name = "geist-timeline"
-version = "0.1.0"
-dependencies = [
- "spectre-core",
- "spectre-document",
 ]
 
 [[package]]
@@ -3603,6 +3595,14 @@ dependencies = [
  "serde",
  "serde_bytes",
  "toml",
+]
+
+[[package]]
+name = "spectre-timeline"
+version = "0.1.0"
+dependencies = [
+ "spectre-core",
+ "spectre-document",
 ]
 
 [[package]]

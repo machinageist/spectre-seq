@@ -13,7 +13,7 @@ Notes: Written once all seven SPEC decisions were settled; execute and commit on
 - `docs/changes/project-document/SPEC.md` owns the transaction, history, identity, and load contracts these slices execute inside. Nothing here reopens them.
 - Slice D2 of `docs/changes/project-document/PLAN.md` must land first. CC1 mutates through transactions, and transactions do not exist until D2.
 - CC1 *is* slice D3 of that plan. It is written here because the content decisions live here; the two documents describe one slice from two sides.
-- Every slice keeps the app runnable. The legacy `geist_timeline::Clip` path stays authoritative until CC3 completes.
+- Every slice keeps the app runnable. The legacy `spectre_timeline::Clip` path stays authoritative until CC3 completes.
 - Migration is a strangler. Do not delete a legacy holder until its replacement round-trips.
 
 ## Slice CC1 — Clip records, placement split, and the window
@@ -103,7 +103,7 @@ Positional breakpoint keying applies here identically to CC2, so the two share o
 
 Delete only when the replacement round-trips through persistence:
 
-- `geist_timeline::Clip` and `geist_timeline::Pattern` as content holders;
+- `spectre_timeline::Clip` and `spectre_timeline::Pattern` as content holders;
 - `spectre_project::schema::ClipKind::Audio { asset_index: usize }` and `ClipKind::Automation { lane_index: usize }` — vector positions used as durable references, which have to go regardless;
 - `spectre_project::schema::NoteEntry`, which carries no note identity at all.
 

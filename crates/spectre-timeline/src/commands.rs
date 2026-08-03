@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-timeline/src/commands.rs
+// File: crates/spectre-timeline/src/commands.rs
 // Layer: timeline
 // Purpose: command objects for undo/redo
 // Status: Implemented; reversible arrangement commands + an undo/redo stack.

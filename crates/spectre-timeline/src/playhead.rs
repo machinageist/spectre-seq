@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-timeline/src/playhead.rs
+// File: crates/spectre-timeline/src/playhead.rs
 // Layer: timeline
 // Purpose: sample-accurate playhead position
 // Status: Implemented; sample position with loop-aware advance.

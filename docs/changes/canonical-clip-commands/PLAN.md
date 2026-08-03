@@ -20,8 +20,8 @@ Notes: Each slice ends with review, validation, commit, push, and remote SHA ver
 Files:
 
 - Specialize shared `TrackId` and `ClipId` in `crates/spectre-core/src/ids.rs`.
-- Add `crates/geist-timeline/src/identity.rs`.
-- Update `crates/geist-timeline/src/lib.rs`.
+- Add `crates/spectre-timeline/src/identity.rs`.
+- Update `crates/spectre-timeline/src/lib.rs`.
 
 RED tests:
 
@@ -44,9 +44,9 @@ Implementation:
 
 Verification:
 
-- `cargo fmt -p geist-timeline -- --check`
-- `cargo test -p geist-timeline`
-- `cargo clippy -p geist-timeline --all-targets -- -D warnings`
+- `cargo fmt -p spectre-timeline -- --check`
+- `cargo test -p spectre-timeline`
+- `cargo clippy -p spectre-timeline --all-targets -- -D warnings`
 - `cargo check --workspace`
 - `cargo test --workspace`
 - `git diff --check`
