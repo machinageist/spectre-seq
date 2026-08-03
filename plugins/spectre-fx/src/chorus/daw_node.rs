@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-fx/src/chorus/daw_node.rs
+// File: plugins/spectre-fx/src/chorus/daw_node.rs
 // Layer: effects plugin
 // Purpose: Chorus wrapped as a graph AudioNode
 // Status: Implemented; one Chorus voice per output channel.

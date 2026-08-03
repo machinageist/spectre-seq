@@ -242,7 +242,7 @@ geistdaw/
 │   │       ├── daw_node.rs             # implements AudioNode for DAW-internal use
 │   │       └── clap_plugin.rs          # implements CLAP ABI for standalone use
 │   │
-│   ├── geist-fx/                       # effects bundle
+│   ├── spectre-fx/                       # effects bundle
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs

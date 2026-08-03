@@ -46,7 +46,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | Crate | Role | State |
 | --- | --- | --- |
 | `spectre-synth` | Flagship synth engine exposed as an `AudioNode` (`daw_node.rs`) | Implemented as a two-oscillator prototype; `clap_plugin.rs` is a scaffold |
-| `geist-fx` | Delay, reverb, chorus, saturator, EQ graph nodes | Implemented |
+| `spectre-fx` | Delay, reverb, chorus, saturator, EQ graph nodes | Implemented |
 | `spectre-modular` | Utility node families: math, logic, signal, timing, sample/hold | Implemented; **no consumer in the app binary**; `clap_plugins.rs` deferred |
 
 ### `app/geist-daw`
@@ -86,11 +86,11 @@ spectre-ui             -> spectre-config
 spectre-vst-host       -> spectre-core, spectre-graph
 spectre-clap-host      -> spectre-core, spectre-graph
 spectre-synth          -> spectre-core, spectre-graph, spectre-dsp
-geist-fx             -> spectre-core, spectre-graph, spectre-dsp
+spectre-fx             -> spectre-core, spectre-graph, spectre-dsp
 spectre-modular        -> spectre-core, spectre-graph
 
 app/geist-daw        -> spectre-core, spectre-graph, spectre-audio-backend,
-                        spectre-synth, geist-fx, spectre-timeline,
+                        spectre-synth, spectre-fx, spectre-timeline,
                         spectre-project, spectre-ui, spectre-config
 ```
 

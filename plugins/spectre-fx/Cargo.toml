@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: plugins/geist-fx/Cargo.toml
+# File: plugins/spectre-fx/Cargo.toml
 # Layer: effects plugin
 # Purpose: Effects bundle; spectre-dsp engines wrapped as graph AudioNodes.
 # Status: Implemented incrementally; delay node first.
@@ -7,7 +7,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-fx"
+name = "spectre-fx"
 version = "0.1.0"
 edition = "2021"
 

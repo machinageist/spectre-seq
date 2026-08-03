@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-fx/src/delay/engine.rs
+// File: plugins/spectre-fx/src/delay/engine.rs
 // Layer: effects plugin
 // Purpose: Pure-DSP delay engine for the delay effect
 // Status: Implemented; re-exports the spectre-dsp StereoDelay (zero duplication).

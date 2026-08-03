@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-fx/src/delay/daw_node.rs
+// File: plugins/spectre-fx/src/delay/daw_node.rs
 // Layer: effects plugin
 // Purpose: StereoDelay wrapped as a graph AudioNode
 // Status: Implemented; stereo in-place delay over channel-major buffers.

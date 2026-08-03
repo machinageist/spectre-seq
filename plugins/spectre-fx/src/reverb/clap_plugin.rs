@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-fx/src/delay/clap_plugin.rs
+// File: plugins/spectre-fx/src/reverb/clap_plugin.rs
 // Layer: effects plugin
 // Purpose: Define clap plugin responsibilities and integration boundaries.
 // Status: Pseudocode scaffold; implementation intentionally pending.

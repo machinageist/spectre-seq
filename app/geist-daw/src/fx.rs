@@ -12,7 +12,7 @@
 use spectre_core::config::AudioConfig;
 use spectre_core::context::ProcessContext;
 use spectre_core::transport::TransportSnapshot;
-use geist_fx::prelude::{DelayNode, ReverbNode};
+use spectre_fx::prelude::{DelayNode, ReverbNode};
 use spectre_graph::node::AudioNode;
 
 // Ordered effects applied after the synth, each independently bypassable

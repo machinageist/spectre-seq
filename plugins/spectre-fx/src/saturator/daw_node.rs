@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-fx/src/saturator/daw_node.rs
+// File: plugins/spectre-fx/src/saturator/daw_node.rs
 // Layer: effects plugin
 // Purpose: Saturator wrapped as a graph AudioNode
 // Status: Implemented; stateless waveshaping over the whole output buffer.

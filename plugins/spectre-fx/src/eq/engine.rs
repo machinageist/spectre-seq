@@ -1,12 +1,9 @@
 // =============================================================================
-// File: plugins/geist-fx/src/eq/mod.rs
+// File: plugins/spectre-fx/src/eq/engine.rs
 // Layer: effects plugin
-// Purpose: EQ effect: pure-DSP engine + graph node
-// Status: Implemented; engine + daw_node. CLAP wrapper lands with the host.
+// Purpose: Pure-DSP EQ engine for the eq effect
+// Status: Implemented; re-exports the spectre-dsp ParametricEq (zero duplication).
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-pub mod daw_node;
-pub mod engine;
-
-pub use daw_node::{BandConfig, EqNode};
+pub use spectre_dsp::prelude::ParametricEq;

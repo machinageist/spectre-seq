@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-fx/src/eq/daw_node.rs
+// File: plugins/spectre-fx/src/eq/daw_node.rs
 // Layer: effects plugin
 // Purpose: ParametricEq wrapped as a graph AudioNode
 // Status: Implemented; one EQ band-cascade per output channel.

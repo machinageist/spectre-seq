@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-fx/src/reverb/engine.rs
+// File: plugins/spectre-fx/src/reverb/engine.rs
 // Layer: effects plugin
 // Purpose: Pure-DSP reverb engine for the reverb effect
 // Status: Implemented; re-exports the spectre-dsp Reverb (zero duplication).

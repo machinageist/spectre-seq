@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-fx/src/lib.rs
+// File: plugins/spectre-fx/src/lib.rs
 // Layer: effects plugin
 // Purpose: Effects bundle; spectre-dsp engines wrapped as graph AudioNodes
 // Status: Implemented; delay, reverb, chorus, saturator, eq nodes.

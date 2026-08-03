@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-fx/src/io.rs
+// File: plugins/spectre-fx/src/io.rs
 // Layer: effects plugin
 // Purpose: Channel-major ProcessContext I/O helpers shared by effect nodes
 // Status: Implemented; copy input to output, split output into channels.

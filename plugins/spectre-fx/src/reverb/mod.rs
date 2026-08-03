@@ -1,9 +1,12 @@
 // =============================================================================
-// File: plugins/geist-fx/src/chorus/engine.rs
+// File: plugins/spectre-fx/src/reverb/mod.rs
 // Layer: effects plugin
-// Purpose: Pure-DSP chorus engine for the chorus effect
-// Status: Implemented; re-exports the spectre-dsp Chorus (zero duplication).
+// Purpose: Reverb effect: pure-DSP engine + graph node
+// Status: Implemented; engine + daw_node. CLAP wrapper lands with the host.
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-pub use spectre_dsp::prelude::Chorus;
+pub mod daw_node;
+pub mod engine;
+
+pub use daw_node::ReverbNode;

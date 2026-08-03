@@ -1,5 +1,5 @@
 // =============================================================================
-// File: plugins/geist-fx/src/reverb/daw_node.rs
+// File: plugins/spectre-fx/src/reverb/daw_node.rs
 // Layer: effects plugin
 // Purpose: FFT convolution Reverb wrapped as a graph AudioNode
 // Status: Implemented; block-based stereo reverb over channel-major buffers.

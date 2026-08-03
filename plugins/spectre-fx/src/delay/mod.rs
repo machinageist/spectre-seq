@@ -1,9 +1,12 @@
 // =============================================================================
-// File: plugins/geist-fx/src/saturator/engine.rs
+// File: plugins/spectre-fx/src/delay/mod.rs
 // Layer: effects plugin
-// Purpose: Pure-DSP saturator engine for the saturator effect
-// Status: Implemented; re-exports the spectre-dsp Saturator (zero duplication).
+// Purpose: Delay effect: pure-DSP engine + graph node
+// Status: Implemented; engine + daw_node. CLAP wrapper lands with the host.
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-pub use spectre_dsp::prelude::{SaturationCurve, Saturator};
+pub mod daw_node;
+pub mod engine;
+
+pub use daw_node::DelayNode;

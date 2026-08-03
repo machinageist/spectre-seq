@@ -1,12 +1,9 @@
 // =============================================================================
-// File: plugins/geist-fx/src/chorus/mod.rs
+// File: plugins/spectre-fx/src/saturator/engine.rs
 // Layer: effects plugin
-// Purpose: Chorus effect: pure-DSP engine + graph node
-// Status: Implemented; engine + daw_node. CLAP wrapper lands with the host.
+// Purpose: Pure-DSP saturator engine for the saturator effect
+// Status: Implemented; re-exports the spectre-dsp Saturator (zero duplication).
 // Contract: Keep comments terse, declarative, and synchronized with code.
 // =============================================================================
 
-pub mod daw_node;
-pub mod engine;
-
-pub use daw_node::ChorusNode;
+pub use spectre_dsp::prelude::{SaturationCurve, Saturator};

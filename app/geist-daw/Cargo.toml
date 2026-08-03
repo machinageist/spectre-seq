@@ -21,7 +21,7 @@ spectre-audio-backend = { path = "../../crates/spectre-audio-backend" }
 # Flagship synth exposed as an AudioNode
 spectre-synth = { path = "../../plugins/spectre-synth" }
 # Effects nodes for the post-synth device chain
-geist-fx = { path = "../../plugins/geist-fx" }
+spectre-fx = { path = "../../plugins/spectre-fx" }
 # Transport and tempo for the DAW playhead
 spectre-timeline = { path = "../../crates/spectre-timeline" }
 # Project file format for saving and loading the session patch

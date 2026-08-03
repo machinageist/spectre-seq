@@ -7,7 +7,7 @@ description: "Load when implementing or reviewing `spectre-dsp`, first-party syn
 Author: Jeff
 Date: 2026-05-27
 Description: DSP and plugin suite implementation guide
-Notes: Use for spectre-dsp, spectre-synth, geist-fx, and spectre-modular
+Notes: Use for spectre-dsp, spectre-synth, spectre-fx, and spectre-modular
 -->
 
 # Geist DSP And Plugins
@@ -42,7 +42,7 @@ No DSP duplication between DAW node and CLAP wrapper.
 4. Implement envelopes and LFOs.
 5. Implement effects one at a time.
 6. Build `spectre-synth` voice, pool, osc stack, filter stack, and mod matrix.
-7. Build `geist-fx` modules.
+7. Build `spectre-fx` modules.
 8. Build `spectre-modular` utility nodes.
 9. Add benchmarks only after correctness tests exist.
 

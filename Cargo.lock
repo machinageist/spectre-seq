@@ -1494,27 +1494,18 @@ name = "geist-daw"
 version = "0.1.0"
 dependencies = [
  "eframe",
- "geist-fx",
  "hound",
  "rfd",
  "rtrb",
  "spectre-audio-backend",
  "spectre-config",
  "spectre-core",
+ "spectre-fx",
  "spectre-graph",
  "spectre-project",
  "spectre-synth",
  "spectre-timeline",
  "spectre-ui",
-]
-
-[[package]]
-name = "geist-fx"
-version = "0.1.0"
-dependencies = [
- "spectre-core",
- "spectre-dsp",
- "spectre-graph",
 ]
 
 [[package]]
@@ -3535,6 +3526,15 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "rustfft",
+]
+
+[[package]]
+name = "spectre-fx"
+version = "0.1.0"
+dependencies = [
+ "spectre-core",
+ "spectre-dsp",
+ "spectre-graph",
 ]
 
 [[package]]
