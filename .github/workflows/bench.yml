@@ -1,21 +1,53 @@
 # ==============================================================================
 # File: .github/workflows/bench.yml
 # Layer: CI
-# Purpose: criterion benchmarks on push to main
-# Status: Pseudocode scaffold; implementation intentionally pending.
+# Purpose: keep the criterion benchmarks compiling; timing comparison is deferred
+# Status: Partially implemented; compile check is real, regression tracking is not.
 # Contract: Keep comments terse, declarative, and synchronized with code.
 # ==============================================================================
 
-# Pseudocode plan:
-# - Declare responsibility: criterion benchmarks on push to main
-# - Define public types before behavior.
-# - Separate real-time-safe paths from UI/app paths.
-# - Prefer explicit errors over implicit panics.
-# - Add tests beside behavior once implementation begins.
-# - Keep config explicit and reproducible.
-# - Document each non-default setting inline.
+# The four criterion benches (graph compile/swap, osc, filter, reverb) are
+# implemented, but `cargo test` does not build bench targets, so nothing in CI
+# notices when a bench stops compiling against a changed API. This workflow
+# closes that gap and nothing more.
+#
+# DEFERRED: comparing timings run to run. Shared GitHub runners are too noisy for
+# sub-millisecond audio budgets, and there is no stored baseline to compare
+# against. Real regression tracking needs a persisted baseline plus a consistent
+# machine; until both exist, published numbers from here would be misleading.
 
-name: scaffold
+name: Bench
+
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-jobs: {}
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  compile:
+    name: bench compile check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # geist-graph benches pull in geist-core, which pulls the audio backend deps
+      - name: Install ALSA development headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libasound2-dev
+
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      # --no-run builds every bench target without spending runner time measuring
+      - name: Build benchmarks
+        run: cargo bench --workspace --no-run

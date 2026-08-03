@@ -1,21 +1,114 @@
 # ==============================================================================
 # File: .github/workflows/ci.yml
 # Layer: CI
-# Purpose: test + clippy + fmt on all platforms
-# Status: Pseudocode scaffold; implementation intentionally pending.
+# Purpose: gate every push and pull request on tests, formatting, and a release build
+# Status: Implemented; clippy runs advisory until the lint-cleanup slice lands.
 # Contract: Keep comments terse, declarative, and synchronized with code.
 # ==============================================================================
 
-# Pseudocode plan:
-# - Declare responsibility: test + clippy + fmt on all platforms
-# - Define public types before behavior.
-# - Separate real-time-safe paths from UI/app paths.
-# - Prefer explicit errors over implicit panics.
-# - Add tests beside behavior once implementation begins.
-# - Keep config explicit and reproducible.
-# - Document each non-default setting inline.
+# Platform policy: ubuntu-latest is the only gating platform today. macOS and
+# Windows are named in the roadmap but are not added here, because an unverified
+# gating platform produces red checks nobody can diagnose. They join the matrix
+# when release packaging exists and someone can reproduce a failure locally.
+#
+# Toolchain policy: the channel lives in rust-toolchain.toml, never here. Runners
+# ship rustup, so `rustup show` materializes the pinned toolchain and components.
 
-name: scaffold
+name: CI
+
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
-jobs: {}
+
+# Supersede in-flight runs for a branch; only the newest commit needs a verdict
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Formatting is the cheapest gate: rustfmt parses, it never compiles
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # alsa-sys hard-panics in its build script without ALSA pkg-config metadata;
+      # it is the only system package the workspace needs. egui/winit reach X11,
+      # Wayland, EGL, and xkbcommon through dlopen, so no display packages here,
+      # and rfd 0.17 talks to the desktop portal rather than linking GTK.
+      - name: Install ALSA development headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libasound2-dev
+
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Runners have no sound card and no display; the audio-backend tests are
+      # written to degrade gracefully, and the egui tests drive a headless Context
+      - name: Run tests
+        run: cargo test --workspace
+
+  build:
+    name: release build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ALSA development headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libasound2-dev
+
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Proves the optimized profile links, which the debug test build does not
+      - name: Build release
+        run: cargo build --release
+
+  # Advisory, not a gate. The tree has never been linted, so a blocking clippy
+  # would wedge CI red on unrelated debt. Flip continue-on-error off in the
+  # dedicated lint-cleanup slice, once the existing findings are triaged.
+  clippy:
+    name: clippy (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ALSA development headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libasound2-dev
+
+      - name: Install pinned toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      # --all-targets covers tests, examples, and benches that `cargo test` skips
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets

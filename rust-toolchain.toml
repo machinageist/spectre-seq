@@ -1,19 +1,23 @@
 # ==============================================================================
 # File: rust-toolchain.toml
 # Layer: toolchain pin
-# Purpose: pin nightly for std::simd
-# Status: Pseudocode scaffold; implementation intentionally pending.
+# Purpose: pin the workspace to stable Rust and the components CI gates on
+# Status: Implemented; single source of truth for local and CI toolchains.
 # Contract: Keep comments terse, declarative, and synchronized with code.
 # ==============================================================================
 
-# Pseudocode plan:
-# - Declare responsibility: pin nightly for std::simd
-# - Define public types before behavior.
-# - Separate real-time-safe paths from UI/app paths.
-# - Prefer explicit errors over implicit panics.
-# - Add tests beside behavior once implementation begins.
-# - Keep config explicit and reproducible.
-# - Document each non-default setting inline.
+# Stable, not nightly. The former nightly pin claimed `std::simd`, but no crate
+# in the workspace uses portable SIMD or any `#![feature]` gate, so the pin bought
+# nothing and cost reproducibility. SIMD in the DSP path currently comes from
+# rustfft, which isolates its own unsafe intrinsics on stable.
+#
+# Reintroducing nightly is a deliberate decision, not a drive-by edit: it would
+# need a recorded reason here and an explicit CI policy, because nightly breaks
+# without warning and cannot back a release claim.
 
 [toolchain]
-channel = "nightly"
+channel = "stable"
+
+# rustfmt and clippy are provisioned with the toolchain so `cargo fmt` and
+# `cargo clippy` behave identically on a workstation and on a CI runner.
+components = ["rustfmt", "clippy"]
