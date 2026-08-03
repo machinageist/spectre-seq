@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: app/geist-daw/Cargo.toml
+# File: app/spectre-seq/Cargo.toml
 # Layer: application binary
 # Purpose: Main binary; wires backend, graph node, and a demo sequencer together.
 # Status: Implemented; minimal audible binary streaming the synth.
@@ -7,7 +7,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-daw"
+name = "spectre-seq"
 version = "0.1.0"
 edition = "2021"
 

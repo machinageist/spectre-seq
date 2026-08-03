@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/engine.rs
+// File: app/spectre-seq/src/engine.rs
 // Layer: application binary
 // Purpose: Demo sequencer, block processor, and the running engine handle
 // Status: Implemented; drives one SynthNode from a looping step sequence.

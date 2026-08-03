@@ -57,7 +57,7 @@ The widget layer now converts `WorkspaceSurface` into `WorkspaceWidgets`: tab wi
 
 The app layer now has startup and reload paths. `App::from_workflow_candidates` and `App::from_workflow_files` resolve built-in, bundled, user, and project workflow candidates by precedence: later valid profiles win, invalid later profiles emit source-tagged diagnostics, and the last valid profile remains active. `App::load_workflow_file` parses and validates one workflow TOML file on the app/control side, applies it only when valid, and preserves the existing workflow when diagnostics are returned. `UICommand::LoadWorkflowFile` exposes that reload path to future profile picker or command-palette UI.
 
-The `geist-daw` binary resolves startup workflows before opening the audio stream or GUI. It loads the built-in profile, bundled default profile, optional user profile, optional project override, then an explicit `--workflow <path>` / `--workflow=<path>` file. Diagnostics are printed as warnings; invalid profiles do not stop launch unless audio or window creation fails.
+The `spectre-seq` binary resolves startup workflows before opening the audio stream or GUI. It loads the built-in profile, bundled default profile, optional user profile, optional project override, then an explicit `--workflow <path>` / `--workflow=<path>` file. Diagnostics are printed as warnings; invalid profiles do not stop launch unless audio or window creation fails.
 
 Workflow `templates` now feed the studio browser as searchable insert items. Double-clicking a template emits a typed `instantiate_template` intent with `name`, `kind`, and template args; project/audio mutation remains behind app command dispatch.
 

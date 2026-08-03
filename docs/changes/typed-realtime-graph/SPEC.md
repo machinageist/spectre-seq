@@ -70,7 +70,7 @@ Nothing declares latency or polyphony.
 
 The whole compiled path has no production consumer.
 
-- `Graph::add_node` is called only from unit tests and `crates/spectre-graph/benches/graph_bench.rs`. The running application uses `SynthProcessor` (`app/geist-daw/src/engine.rs:575`), a fixed track array that bypasses the graph entirely. This is roadmap gap 12.
+- `Graph::add_node` is called only from unit tests and `crates/spectre-graph/benches/graph_bench.rs`. The running application uses `SynthProcessor` (`app/spectre-seq/src/engine.rs:575`), a fixed track array that bypasses the graph entirely. This is roadmap gap 12.
 - Consequence for planning: rewriting the graph engine breaks no shipping behavior, and also delivers no user-visible behavior until Milestone 4 attaches the hybrid track to it.
 
 What is already correct and must be reused.

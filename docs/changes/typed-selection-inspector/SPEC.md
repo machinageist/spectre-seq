@@ -68,4 +68,4 @@ Make `UIState` the single UI selection authority for timeline clips while preser
 4. No-change frames preserve unrelated typed selection.
 5. Unit tests cover select, repeated selection interaction, no-change preservation, deselect, invalid index, and provisional ID behavior.
 6. View-level egui tests cover passive frames, repeated selected-clip clicks, and selected-clip deletion at the arrangement event boundary.
-7. `cargo test -p geist-daw`, `cargo test -p spectre-ui`, `cargo check --workspace`, and `git diff --check` pass.
+7. `cargo test -p spectre-seq`, `cargo test -p spectre-ui`, `cargo check --workspace`, and `git diff --check` pass.

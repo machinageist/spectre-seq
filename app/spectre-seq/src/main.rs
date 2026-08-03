@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/main.rs
+// File: app/spectre-seq/src/main.rs
 // Layer: application binary
 // Purpose: Entry point; launch the GUI, or a headless demo with --headless
 // Status: Implemented; playable egui window over the audio engine.
@@ -35,7 +35,7 @@ fn main() {
     let options = startup::parse_args(std::env::args());
     let (ui_state, workflow_diagnostics) = startup::resolve_ui_state(&options);
     for diagnostic in &workflow_diagnostics {
-        eprintln!("geist-daw: workflow config warning: {diagnostic}");
+        eprintln!("spectre-seq: workflow config warning: {diagnostic}");
     }
 
     // Headless seeds the demo arpeggio; the GUI starts quiet and is played live.
@@ -43,7 +43,7 @@ fn main() {
     let (engine, control, recorder) = match init::start(options.headless) {
         Ok(triple) => triple,
         Err(err) => {
-            eprintln!("geist-daw: failed to start audio: {err}");
+            eprintln!("spectre-seq: failed to start audio: {err}");
             std::process::exit(1);
         }
     };
@@ -51,7 +51,7 @@ fn main() {
     if options.headless {
         run_headless(engine, control);
     } else if let Err(err) = run_gui(engine, control, recorder, options.classic, ui_state) {
-        eprintln!("geist-daw: GUI error: {err}");
+        eprintln!("spectre-seq: GUI error: {err}");
         std::process::exit(1);
     }
 }
@@ -89,7 +89,7 @@ fn run_gui(
 // Auto-play the demo and report level/xruns until interrupted
 fn run_headless(engine: Engine, control: EngineControl) {
     println!(
-        "geist-daw: streaming {} channel(s) @ {} Hz — press Ctrl-C to stop",
+        "spectre-seq: streaming {} channel(s) @ {} Hz — press Ctrl-C to stop",
         engine.channels(),
         engine.sample_rate_hz()
     );
@@ -98,9 +98,9 @@ fn run_headless(engine: Engine, control: EngineControl) {
         std::thread::sleep(Duration::from_secs(STATUS_INTERVAL_SECS));
         let xruns = engine.xruns();
         if xruns != last_xruns {
-            eprintln!("geist-daw: xruns={xruns}");
+            eprintln!("spectre-seq: xruns={xruns}");
             last_xruns = xruns;
         }
-        println!("geist-daw: output level {:.3}", control.level());
+        println!("spectre-seq: output level {:.3}", control.level());
     }
 }

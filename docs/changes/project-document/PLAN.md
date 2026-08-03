@@ -122,7 +122,7 @@ Expected outcomes:
 - `RenderGeneration` built entirely on the app thread, immutable, identified by a monotonic `GenerationId`, published by a swap the audio thread cannot block on.
 - The audio thread publishing the generation it is executing and the highest control sequence it has applied.
 - A bounded timestamped control stream carrying sequence numbers and within-block sample offsets.
-- Every send result consumed; the ignored saturation bool at `app/geist-daw/src/control.rs:225` removed from the path.
+- Every send result consumed; the ignored saturation bool at `app/spectre-seq/src/control.rs:225` removed from the path.
 - Explicit reconciliation on saturation or rejected publication; the app never advances mirrors past acknowledgement.
 - A non-realtime reclaim queue for retired generations, plugin instances, and assets.
 

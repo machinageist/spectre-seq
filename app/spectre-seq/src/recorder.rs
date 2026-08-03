@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/recorder.rs
+// File: app/spectre-seq/src/recorder.rs
 // Layer: application binary
 // Purpose: Drain captured input frames into a buffer and write recorded clips
 // Status: Implemented; app-thread recorder over the backend capture ring.

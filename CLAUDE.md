@@ -10,7 +10,7 @@ Notes: Project-local agent entrypoint; load before any implementation or review
 ## Load order
 
 1. Read this file.
-2. Load `.claude/skills/geist-daw-working-context.md`.
+2. Load `.claude/skills/spectre-seq-working-context.md`.
 3. Load the domain skill that matches the files being touched.
 4. Use the narrowest `.claude/agents/*.md` agent for implementation or review.
 

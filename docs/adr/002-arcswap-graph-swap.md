@@ -118,7 +118,7 @@ path**. `graph_swap` has exactly two consumers today:
 - `crates/spectre-graph/src/swap.rs:107-136` — publish/adopt/reclaim unit tests;
 - `crates/spectre-graph/benches/graph_bench.rs:53` — the `publish_and_swap_128` bench.
 
-The shipping engine does not use it. `app/geist-daw/src/engine.rs` imports only
+The shipping engine does not use it. `app/spectre-seq/src/engine.rs` imports only
 `spectre_graph::node::AudioNode` (line 18) and runs a hand-wired fixed three-track
 path; it never builds a `Graph`, calls `compile`, or holds an `Executor`. See
 `docs/architecture.md` for that gap in full.

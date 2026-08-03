@@ -16,12 +16,12 @@ is authoritative.
 
 ## Workspace layout
 
-Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/geist-daw"]`
+Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/spectre-seq"]`
 — **17 workspace members**:
 
 - **12 library crates** under `crates/`
 - **3 first-party plugin crates** under `plugins/`
-- **1 binary**, `app/geist-daw`
+- **1 binary**, `app/spectre-seq`
 - **1 build tool**, `xtask` (an empty `fn main`; scaffold)
 
 ### `crates/`
@@ -49,7 +49,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | `spectre-fx` | Delay, reverb, chorus, saturator, EQ graph nodes | Implemented |
 | `spectre-modular` | Utility node families: math, logic, signal, timing, sample/hold | Implemented; **no consumer in the app binary**; `clap_plugins.rs` deferred |
 
-### `app/geist-daw`
+### `app/spectre-seq`
 
 | Module | Role |
 | --- | --- |
@@ -89,7 +89,7 @@ spectre-synth          -> spectre-core, spectre-graph, spectre-dsp
 spectre-fx             -> spectre-core, spectre-graph, spectre-dsp
 spectre-modular        -> spectre-core, spectre-graph
 
-app/geist-daw        -> spectre-core, spectre-graph, spectre-audio-backend,
+app/spectre-seq        -> spectre-core, spectre-graph, spectre-audio-backend,
                         spectre-synth, spectre-fx, spectre-timeline,
                         spectre-project, spectre-ui, spectre-config
 ```
@@ -99,7 +99,7 @@ worth naming because they are surprising:
 
 - **`spectre-project` depends on nothing in the workspace.** It is a parallel serde
   data model, not a projection of an in-memory one. Converting between it and live
-  app state is `app/geist-daw/src/session.rs`'s job.
+  app state is `app/spectre-seq/src/session.rs`'s job.
 - **`spectre-ui` depends only on `spectre-config`.** It does not see `spectre-core` or
   `spectre-timeline`; it owns its own renderer-facing `SessionModel` and
   `TimelineModel` types. The app binary is the only place UI types and engine types
@@ -135,8 +135,8 @@ publishes atomics. The primitives carrying that boundary:
   (8192), input capture (`crates/spectre-audio-backend/src/stream.rs`), and the
   graph-swap pair in `crates/spectre-graph/src/swap.rs`.
 - Latest-value atomics — `LevelMeter` (`AtomicU32` bit-cast `f32`,
-  `app/geist-daw/src/control.rs:114`), `BeatClock` (`AtomicU64` bit-cast `f64`,
-  `app/geist-daw/src/control.rs:137`), `XrunCounter` (`AtomicU64`,
+  `app/spectre-seq/src/control.rs:114`), `BeatClock` (`AtomicU64` bit-cast `f64`,
+  `app/spectre-seq/src/control.rs:137`), `XrunCounter` (`AtomicU64`,
   `crates/spectre-audio-backend/src/stream.rs:65`).
 
 `docs/realtime_rules.md` is the contract for what may run on the audio callback,
@@ -162,7 +162,7 @@ A unified clocking or explicit drift-correction contract is roadmap Milestone 8.
 ```
 cpal output callback
   |- BlockBridge::render                     re-blocks to a fixed channel-major block
-      |- SynthProcessor::process_block        app/geist-daw/src/engine.rs:575
+      |- SynthProcessor::process_block        app/spectre-seq/src/engine.rs:575
           |- drain the asset ring
           |- drain the EngineCommand ring     notes, transport, macros, clips
           |- per track (fixed 3):
@@ -170,7 +170,7 @@ cpal output callback
           |    |- Arrangement::advance        placed MIDI clips -> NoteEvent
           |    |- SynthNode::process          spectre-synth
           |    |- Arrangement::mix_audio      placed audio clips from the asset store
-          |    \- FxChain::process            app/geist-daw/src/fx.rs
+          |    \- FxChain::process            app/spectre-seq/src/fx.rs
           |- sum tracks, apply master gain
           \- publish meter, beat clock, scope samples
 ```
@@ -181,7 +181,7 @@ Everything in that path is hand-wired. There is no compiled graph in it.
 
 These are load-bearing gaps, not omissions from this document.
 
-1. **The compiled graph is not on the audio path.** `app/geist-daw/src/engine.rs`
+1. **The compiled graph is not on the audio path.** `app/spectre-seq/src/engine.rs`
    imports exactly one item from `spectre-graph` — `spectre_graph::node::AudioNode`
    (line 18). It never constructs a `Graph`, never calls `compile`, never holds an
    `Executor`, and never uses `graph_swap`. `spectre-graph`'s topology, compilation,
@@ -189,7 +189,7 @@ These are load-bearing gaps, not omissions from this document.
    (`crates/spectre-graph/benches/graph_bench.rs`). The running DAW and the graph
    engine are, today, two separate systems.
 2. **The engine is a fixed three-track path.** `NUM_TRACKS: usize = 3`
-   (`app/geist-daw/src/engine.rs:70`) with a fixed `TRACK_BASE_MIDI` array. Tracks
+   (`app/spectre-seq/src/engine.rs:70`) with a fixed `TRACK_BASE_MIDI` array. Tracks
    cannot be added or removed at runtime, and each track's device chain is the
    hard-coded `FxChain`, not a graph.
 3. **Typed ports are validation metadata only.** `spectre_core::port::can_connect`
@@ -214,7 +214,7 @@ These are load-bearing gaps, not omissions from this document.
    format.
 7. **`xtask` is empty** — an empty `fn main`. There is no packaging, release, or
    CI-driver tooling behind it.
-8. **`app/geist-daw/src/ipc.rs` is a scaffold.** No control-surface protocol.
+8. **`app/spectre-seq/src/ipc.rs` is a scaffold.** No control-surface protocol.
 
 ## Competing arrangement authorities
 
@@ -225,12 +225,12 @@ the central problem `docs/changes/project-document/SPEC.md` exists to fix.
 | --- | --- | --- |
 | `spectre_timeline::Timeline` | `crates/spectre-timeline/src/track.rs:91` | None outside its own crate; legacy arena handles, sample placement |
 | `spectre_document::Arrangement` | `crates/spectre-document/src/arrangement.rs` | None yet; canonical `ClipEntity` model, unwired. Relocated out of `spectre-timeline` by slice D1 and still re-exported from `spectre_timeline::prelude` for the compatibility window |
-| `app::engine::Arrangement` | `app/geist-daw/src/engine.rs:259` | The audio thread; the only one that makes sound |
+| `app::engine::Arrangement` | `app/spectre-seq/src/engine.rs:259` | The audio thread; the only one that makes sound |
 | `spectre_ui::model::TimelineModel` | `crates/spectre-ui/src/model.rs:295` | Passed `&mut` into `views::arrangement`, so the view mutates it directly |
-| `app::session::StudioSession` | `app/geist-daw/src/session.rs` | The de-facto persistence model, in float beats |
+| `app::session::StudioSession` | `app/spectre-seq/src/session.rs` | The de-facto persistence model, in float beats |
 
 The app binary uses exactly one item from `spectre-timeline`: `Transport`
-(`app/geist-daw/src/engine.rs:20`). Neither canonical arrangement model is
+(`app/spectre-seq/src/engine.rs:20`). Neither canonical arrangement model is
 reachable from the running DAW.
 
 Resolution is roadmap Milestone 2: `spectre_document::arrangement::Arrangement`

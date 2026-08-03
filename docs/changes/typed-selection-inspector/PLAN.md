@@ -38,7 +38,7 @@ Verification:
 
 Verification:
 
-- Run `cargo test -p geist-daw`.
+- Run `cargo test -p spectre-seq`.
 - Run `cargo test -p spectre-ui`.
 - Run `cargo check --workspace`.
 - Run `git diff --check`.

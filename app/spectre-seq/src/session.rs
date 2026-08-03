@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/session.rs
+// File: app/spectre-seq/src/session.rs
 // Layer: application binary
 // Purpose: Map the full studio session to and from the spectre-project file format
 // Status: Implemented; round-trips transport, mixer, macros, step grids, clips.

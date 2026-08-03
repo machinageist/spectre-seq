@@ -69,6 +69,6 @@ Removal reverses: publish a plan that no longer references the slot, then send `
 
 ## Current wiring status
 
-Not implemented. Nothing in the running app touches the compiled graph at all — `app/geist-daw/src/engine.rs` imports only `spectre_graph::node::AudioNode` and runs a hand-wired fixed three-track chain. See `docs/architecture.md`.
+Not implemented. Nothing in the running app touches the compiled graph at all — `app/spectre-seq/src/engine.rs` imports only `spectre_graph::node::AudioNode` and runs a hand-wired fixed three-track chain. See `docs/architecture.md`.
 
 Slice T2 implements this and is the first slice where the two specs meet. Its acceptance test is direct: add and remove an unrelated device, and assert an existing device's filter state, delay line, and sounding voices are untouched.

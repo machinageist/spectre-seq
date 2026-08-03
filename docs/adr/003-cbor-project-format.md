@@ -30,8 +30,8 @@ What the prototype actually does today — all of it pre-v1, none of it binding:
 | blake3 content-addressed asset references, never embedded | `crates/spectre-project/src/asset_map.rs` |
 | Temp-sibling + rename atomic write | `crates/spectre-project/src/autosave.rs:29` |
 | 60 s background autosave to a `.geist-autosave` sidecar | `crates/spectre-project/src/autosave.rs:23` |
-| Flat `<name>.gproj` plus sibling `<stem>.assets/Takes/<blake3>.wav` | `app/geist-daw/src/session.rs:425-438` |
-| Fixed session slot at `$HOME/geist-studio.gproj` | `app/geist-daw/src/session.rs:24,468` |
+| Flat `<name>.gproj` plus sibling `<stem>.assets/Takes/<blake3>.wav` | `app/spectre-seq/src/session.rs:425-438` |
+| Fixed session slot at `$HOME/geist-studio.gproj` | `app/spectre-seq/src/session.rs:24,468` |
 
 Three of those contradict the accepted contract and are recorded here as
 implementation debt, not as precedent:
@@ -40,7 +40,7 @@ implementation debt, not as precedent:
    `std::fs::write` directly. Only the autosaver uses `atomic_write_cbor`. The
    product contract requires the opposite pairing — atomic manual save, and an
    autosave that never overwrites the last known-good manual save.
-2. **Load mutates live state incrementally.** `app/geist-daw/src/studio.rs:484-494`
+2. **Load mutates live state incrementally.** `app/spectre-seq/src/studio.rs:484-494`
    tears down the engine's clips and resets the asset budget while reading the
    file. A failed load leaves a half-replaced session.
 3. **The package is a flat file with an ad-hoc sibling directory**, not a
@@ -116,7 +116,7 @@ Until then, treat CBOR as the prototype's incumbent, not as settled.
 - **`spectre-project` gains a dependency on `spectre-document`** and loses its role as
   a de-facto data model. The `ProjectFile` DTO tree becomes a serialization
   projection of the document rather than a parallel schema.
-- **`app/geist-daw/src/session.rs` becomes a persistence adapter and is then
+- **`app/spectre-seq/src/session.rs` becomes a persistence adapter and is then
   deleted** (SPEC slice D8). `StudioSession` is not a durable authority.
 - **The flat `.gproj` file becomes a package directory.** That is a breaking
   format change, permitted pre-v1, and it needs diagnostics plus fixture-tested
@@ -138,7 +138,7 @@ Until then, treat CBOR as the prototype's incumbent, not as settled.
   recordings, renders, freezes, autosaves, and cache have different lifetimes and
   different delete-safety. One opaque file cannot express that, and it forces the
   app to invent sibling directories anyway — which
-  `app/geist-daw/src/session.rs:425` already does.
+  `app/spectre-seq/src/session.rs:425` already does.
 - **Bundle everything inside one archive (zip-style).** Portable and atomic to
   copy. Rejected for now: it makes large recorded media expensive to write
   incrementally and hostile to external tooling. Revisit as an export format, not

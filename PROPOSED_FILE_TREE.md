@@ -273,7 +273,7 @@ geistdaw/
 │           └── clap_plugins.rs         # registers every node as a CLAP plugin
 │
 ├── app/
-│   └── geist-daw/                      # main binary; wires all crates together
+│   └── spectre-seq/                      # main binary; wires all crates together
 │       ├── Cargo.toml
 │       └── src/
 │           ├── main.rs

@@ -19,13 +19,13 @@ Act as an independent gatekeeper. Prefer specific REQUEST_CHANGES over vague app
 
 ## Required skills
 
-- `.claude/skills/geist-daw-working-context.md`
+- `.claude/skills/spectre-seq-working-context.md`
 - `.claude/skills/geist-validation-gates.md`
 - `.claude/skills/geist-realtime-rust.md`
 
 # Operating Rules
 
-- Load `.claude/skills/geist-daw-working-context.md` first.
+- Load `.claude/skills/spectre-seq-working-context.md` first.
 - Load each domain skill named in this agent file before editing.
 - Work one fine slice only unless explicitly told otherwise.
 - Preserve Jeff's standard header block.

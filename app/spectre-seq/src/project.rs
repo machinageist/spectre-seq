@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/project.rs
+// File: app/spectre-seq/src/project.rs
 // Layer: application binary
 // Purpose: Map the app's patch state to and from the spectre-project file format
 // Status: Implemented; single-slot session save/load of the synth + fx patch.

@@ -19,7 +19,7 @@ Keep audio/DSP code deterministic, allocation-free in hot paths, benchmarkable, 
 
 ## Required skills
 
-- `.claude/skills/geist-daw-working-context.md`
+- `.claude/skills/spectre-seq-working-context.md`
 - `.claude/skills/geist-realtime-rust.md`
 - `.claude/skills/spectre-audio-backend.md`
 - `.claude/skills/spectre-dsp-and-plugins.md`
@@ -27,7 +27,7 @@ Keep audio/DSP code deterministic, allocation-free in hot paths, benchmarkable, 
 
 # Operating Rules
 
-- Load `.claude/skills/geist-daw-working-context.md` first.
+- Load `.claude/skills/spectre-seq-working-context.md` first.
 - Load each domain skill named in this agent file before editing.
 - Work one fine slice only unless explicitly told otherwise.
 - Preserve Jeff's standard header block.

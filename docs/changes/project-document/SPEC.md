@@ -24,9 +24,9 @@ Five owners currently hold overlapping durable arrangement and project truth:
 
 - `spectre_timeline::Timeline` (`crates/spectre-timeline/src/track.rs:91`) — legacy arena handles, sample placement.
 - `spectre_timeline::Arrangement` (`crates/spectre-timeline/src/arrangement.rs`) — canonical entities, zero consumers.
-- `app::engine::Arrangement` (`app/geist-daw/src/engine.rs:259`) — audio-thread copy, fixed `NUM_TRACKS`.
+- `app::engine::Arrangement` (`app/spectre-seq/src/engine.rs:259`) — audio-thread copy, fixed `NUM_TRACKS`.
 - `spectre_ui::model::TimelineModel` (`crates/spectre-ui/src/model.rs:295`) — renderer-facing, directly mutated.
-- `app::session::StudioSession` (`app/geist-daw/src/session.rs:121`) — de-facto persistence model in float beats.
+- `app::session::StudioSession` (`app/spectre-seq/src/session.rs:121`) — de-facto persistence model in float beats.
 
 Consequences visible in the code today:
 

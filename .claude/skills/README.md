@@ -7,11 +7,11 @@ Notes: Keep this list synchronized when adding, removing, or renaming local skil
 
 # Geist DAW Skills Index
 
-Load `geist-daw-working-context` first for all repo work.
+Load `spectre-seq-working-context` first for all repo work.
 
 ## Skills
 
-- `geist-daw-working-context`: repository shape, phase order, execution posture, skill map.
+- `spectre-seq-working-context`: repository shape, phase order, execution posture, skill map.
 - `geist-realtime-rust`: realtime audio Rust safety and comment rules.
 - `spectre-graph-engine`: graph topology, routing, process-list compilation, atomic swap.
 - `spectre-audio-backend`: platform audio I/O and callback boundary.

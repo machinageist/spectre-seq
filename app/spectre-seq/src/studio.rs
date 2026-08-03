@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/studio.rs
+// File: app/spectre-seq/src/studio.rs
 // Layer: application binary
 // Purpose: Front-end on the spectre-ui studio shell, bridged to the audio engine
 // Status: Implemented; lens shell (mixer/rack/graph/arrange/browser) over the

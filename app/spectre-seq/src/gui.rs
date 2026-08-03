@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/gui.rs
+// File: app/spectre-seq/src/gui.rs
 // Layer: application binary
 // Purpose: egui front-end: a playable keyboard, transport, and output meter
 // Status: Implemented; minimal playable synth window over the control plane.

@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/fx.rs
+// File: app/spectre-seq/src/fx.rs
 // Layer: application binary
 // Purpose: Post-synth effects chain (delay -> reverb) over channel-major buffers
 // Status: Implemented; toggleable delay and reverb with a ping-pong scratch.

@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/startup.rs
+// File: app/spectre-seq/src/startup.rs
 // Layer: application binary
 // Purpose: Parse launch options and resolve startup workflow configuration
 // Status: Implemented; app-thread workflow files choose the initial UI state.
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn parses_workflow_flags() {
         let options = parse_args([
-            "geist-daw".to_string(),
+            "spectre-seq".to_string(),
             "--workflow".to_string(),
             "custom.toml".to_string(),
             "--headless".to_string(),
@@ -158,7 +158,7 @@ mod tests {
         assert_eq!(options.workflow_file, Some(PathBuf::from("custom.toml")));
 
         let options = parse_args([
-            "geist-daw".to_string(),
+            "spectre-seq".to_string(),
             "--classic".to_string(),
             "--workflow=other.toml".to_string(),
         ]);
@@ -225,6 +225,6 @@ visible = ["arrange"]
     }
 
     fn temp_root(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("geist-daw-{name}-{}", std::process::id()))
+        std::env::temp_dir().join(format!("spectre-seq-{name}-{}", std::process::id()))
     }
 }

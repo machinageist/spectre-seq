@@ -19,7 +19,7 @@ There is exactly one callback path in the shipping app:
 cpal output callback closure           crates/spectre-audio-backend/src/cpal_backend.rs:182
   |- BlockBridge::render                crates/spectre-audio-backend/src/bridge.rs:49
       \- BlockProcessor::process_block   crates/spectre-audio-backend/src/bridge.rs:17
-          \- SynthProcessor::process_block   app/geist-daw/src/engine.rs:575
+          \- SynthProcessor::process_block   app/spectre-seq/src/engine.rs:575
 ```
 
 The bridge exists because backends honor a requested buffer size only sometimes.
@@ -67,10 +67,10 @@ Every audio-thread buffer is sized once during construction and never grows:
 
 | Bound | Value | Where |
 | --- | --- | --- |
-| `MAX_BLOCK_EVENTS` | 64 | `app/geist-daw/src/engine.rs:174` |
-| `MAX_CLIPS_PER_TRACK` | 64 | `app/geist-daw/src/engine.rs:199` |
-| `MAX_CLIP_NOTES` | 256 | `app/geist-daw/src/engine.rs:197` |
-| `MAX_AUDIO_ASSETS` | 64 | `app/geist-daw/src/engine.rs:27` |
+| `MAX_BLOCK_EVENTS` | 64 | `app/spectre-seq/src/engine.rs:174` |
+| `MAX_CLIPS_PER_TRACK` | 64 | `app/spectre-seq/src/engine.rs:199` |
+| `MAX_CLIP_NOTES` | 256 | `app/spectre-seq/src/engine.rs:197` |
+| `MAX_AUDIO_ASSETS` | 64 | `app/spectre-seq/src/engine.rs:27` |
 | `CAPTURE_RING_CAPACITY` | 65536 | `crates/spectre-audio-backend/src/stream.rs:15` |
 
 Each has a matching `Vec::with_capacity` at construction, and each write site
@@ -98,7 +98,7 @@ exactly that capacity at `engine.rs:230,268-269`.
 All app-to-audio traffic crosses an `rtrb` single-producer/single-consumer ring.
 Ownership moves; nothing is shared and nothing is refcounted on the callback.
 
-- **Control** — `EngineCommand` (`app/geist-daw/src/control.rs:30`), drained at
+- **Control** — `EngineCommand` (`app/spectre-seq/src/control.rs:30`), drained at
   the top of `process_block`. `EngineCommand` is `Copy`, so draining it cannot
   allocate or drop.
 - **Assets** — recorded audio arrives as an `AudioAsset` whose `Arc<[f32]>` was
@@ -155,7 +155,7 @@ that the rules are mechanically guaranteed.
    debug build. The rules are enforced by review, not by tooling. A guarding
    allocator is scoped in `docs/changes/project-document/SPEC.md` slice D5.
 2. **Saturation results are discarded.** `EngineControl::send`
-   (`app/geist-daw/src/control.rs:225`) returns `false` when the ring is full, and
+   (`app/spectre-seq/src/control.rs:225`) returns `false` when the ring is full, and
    every one of its 103 call sites ignores it. The app therefore believes commands
    landed that the engine never received. The acknowledged-publication protocol in
    slice D5 exists to make this divergence impossible; until then it is a known
@@ -164,7 +164,7 @@ that the rules are mechanically guaranteed.
    against the 48 kHz / 128-frame baseline or the 64-frame stress mode. The
    criterion benches (`crates/spectre-graph/benches/graph_bench.rs`) cover graph
    compile and swap, not end-to-end callback headroom. Roadmap Milestone 3.
-4. **The compiled graph is not on the audio path.** `app/geist-daw/src/engine.rs`
+4. **The compiled graph is not on the audio path.** `app/spectre-seq/src/engine.rs`
    imports only `spectre_graph::node::AudioNode` and runs a hand-wired fixed
    three-track chain. The executor and swap are exercised only by their own tests
    and bench. Rules 1-8 apply to the hand-wired path today and to the compiled

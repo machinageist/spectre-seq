@@ -19,14 +19,14 @@ Connect musical/project state to a command-driven UI without letting UI own core
 
 ## Required skills
 
-- `.claude/skills/geist-daw-working-context.md`
+- `.claude/skills/spectre-seq-working-context.md`
 - `.claude/skills/spectre-ui-workflow.md`
 - `.claude/skills/spectre-project-timeline.md`
 - `.claude/skills/geist-validation-gates.md`
 
 # Operating Rules
 
-- Load `.claude/skills/geist-daw-working-context.md` first.
+- Load `.claude/skills/spectre-seq-working-context.md` first.
 - Load each domain skill named in this agent file before editing.
 - Work one fine slice only unless explicitly told otherwise.
 - Preserve Jeff's standard header block.

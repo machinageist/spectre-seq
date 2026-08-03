@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/control.rs
+// File: app/spectre-seq/src/control.rs
 // Layer: application binary
 // Purpose: Lock-free control plane between the UI thread and the audio thread
 // Status: Implemented; note/transport commands plus an atomic level meter.

@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/graph_view.rs
+// File: app/spectre-seq/src/graph_view.rs
 // Layer: application binary
 // Purpose: Node-graph view of the live signal chain (synth -> fx -> out)
 // Status: Implemented; draggable nodes, bezier cables, click-to-bypass effects.

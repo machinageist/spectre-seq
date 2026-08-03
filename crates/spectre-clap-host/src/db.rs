@@ -27,7 +27,7 @@ use crate::bundle::{ClapBundle, ClapPluginDescriptor};
 // Bump when the cache layout changes; an older version loads as empty
 const CACHE_VERSION: u32 = 1;
 // Where the cache file lives within the platform cache directory
-const CACHE_DIR_NAME: &str = "geist-daw";
+const CACHE_DIR_NAME: &str = "spectre-seq";
 const CACHE_FILE_NAME: &str = "clap-metadata.cbor";
 
 // Filesystem fingerprint used to detect that a bundle changed on disk

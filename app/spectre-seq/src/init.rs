@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/init.rs
+// File: app/spectre-seq/src/init.rs
 // Layer: application binary
 // Purpose: Startup: pick a device-compatible config and start the audio stream
 // Status: Implemented; output-only stream driving the demo synth processor.

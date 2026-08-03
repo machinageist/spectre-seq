@@ -1,5 +1,5 @@
 // =============================================================================
-// File: app/geist-daw/src/ipc.rs
+// File: app/spectre-seq/src/ipc.rs
 // Layer: application binary
 // Purpose: optional: OSC/socket control surface protocol
 // Status: Pseudocode scaffold; implementation intentionally pending.

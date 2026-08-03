@@ -93,7 +93,7 @@ Verification: `cargo test -p spectre-graph`; swap-during-control-traffic test.
 
 One instrument, one effect, one meter, driven end to end by the compiled graph. The first slice that makes a sound through the typed engine, and the reason it sits here rather than at the end: it catches contract errors before cycles, buses, and lanes are built on top of them (decision 17).
 
-Verification: `cargo run -p geist-daw -- --headless` produces audio through the compiled path; callback benchmark at 128 and 64 frames.
+Verification: `cargo run -p spectre-seq -- --headless` produces audio through the compiled path; callback benchmark at 128 and 64 frames.
 
 ## Slice T6 — Cycles and latency
 

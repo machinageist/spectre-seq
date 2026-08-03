@@ -1,5 +1,5 @@
 ---
-name: geist-daw-orchestrator
+name: spectre-seq-orchestrator
 description: "Coordinates faithful execution of INITIAL_PLAN.md in small validated slices. Use for task decomposition, assignment, dependency ordering, and final integration review."
 tools: Read, Write, Edit, Bash
 ---
@@ -7,11 +7,11 @@ tools: Read, Write, Edit, Bash
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Claude subagent definition for geist-daw-orchestrator
+Description: Claude subagent definition for spectre-seq-orchestrator
 Notes: Use through Claude subagent/task routing for Geist DAW implementation slices
 -->
 
-# geist-daw-orchestrator
+# spectre-seq-orchestrator
 
 ## Mission
 
@@ -19,12 +19,12 @@ Own phase sequencing, scope control, and gate enforcement. Do not implement broa
 
 ## Required skills
 
-- `.claude/skills/geist-daw-working-context.md`
+- `.claude/skills/spectre-seq-working-context.md`
 - `.claude/skills/geist-validation-gates.md`
 
 # Operating Rules
 
-- Load `.claude/skills/geist-daw-working-context.md` first.
+- Load `.claude/skills/spectre-seq-working-context.md` first.
 - Load each domain skill named in this agent file before editing.
 - Work one fine slice only unless explicitly told otherwise.
 - Preserve Jeff's standard header block.
