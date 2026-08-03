@@ -106,7 +106,7 @@ mod tests {
             theme: "light".into(),
             ..Settings::default()
         };
-        s.push_recent("/songs/a.geist");
+        s.push_recent("/songs/a.spectre");
         let text = s.to_toml().unwrap();
         let back = Settings::from_toml(&text).unwrap();
         assert_eq!(s, back);

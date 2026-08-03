@@ -16,7 +16,7 @@ use vst3::Steinberg::Vst::{IHostApplication, IHostApplicationTrait, String128, T
 use vst3::Steinberg::{kInvalidArgument, kNotImplemented, kResultOk, tresult, TUID};
 
 // Name reported to plugins that query the host
-const HOST_NAME: &str = "Geist";
+const HOST_NAME: &str = "Spectre";
 
 // Minimal IHostApplication implementation handed to each plugin at init
 pub struct HostApplication {
@@ -57,7 +57,7 @@ impl IHostApplicationTrait for HostApplication {
         kResultOk
     }
 
-    // Geist does not vend host objects (IMessage / IAttributeList) yet
+    // Spectre does not vend host objects (IMessage / IAttributeList) yet
     unsafe fn createInstance(
         &self,
         _cid: *mut TUID,
@@ -77,7 +77,7 @@ mod tests {
         let host = HostApplication::new();
         assert_eq!(
             host.name_utf16,
-            "Geist".encode_utf16().collect::<Vec<u16>>()
+            "Spectre".encode_utf16().collect::<Vec<u16>>()
         );
     }
 }

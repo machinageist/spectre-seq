@@ -37,7 +37,7 @@ pub fn draw_studio(
     let mut out = StudioResponse::default();
     handle_pane_focus_shortcuts(ui, state);
 
-    let transport_pressed = egui::Panel::top("geist_transport")
+    let transport_pressed = egui::Panel::top("spectre_transport")
         .frame(pane_frame(state.focused_pane() == WorkspacePane::Transport))
         .show_inside(ui, |ui| {
             transport_bar(ui, state, session, &mut out);
@@ -48,7 +48,7 @@ pub fn draw_studio(
         state.focus_pane(WorkspacePane::Transport);
     }
 
-    let monitor_pressed = egui::Panel::bottom("geist_monitor")
+    let monitor_pressed = egui::Panel::bottom("spectre_monitor")
         .resizable(false)
         .frame(pane_frame(state.focused_pane() == WorkspacePane::Monitor))
         .show_inside(ui, |ui| {
@@ -160,7 +160,7 @@ fn transport_bar(
     out: &mut StudioResponse,
 ) {
     ui.horizontal(|ui| {
-        ui.heading(RichText::new("GEIST").color(theme::ACCENT));
+        ui.heading(RichText::new("SPECTRE").color(theme::ACCENT));
         ui.separator();
 
         let play_label = if session.transport.playing {

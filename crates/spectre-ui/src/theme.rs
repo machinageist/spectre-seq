@@ -81,7 +81,7 @@ pub fn meter_color(fraction: f32) -> Color32 {
     }
 }
 
-// The Geist tactile-dark theme; installs an egui Style for the whole context
+// The Spectre tactile-dark theme; installs an egui Style for the whole context
 pub struct SpectreTheme;
 
 impl SpectreTheme {

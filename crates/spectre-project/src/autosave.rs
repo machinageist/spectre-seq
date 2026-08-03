@@ -187,7 +187,7 @@ mod tests {
         atomic_write_cbor(&ProjectFile::new("a"), autosave_path(&dir, "a")).unwrap();
         atomic_write_cbor(&ProjectFile::new("b"), autosave_path(&dir, "b")).unwrap();
         // A normal project file must not be reported as a recovery candidate
-        atomic_write_cbor(&ProjectFile::new("c"), dir.join("c.geist")).unwrap();
+        atomic_write_cbor(&ProjectFile::new("c"), dir.join("c.spectre")).unwrap();
 
         let found = find_recovery_files(&dir);
         assert_eq!(found.len(), 2);

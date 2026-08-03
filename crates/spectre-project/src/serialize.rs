@@ -147,7 +147,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("geist_{tag}_{nanos}.geist"))
+        std::env::temp_dir().join(format!("spectre_{tag}_{nanos}.spectre"))
     }
 
     #[test]
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn missing_file_is_io_error() {
-        let err = load_from_path("/nonexistent/geist/path.geist").unwrap_err();
+        let err = load_from_path("/nonexistent/spectre/path.spectre").unwrap_err();
         assert!(matches!(err, ProjectError::Io(_)));
     }
 }

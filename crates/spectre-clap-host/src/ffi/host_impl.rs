@@ -37,7 +37,7 @@ const HOST_URL: &[u8] = b"https://spectre.audio\0";
 const HOST_VERSION: &[u8] = b"0.1.0\0";
 
 // Shared stub host: identifies the host and exposes the log + params extensions
-static GEIST_HOST: clap_host = clap_host {
+static SPECTRE_HOST: clap_host = clap_host {
     clap_version: CLAP_VERSION,
     host_data: std::ptr::null_mut(),
     name: HOST_NAME.as_ptr() as *const c_char,
@@ -73,7 +73,7 @@ static HOST_GUI: clap_host_gui = clap_host_gui {
 
 // The shared stub host; its 'static reference is valid for the whole program
 pub fn host() -> &'static clap_host {
-    &GEIST_HOST
+    &SPECTRE_HOST
 }
 
 // Resolve a host extension the plugin asks for; null when unsupported
