@@ -1,9 +1,9 @@
 // =============================================================================
 // File: app/geist-daw/src/project.rs
 // Layer: application binary
-// Purpose: Map the app's patch state to and from the geist-project file format
+// Purpose: Map the app's patch state to and from the spectre-project file format
 // Status: Implemented; single-slot session save/load of the synth + fx patch.
-// Notes: The on-disk schema lives in geist-project; this is the app-side mapping
+// Notes: The on-disk schema lives in spectre-project; this is the app-side mapping
 //        the crate intentionally leaves to callers. Tempo rides in ProjectMeta;
 //        the patch is one NodeEntry whose params are keyed by stable ids. Disk
 //        I/O only; never touched from the audio thread.
@@ -12,7 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
-use geist_project::prelude::{
+use spectre_project::prelude::{
     load_from_path, save_to_path, NodeEntry, ParamValue, ProjectError, ProjectFile,
 };
 

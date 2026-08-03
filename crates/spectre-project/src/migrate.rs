@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-project/src/migrate.rs
+// File: crates/spectre-project/src/migrate.rs
 // Layer: project persistence
 // Purpose: Forward-migrate older project files up to the current schema
 // Status: Implemented; ordered step engine plus a load-and-migrate helper.

@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-project/src/serialize.rs
+// File: crates/spectre-project/src/serialize.rs
 // Layer: project persistence
 // Purpose: CBOR encode/decode of the project file and the crate error type
 // Status: Implemented; byte and path round-trips over ciborium.

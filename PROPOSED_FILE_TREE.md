@@ -173,7 +173,7 @@ geistdaw/
 │   │       └── tests/
 │   │           └── mod_sum_tests.rs
 │   │
-│   ├── geist-project/                  # save/load; project format versioning
+│   ├── spectre-project/                  # save/load; project format versioning
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs

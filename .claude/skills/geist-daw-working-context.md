@@ -72,7 +72,7 @@ Notes: Non-obvious context, design decisions
 - Audio backends and callbacks: load `geist-audio-backend` and `geist-realtime-rust`.
 - DSP, synth, fx, modular utilities: load `spectre-dsp-and-plugins` and `geist-realtime-rust`.
 - CLAP/LV2 hosting: load `geist-plugin-hosting` and `geist-realtime-rust`.
-- Timeline, automation, persistence: load `geist-project-timeline`.
+- Timeline, automation, persistence: load `spectre-project-timeline`.
 - UI work: load `geist-ui-workflow`.
 - Any review: load `geist-validation-gates` plus the domain skill.
 

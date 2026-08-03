@@ -1526,7 +1526,6 @@ dependencies = [
  "geist-audio-backend",
  "geist-fx",
  "geist-graph",
- "geist-project",
  "geist-synth",
  "geist-timeline",
  "geist-ui",
@@ -1535,6 +1534,7 @@ dependencies = [
  "rtrb",
  "spectre-config",
  "spectre-core",
+ "spectre-project",
 ]
 
 [[package]]
@@ -1568,17 +1568,6 @@ version = "0.1.0"
 dependencies = [
  "geist-graph",
  "spectre-core",
-]
-
-[[package]]
-name = "geist-project"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "ciborium",
- "serde",
- "serde_bytes",
- "toml",
 ]
 
 [[package]]
@@ -3604,6 +3593,17 @@ dependencies = [
 [[package]]
 name = "spectre-lv2-host"
 version = "0.1.0"
+
+[[package]]
+name = "spectre-project"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ciborium",
+ "serde",
+ "serde_bytes",
+ "toml",
+]
 
 [[package]]
 name = "spirv"

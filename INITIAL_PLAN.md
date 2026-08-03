@@ -124,7 +124,7 @@ Notes: Preserved as historical planning context; living product authority is lin
 
 ## Phase 9 — Project Format & Persistence (Weeks 24–28)
 
-- `geist-project`: serialization of the entire DAW state to disk
+- `spectre-project`: serialization of the entire DAW state to disk
 - Format: `CBOR` (compact binary) or `MessagePack` for the main project file; human-readable `TOML` for settings
 - Project file contains: graph topology, all parameter values, all clip data, plugin state blobs (opaque bytes from CLAP), automation curves
 - Audio files are referenced by relative path + content hash (blake3); never embedded — project portability is the user's responsibility

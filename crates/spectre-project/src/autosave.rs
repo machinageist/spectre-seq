@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-project/src/autosave.rs
+// File: crates/spectre-project/src/autosave.rs
 // Layer: project persistence
 // Purpose: Atomic saves, crash-recovery scanning, background autosave thread
 // Status: Implemented; temp+rename writes and an RAII autosaver handle.

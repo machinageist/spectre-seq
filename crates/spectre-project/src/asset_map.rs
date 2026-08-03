@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-project/src/asset_map.rs
+// File: crates/spectre-project/src/asset_map.rs
 // Layer: project persistence
 // Purpose: Content-addressed registry of external audio assets
 // Status: Implemented; blake3 hashing with relative-path references and dedup.

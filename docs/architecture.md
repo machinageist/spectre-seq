@@ -34,7 +34,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | `geist-audio-backend` | Backend abstraction, `BlockBridge`, cpal backend, capture ring, xrun counter | cpal implemented; JACK and PipeWire are scaffolds |
 | `geist-timeline` | Transport, tempo map, playhead, arena clips/patterns, legacy `Timeline`, canonical `Arrangement`/`ClipEntity`, identity | Mixed; see "Competing arrangement authorities" |
 | `geist-automation` | Curves, lanes, routes, modulation matrix, evaluator | Implemented; **no consumer in the app binary** |
-| `geist-project` | On-disk project schema, CBOR serialize, TOML settings, blake3 asset map, migration, autosave | Implemented; **zero workspace dependencies** — a standalone serde DTO tree |
+| `spectre-project` | On-disk project schema, CBOR serialize, TOML settings, blake3 asset map, migration, autosave | Implemented; **zero workspace dependencies** — a standalone serde DTO tree |
 | `spectre-config` | Workflow profile schema, TOML loader, keybindings, command intents, validation | Implemented |
 | `geist-ui` | UI state, typed selection, commands, egui renderer, views, widgets, theme | Implemented incrementally |
 | `geist-vst-host` | VST3 host over raw `vst3` COM bindings; scanner, bundle, module, instance, `VstPluginNode` | Implemented, compile-checked; FFI crate, does not deny unsafe |
@@ -61,7 +61,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | `control.rs` | The app/audio boundary: `EngineCommand` ring, asset ring, scope ring, meters, beat clock |
 | `studio.rs` | The real front-end: lens shell over `geist-ui`, diffing a `SessionModel` mirror into `EngineCommand`s |
 | `gui.rs`, `graph_view.rs` | Minimal window and node-graph view |
-| `session.rs`, `project.rs` | Mapping app state to and from `geist-project`'s `ProjectFile` |
+| `session.rs`, `project.rs` | Mapping app state to and from `spectre-project`'s `ProjectFile` |
 | `recorder.rs` | App-thread drain of the capture ring; WAV write |
 | `ipc.rs` | Scaffold (OSC/socket control surface) |
 
@@ -73,7 +73,7 @@ Actual `[dependencies]` edges between workspace members:
 spectre-core        (no workspace deps)
 spectre-config      (no workspace deps)
 spectre-dsp         (no workspace deps; rustfft)
-geist-project     (no workspace deps; serde/ciborium/toml/blake3)
+spectre-project     (no workspace deps; serde/ciborium/toml/blake3)
 spectre-lv2-host    (no workspace deps)
 xtask             (no workspace deps)
 
@@ -91,13 +91,13 @@ geist-modular        -> spectre-core, geist-graph
 
 app/geist-daw        -> spectre-core, geist-graph, geist-audio-backend,
                         geist-synth, geist-fx, geist-timeline,
-                        geist-project, geist-ui, spectre-config
+                        spectre-project, geist-ui, spectre-config
 ```
 
 The direction is acyclic and `spectre-core` is the only shared root. Two edges are
 worth naming because they are surprising:
 
-- **`geist-project` depends on nothing in the workspace.** It is a parallel serde
+- **`spectre-project` depends on nothing in the workspace.** It is a parallel serde
   data model, not a projection of an in-memory one. Converting between it and live
   app state is `app/geist-daw/src/session.rs`'s job.
 - **`geist-ui` depends only on `spectre-config`.** It does not see `spectre-core` or
@@ -126,7 +126,7 @@ Four kinds of thread exist at runtime.
 | Main / app | eframe native event loop (`main.rs`) | UI, session state, project I/O, recorder drain, config, all mutation |
 | Audio output | cpal (`crates/geist-audio-backend/src/cpal_backend.rs:180`) | `BlockBridge::render` -> `SynthProcessor::process_block` |
 | Audio input | cpal (`crates/geist-audio-backend/src/cpal_backend.rs:237`) | Pushes interleaved capture frames into a lock-free ring |
-| Autosave worker | `geist_project::autosave::Autosaver` | 60 s snapshot writes; never touches audio state |
+| Autosave worker | `spectre_project::autosave::Autosaver` | 60 s snapshot writes; never touches audio state |
 
 The app thread owns mutation; the audio thread consumes bounded queues and
 publishes atomics. The primitives carrying that boundary:

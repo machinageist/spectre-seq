@@ -104,8 +104,8 @@ Positional breakpoint keying applies here identically to CC2, so the two share o
 Delete only when the replacement round-trips through persistence:
 
 - `geist_timeline::Clip` and `geist_timeline::Pattern` as content holders;
-- `geist_project::schema::ClipKind::Audio { asset_index: usize }` and `ClipKind::Automation { lane_index: usize }` — vector positions used as durable references, which have to go regardless;
-- `geist_project::schema::NoteEntry`, which carries no note identity at all.
+- `spectre_project::schema::ClipKind::Audio { asset_index: usize }` and `ClipKind::Automation { lane_index: usize }` — vector positions used as durable references, which have to go regardless;
+- `spectre_project::schema::NoteEntry`, which carries no note identity at all.
 
 ## Standing verification for every slice
 

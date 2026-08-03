@@ -23,13 +23,13 @@ What the prototype actually does today — all of it pre-v1, none of it binding:
 
 | Behavior | Where |
 | --- | --- |
-| Single-file CBOR encode/decode over `ciborium` | `crates/geist-project/src/serialize.rs:57` |
-| `SCHEMA_VERSION: u32 = 1`; newer files rejected | `crates/geist-project/src/schema.rs:15`, `migrate.rs` |
-| Forward-migration step table, currently empty | `crates/geist-project/src/migrate.rs:23` |
-| Global settings as human-readable TOML | `crates/geist-project/src/settings.rs` |
-| blake3 content-addressed asset references, never embedded | `crates/geist-project/src/asset_map.rs` |
-| Temp-sibling + rename atomic write | `crates/geist-project/src/autosave.rs:29` |
-| 60 s background autosave to a `.geist-autosave` sidecar | `crates/geist-project/src/autosave.rs:23` |
+| Single-file CBOR encode/decode over `ciborium` | `crates/spectre-project/src/serialize.rs:57` |
+| `SCHEMA_VERSION: u32 = 1`; newer files rejected | `crates/spectre-project/src/schema.rs:15`, `migrate.rs` |
+| Forward-migration step table, currently empty | `crates/spectre-project/src/migrate.rs:23` |
+| Global settings as human-readable TOML | `crates/spectre-project/src/settings.rs` |
+| blake3 content-addressed asset references, never embedded | `crates/spectre-project/src/asset_map.rs` |
+| Temp-sibling + rename atomic write | `crates/spectre-project/src/autosave.rs:29` |
+| 60 s background autosave to a `.geist-autosave` sidecar | `crates/spectre-project/src/autosave.rs:23` |
 | Flat `<name>.gproj` plus sibling `<stem>.assets/Takes/<blake3>.wav` | `app/geist-daw/src/session.rs:425-438` |
 | Fixed session slot at `$HOME/geist-studio.gproj` | `app/geist-daw/src/session.rs:24,468` |
 
@@ -78,7 +78,7 @@ A Geist project is a **directory package**, not a single file.
 - **Atomic manual save.** Manual saves replace the manifest atomically. Autosave
   and startup recovery write elsewhere in the package and never overwrite the last
   known-good manual save.
-- **Persistence is a projection.** `geist-project` serializes a projection of the
+- **Persistence is a projection.** `spectre-project` serializes a projection of the
   app-thread `ProjectDocument`, not a renderer-facing mirror. The on-disk contract
   carries no vector indices and no runtime handles.
 - **Pre-v1 breaks are allowed.** Until stable format v1 is declared, prototype
@@ -96,7 +96,7 @@ neither document.
 
 The encoding is therefore **open**, and this ADR does not close it.
 CBOR-via-`ciborium` is what the prototype happens to use — a fact about
-`crates/geist-project/src/serialize.rs`, not a ratified outcome. This ADR's
+`crates/spectre-project/src/serialize.rs`, not a ratified outcome. This ADR's
 filename is not evidence of a decision.
 
 Candidates still live: CBOR, MessagePack, or a human-diffable text manifest with
@@ -113,7 +113,7 @@ Until then, treat CBOR as the prototype's incumbent, not as settled.
 
 ## Consequences
 
-- **`geist-project` gains a dependency on `geist-document`** and loses its role as
+- **`spectre-project` gains a dependency on `geist-document`** and loses its role as
   a de-facto data model. The `ProjectFile` DTO tree becomes a serialization
   projection of the document rather than a parallel schema.
 - **`app/geist-daw/src/session.rs` becomes a persistence adapter and is then

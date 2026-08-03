@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-project/src/settings.rs
+// File: crates/spectre-project/src/settings.rs
 // Layer: project persistence
 // Purpose: Global application settings as human-readable TOML
 // Status: Implemented; TOML round-trip with defaulted missing keys.

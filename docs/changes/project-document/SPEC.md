@@ -81,9 +81,9 @@ Dependency direction:
 
 - `spectre-core` owns shared domain vocabulary: the durable ID family, `MusicalTime`, `TICKS_PER_QUARTER`, sample coordinates, normalized values, and curve-shape vocabulary.
 - `geist-document` depends on `spectre-core` only.
-- `geist-project` depends on `geist-document` and owns schema, serialization, migration, and the project package.
+- `spectre-project` depends on `geist-document` and owns schema, serialization, migration, and the project package.
 - `geist-ui` depends on `geist-document` for read-only projections and typed intent types.
-- `geist-document` never depends on `geist-timeline`, `geist-project`, `geist-ui`, or the app.
+- `geist-document` never depends on `geist-timeline`, `spectre-project`, `geist-ui`, or the app.
 
 `MusicalTime`, `TICKS_PER_QUARTER`, and the canonical identity allocator relocate out of `geist-timeline`. `geist-timeline` re-exports them during the compatibility window so no consumer breaks in the same slice as the move. `PROPOSED_FILE_TREE.md` is revised to match once slice 1 lands.
 
@@ -243,7 +243,7 @@ Deferred to their own specs and interviews: launcher content and launch quantiza
 - **D3 — Arrangement domain onto the document.** Canonical arrangement under document ownership; create, delete, move, cross-track move, right resize as transactions. This un-pauses canonical-clip-commands Slice C with the correct owner.
 - **D4 — Projection contract and arrangement UI projection.** Revision-stamped projections; UI reads projections and emits intents; parity tests.
 - **D5 — Publication protocol.** Render generations with acknowledged `GenerationId`, sequenced control stream with applied-sequence acknowledgement, saturation reconciliation, reclaim queue, callback guards and benchmarks.
-- **D6 — Persistence projection.** `geist-project` serializes the document; versioned schema; atomic candidate-then-replace load validation; project package layout; migration fixtures.
+- **D6 — Persistence projection.** `spectre-project` serializes the document; versioned schema; atomic candidate-then-replace load validation; project package layout; migration fixtures.
 - **D7 — Remaining domains.** Tracks and devices, assets, conductor, mappings absorbed as sub-slices, each with its own content sub-spec. Each sub-slice enforces the unresolved-reference contract for its own domain.
 - **D8 — Delete legacy authorities.** Remove `StudioSession`, `app::engine::Arrangement` as authority, `geist_timeline::Timeline`, and UI-owned durable state once deletion criteria hold.
 

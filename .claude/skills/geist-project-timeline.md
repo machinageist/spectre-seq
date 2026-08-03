@@ -1,6 +1,6 @@
 ---
-name: geist-project-timeline
-description: "Load when implementing or reviewing `geist-timeline`, `geist-automation`, `geist-project`, transport, tempo maps, tracks, clips, patterns, automation lanes, modulation routes, project schema, migration, asset maps, settings, or autosave."
+name: spectre-project-timeline
+description: "Load when implementing or reviewing `geist-timeline`, `geist-automation`, `spectre-project`, transport, tempo maps, tracks, clips, patterns, automation lanes, modulation routes, project schema, migration, asset maps, settings, or autosave."
 ---
 
 <!--

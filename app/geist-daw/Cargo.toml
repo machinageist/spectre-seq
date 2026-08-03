@@ -25,7 +25,7 @@ geist-fx = { path = "../../plugins/geist-fx" }
 # Transport and tempo for the DAW playhead
 geist-timeline = { path = "../../crates/geist-timeline" }
 # Project file format for saving and loading the session patch
-geist-project = { path = "../../crates/geist-project" }
+spectre-project = { path = "../../crates/spectre-project" }
 # Lock-free SPSC queue for UI-to-audio commands
 rtrb = "0.3.4"
 # Immediate-mode GUI and native windowing/event loop

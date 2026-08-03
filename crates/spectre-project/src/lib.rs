@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-project/src/lib.rs
+// File: crates/spectre-project/src/lib.rs
 // Layer: project persistence
 // Purpose: Versioned DAW project format; CBOR project file + TOML settings
 // Status: Implemented; schema, serialize, settings, asset map, migrate, autosave.

@@ -31,7 +31,7 @@ Five accepted product requirements broke the earlier arrangement-only content pr
 4. **MPE and tuning.** Per-note pitch, pressure, timbre, and non-12-TET tuning must be reachable from the first note model, not bolted onto `key: u8`.
 5. **Three parameter-control layers.** Arrangement automation in project time, clip-local automation in clip-relative time, and realtime modulation do not share one data model. A single `ClipKind::Automation` collapses the first two.
 
-The legacy holders confirm the gap. `crates/geist-timeline/src/clip.rs` models audio as a raw `source: u64` with no warp state, MIDI as an arena `Index` into a sample-positioned `Pattern` with no note identity, and automation as a third clip kind with untyped breakpoints. `crates/geist-project/src/schema.rs` persists `ClipKind::Audio { asset_index: usize }` and `ClipKind::Automation { lane_index: usize }` — vector positions used as durable references — and `NoteEntry` with no note identity at all.
+The legacy holders confirm the gap. `crates/geist-timeline/src/clip.rs` models audio as a raw `source: u64` with no warp state, MIDI as an arena `Index` into a sample-positioned `Pattern` with no note identity, and automation as a third clip kind with untyped breakpoints. `crates/spectre-project/src/schema.rs` persists `ClipKind::Audio { asset_index: usize }` and `ClipKind::Automation { lane_index: usize }` — vector positions used as durable references — and `NoteEntry` with no note identity at all.
 
 ## Ownership decision
 
@@ -52,7 +52,7 @@ This amends the aggregate table in the accepted `project-document/SPEC.md`:
 | `arrangement` | Arrangement placements: owning `TrackId`, start, window; lane membership | re-scoped to placement only |
 | `launcher` | Launcher placements: track/scene slot occupancy, window, launch settings | unchanged; consumes the same clip records |
 
-`geist_document::clips` is the only owner of clip content. `geist_document::arrangement` holds no payload. Neither `geist_timeline::Clip`, `geist_timeline::Pattern`, nor `geist_project::schema::ClipKind` may hold clip content once its slice completes.
+`geist_document::clips` is the only owner of clip content. `geist_document::arrangement` holds no payload. Neither `geist_timeline::Clip`, `geist_timeline::Pattern`, nor `spectre_project::schema::ClipKind` may hold clip content once its slice completes.
 
 ### Why the split
 

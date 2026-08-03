@@ -21,7 +21,7 @@ Connect musical/project state to a command-driven UI without letting UI own core
 
 - `.claude/skills/geist-daw-working-context.md`
 - `.claude/skills/geist-ui-workflow.md`
-- `.claude/skills/geist-project-timeline.md`
+- `.claude/skills/spectre-project-timeline.md`
 - `.claude/skills/geist-validation-gates.md`
 
 # Operating Rules

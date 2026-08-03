@@ -134,7 +134,7 @@ Covers acceptance criteria 6, 13, and 14.
 
 Expected outcomes:
 
-- `geist-project` depending on `geist-document` and serializing a projection of the document.
+- `spectre-project` depending on `geist-document` and serializing a projection of the document.
 - Versioned schema with migration fixtures.
 - Atomic load: validate the complete candidate document, then replace the live document wholesale or leave it untouched and report exactly what failed.
 - Project package layout with canonical manifest and managed subdirectories.

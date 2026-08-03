@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-project/src/schema.rs
+// File: crates/spectre-project/src/schema.rs
 // Layer: project persistence
 // Purpose: Versioned ProjectFile DTO tree and SCHEMA_VERSION
 // Status: Implemented; decoupled serde data model for the whole project.

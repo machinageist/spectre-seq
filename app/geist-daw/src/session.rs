@@ -1,7 +1,7 @@
 // =============================================================================
 // File: app/geist-daw/src/session.rs
 // Layer: application binary
-// Purpose: Map the full studio session to and from the geist-project file format
+// Purpose: Map the full studio session to and from the spectre-project file format
 // Status: Implemented; round-trips transport, mixer, macros, step grids, clips.
 // Notes: StudioSession is the app's plain intermediate; conversion to the on-disk
 //        ProjectFile is the app layer's job (the crate leaves it to callers).
@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use geist_project::prelude::{
+use spectre_project::prelude::{
     hash_bytes, load_from_path, save_to_path, AssetMap, AssetRef, ClipEntry, ClipKind, NodeEntry,
     NoteEntry, ParamValue, ProjectError, ProjectFile, TrackEntry,
 };
@@ -510,7 +510,7 @@ fn project_assets_dir_name(project_path: &Path) -> String {
     let stem = project_path
         .file_stem()
         .and_then(|stem| stem.to_str())
-        .unwrap_or("geist-project");
+        .unwrap_or("spectre-project");
     format!("{stem}.assets")
 }
 

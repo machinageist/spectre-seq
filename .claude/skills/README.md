@@ -18,5 +18,5 @@ Load `geist-daw-working-context` first for all repo work.
 - `spectre-dsp-and-plugins`: pure DSP and first-party plugin suite.
 - `geist-plugin-hosting`: CLAP/LV2 host and FFI boundaries.
 - `geist-ui-workflow`: UI state, renderer, views, widgets, command flow.
-- `geist-project-timeline`: timeline, automation, modulation, persistence.
+- `spectre-project-timeline`: timeline, automation, modulation, persistence.
 - `geist-validation-gates`: preflight/build/behavior/alignment gates.

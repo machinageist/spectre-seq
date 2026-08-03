@@ -231,7 +231,7 @@ struct AudioClipRuntime {
     wav_path: PathBuf,
     asset_slot: Option<usize>,
     verified: bool,
-    asset_ref: Option<geist_project::prelude::AssetRef>,
+    asset_ref: Option<spectre_project::prelude::AssetRef>,
 }
 
 // Studio front-end: the lens shell over the engine, played live
