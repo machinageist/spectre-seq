@@ -109,12 +109,12 @@ Five workspace members build and test but contribute nothing to the running
 binary: `geist-automation`, `geist-modular`, `geist-vst-host`, `geist-clap-host`,
 `spectre-lv2-host`.
 
-### Planned: `geist-document`
+### Planned: `spectre-document`
 
 `docs/changes/project-document/SPEC.md` introduces a new dependency-low crate
-`crates/geist-document` to own the canonical app-thread `ProjectDocument`, with
+`crates/spectre-document` to own the canonical app-thread `ProjectDocument`, with
 `spectre-core` as its only dependency. **It is being implemented concurrently and is
-not in the tree at the time of writing.** Treat every `geist-document` reference
+not in the tree at the time of writing.** Treat every `spectre-document` reference
 in this document as in-progress, not landed.
 
 ## Thread model
@@ -224,7 +224,7 @@ the central problem `docs/changes/project-document/SPEC.md` exists to fix.
 | Owner | Path | Consumers today |
 | --- | --- | --- |
 | `geist_timeline::Timeline` | `crates/geist-timeline/src/track.rs:91` | None outside its own crate; legacy arena handles, sample placement |
-| `geist_document::Arrangement` | `crates/geist-document/src/arrangement.rs` | None yet; canonical `ClipEntity` model, unwired. Relocated out of `geist-timeline` by slice D1 and still re-exported from `geist_timeline::prelude` for the compatibility window |
+| `spectre_document::Arrangement` | `crates/spectre-document/src/arrangement.rs` | None yet; canonical `ClipEntity` model, unwired. Relocated out of `geist-timeline` by slice D1 and still re-exported from `geist_timeline::prelude` for the compatibility window |
 | `app::engine::Arrangement` | `app/geist-daw/src/engine.rs:259` | The audio thread; the only one that makes sound |
 | `geist_ui::model::TimelineModel` | `crates/geist-ui/src/model.rs:295` | Passed `&mut` into `views::arrangement`, so the view mutates it directly |
 | `app::session::StudioSession` | `app/geist-daw/src/session.rs` | The de-facto persistence model, in float beats |
@@ -233,7 +233,7 @@ The app binary uses exactly one item from `geist-timeline`: `Transport`
 (`app/geist-daw/src/engine.rs:20`). Neither canonical arrangement model is
 reachable from the running DAW.
 
-Resolution is roadmap Milestone 2: `geist_document::arrangement::Arrangement`
+Resolution is roadmap Milestone 2: `spectre_document::arrangement::Arrangement`
 becomes the single authority, the other four become projections or are deleted, and
 each is deleted only when its four criteria in the SPEC hold.
 
@@ -249,7 +249,7 @@ Recorded so a future session does not re-derive them:
   decision settles the package shape but **not** the encoding. See ADR 003.
 - ADR 001 calls `geist-clap-host` a shelved scaffold. The crate is substantially
   implemented. The plan decision stands; the description of the code does not.
-- `PROPOSED_FILE_TREE.md` predates the `geist-document` decision and the vocabulary
+- `PROPOSED_FILE_TREE.md` predates the `spectre-document` decision and the vocabulary
   relocation into `spectre-core`. Per the roadmap it is revised only after authority
   boundaries are accepted, so expect it to lag.
 
@@ -275,7 +275,7 @@ decision the code contradicts today. None is a bug report; they are scheduled wo
   (`crates/spectre-graph/src/process_list.rs:150`) moves node instances out of the
   graph, which is why a graph edit resets all DSP state. Decision 8 moves them to an
   audio-thread `DeviceTable`. See ADR 005.
-- **`ClipEntity.duration` becomes `ClipExtent`.** `crates/geist-document/src/arrangement.rs`
+- **`ClipEntity.duration` becomes `ClipExtent`.** `crates/spectre-document/src/arrangement.rs`
   types it as `MusicalTime`. Decision 4a makes it `Musical | Source` so unwarped audio
   keeps a sample-domain length and a tempo edit mutates no clip record.
 - **`rehome_clip`, `ClipLocation`, and `RemovedClip` change shape.** Decision 6a

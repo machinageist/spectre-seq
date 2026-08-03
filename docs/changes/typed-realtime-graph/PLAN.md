@@ -22,7 +22,7 @@ One checkpoint remains open and it blocks T6a, not the milestone: how control-ra
 
 - Product and architecture contract: `SPEC.md`, accepted.
 - The publication protocol half is `docs/changes/project-document/SPEC.md`; T2 must be reviewed jointly with its slice D5.
-- The durable graph model belongs to `geist_document::graph` (decision 17). `spectre-graph` is compile-and-execute only. Do not add durable editing state to `spectre-graph` in any slice.
+- The durable graph model belongs to `spectre_document::graph` (decision 17). `spectre-graph` is compile-and-execute only. Do not add durable editing state to `spectre-graph` in any slice.
 - `crates/spectre-graph/src/swap.rs` is reused, not replaced. It already refuses to drop on the callback.
 - Every slice keeps the app runnable and `#![deny(unsafe_code)]` intact.
 
@@ -161,6 +161,6 @@ Stop before a slice when:
 - the callback would allocate, deallocate, lock, or drop;
 - fan-in order would not be reproducible across a reload;
 - a bounded queue would saturate without a counter and an explicit reconciliation path;
-- durable graph editing state would land in `spectre-graph` rather than `geist-document`;
+- durable graph editing state would land in `spectre-graph` rather than `spectre-document`;
 - project-document Slice D5 has moved and this spec's protocol addition no longer composes with it;
 - independent review has unresolved findings.

@@ -1538,13 +1538,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "geist-document"
-version = "0.1.0"
-dependencies = [
- "spectre-core",
-]
-
-[[package]]
 name = "geist-fx"
 version = "0.1.0"
 dependencies = [
@@ -1574,8 +1567,8 @@ dependencies = [
 name = "geist-timeline"
 version = "0.1.0"
 dependencies = [
- "geist-document",
  "spectre-core",
+ "spectre-document",
 ]
 
 [[package]]
@@ -3572,6 +3565,13 @@ dependencies = [
 [[package]]
 name = "spectre-core"
 version = "0.1.0"
+
+[[package]]
+name = "spectre-document"
+version = "0.1.0"
+dependencies = [
+ "spectre-core",
+]
 
 [[package]]
 name = "spectre-dsp"

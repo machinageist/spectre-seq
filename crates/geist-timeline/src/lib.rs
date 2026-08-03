@@ -33,8 +33,8 @@ pub mod prelude {
 
     // Compatibility window; musical time and canonical arrangement moved to core and document
     pub use spectre_core::time::{MusicalTime, MAX_EXACT_MUSICAL_TIME_TICKS, TICKS_PER_QUARTER};
-    pub use geist_document::arrangement::{
+    pub use spectre_document::arrangement::{
         Arrangement, ArrangementError, ArrangementTrack, ClipEntity, ClipLocation, RemovedClip,
     };
-    pub use geist_document::identity::{ClipId, IdentityAllocator, TrackId};
+    pub use spectre_document::identity::{ClipId, IdentityAllocator, TrackId};
 }

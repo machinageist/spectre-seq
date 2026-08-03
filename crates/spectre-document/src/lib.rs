@@ -4,7 +4,7 @@
 // Description: Public entrypoint for the canonical app-thread project document.
 // Notes: Durable project truth; the audio thread reads published snapshots, never this state.
 //
-// File: crates/geist-document/src/lib.rs
+// File: crates/spectre-document/src/lib.rs
 // Layer: document
 // Purpose: Durable identity allocation and canonical arrangement authority
 // Status: Implemented incrementally; identity and arrangement relocated from timeline.

@@ -17,11 +17,11 @@ This sub-specification **un-gates slice D3** of [`docs/changes/project-document/
 
 [`docs/changes/canonical-clip-commands/SPEC.md`](../canonical-clip-commands/SPEC.md) Slice B2 is paused prior thinking, not a baseline. This document confirms parts of it, revises parts of it, and rejects one part of it outright.
 
-References use post-D1 homes: `spectre_core::time::MusicalTime`, `spectre_core::ids`, `geist_document::arrangement`.
+References use post-D1 homes: `spectre_core::time::MusicalTime`, `spectre_core::ids`, `spectre_document::arrangement`.
 
 ## Problem
 
-`geist_document::arrangement::ClipEntity` is a content-free shell: `ClipId`, owning `TrackId`, `MusicalTime` start, `MusicalTime` duration. It cannot represent a project clip, so D3 cannot prove that undo restores clip state, and D6 cannot round-trip a clip.
+`spectre_document::arrangement::ClipEntity` is a content-free shell: `ClipId`, owning `TrackId`, `MusicalTime` start, `MusicalTime` duration. It cannot represent a project clip, so D3 cannot prove that undo restores clip state, and D6 cannot round-trip a clip.
 
 Five accepted product requirements broke the earlier arrangement-only content proposal:
 
@@ -52,7 +52,7 @@ This amends the aggregate table in the accepted `project-document/SPEC.md`:
 | `arrangement` | Arrangement placements: owning `TrackId`, start, window; lane membership | re-scoped to placement only |
 | `launcher` | Launcher placements: track/scene slot occupancy, window, launch settings | unchanged; consumes the same clip records |
 
-`geist_document::clips` is the only owner of clip content. `geist_document::arrangement` holds no payload. Neither `geist_timeline::Clip`, `geist_timeline::Pattern`, nor `spectre_project::schema::ClipKind` may hold clip content once its slice completes.
+`spectre_document::clips` is the only owner of clip content. `spectre_document::arrangement` holds no payload. Neither `geist_timeline::Clip`, `geist_timeline::Pattern`, nor `spectre_project::schema::ClipKind` may hold clip content once its slice completes.
 
 ### Why the split
 
@@ -287,7 +287,7 @@ Deferred with their own specs: launcher slot model and launch quantization; loop
 Each slice is one commit with its own validation. `CC1` and `CC2` together un-gate `D3`.
 
 - **CC0 — This document.** Decisions answered; `PLAN.md` written.
-- **CC1 — Content aggregate and placement split.** `geist_document::clips`; clip record with kind, name, colour; `ClipWindow` and `ClipExtent`; `arrangement` re-scoped to placement; referential invariants both directions; empty `MidiContent`. No audio, no notes, no envelopes.
+- **CC1 — Content aggregate and placement split.** `spectre_document::clips`; clip record with kind, name, colour; `ClipWindow` and `ClipExtent`; `arrangement` re-scoped to placement; referential invariants both directions; empty `MidiContent`. No audio, no notes, no envelopes.
 - **CC2 — MIDI note model.** `NoteId` allocation and batch reservation; note record with key, offset, channel, velocities, mute; typed expression dimensions and curves; deterministic ordering; masking rules; duplication with fresh identities.
 - **D3 runs here.** Arrangement placement onto the document with create, delete, move, cross-track move, and right resize as transactions, provable end to end on MIDI clips.
 - **CC3 — Audio region content and warp state.** `AssetId` reference; typed source frames; gain, reverse, fades; `WarpMode`, markers, algorithm tag; unresolved and short-asset handling. **Gated on the assets aggregate landing first.**
@@ -297,7 +297,7 @@ Ordering rationale: MIDI content depends on nothing outside `spectre-core` and a
 
 ### Prerequisites outside this spec
 
-- D1 relocation complete: `MusicalTime` in `spectre-core`, arrangement in `geist-document`.
+- D1 relocation complete: `MusicalTime` in `spectre-core`, arrangement in `spectre-document`.
 - D2 complete: document, revision, transactions, history, allocators.
 - `CurveShape` relocated from `geist-automation` to `spectre-core`, per Milestone 1's removal of the timeline-to-automation dependency. This spec's expression curves and envelopes both consume it.
 - The assets aggregate must land before CC3. See Decision 2.

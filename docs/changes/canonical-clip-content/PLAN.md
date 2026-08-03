@@ -24,9 +24,9 @@ Implements decisions 1, 1a, 4a, 6a, 6b, and 7.
 
 Files:
 
-- Add `crates/geist-document/src/clips.rs`.
-- Update `crates/geist-document/src/arrangement.rs`.
-- Update `crates/geist-document/src/lib.rs`.
+- Add `crates/spectre-document/src/clips.rs`.
+- Update `crates/spectre-document/src/arrangement.rs`.
+- Update `crates/spectre-document/src/lib.rs`.
 - Update `docs/changes/project-document/SPEC.md` aggregate table.
 
 Tasks:
@@ -43,7 +43,7 @@ Tasks:
 
 Verification:
 
-- `cargo test -p geist-document`
+- `cargo test -p spectre-document`
 - `cargo test --workspace`
 - `git diff --check`
 
@@ -109,7 +109,7 @@ Delete only when the replacement round-trips through persistence:
 
 ## Standing verification for every slice
 
-- `cargo test -p geist-document`
+- `cargo test -p spectre-document`
 - `cargo test -p spectre-core`
 - `cargo test --workspace`
 - `git diff --check`

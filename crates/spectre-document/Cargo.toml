@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: crates/geist-document/Cargo.toml
+# File: crates/spectre-document/Cargo.toml
 # Layer: document
 # Purpose: Canonical app-thread project document; durable identity and arrangement.
 # Status: Implemented incrementally; identity and arrangement relocated first.
@@ -7,7 +7,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-document"
+name = "spectre-document"
 version = "0.1.0"
 edition = "2021"
 

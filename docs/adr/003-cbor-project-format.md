@@ -113,7 +113,7 @@ Until then, treat CBOR as the prototype's incumbent, not as settled.
 
 ## Consequences
 
-- **`spectre-project` gains a dependency on `geist-document`** and loses its role as
+- **`spectre-project` gains a dependency on `spectre-document`** and loses its role as
   a de-facto data model. The `ProjectFile` DTO tree becomes a serialization
   projection of the document rather than a parallel schema.
 - **`app/geist-daw/src/session.rs` becomes a persistence adapter and is then

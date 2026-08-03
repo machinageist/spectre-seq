@@ -14,7 +14,7 @@ Accepted. Four design decisions were taken at the 2026-08-01 interview:
 1. Migration is a strangler, one domain at a time, with the app runnable throughout.
 2. This spec fixes the whole document contract; each domain's internal content model stays in its own sub-spec.
 3. Realtime publication is hybrid: immutable versioned render generations plus a bounded acknowledged control stream.
-4. `ProjectDocument` lives in a new dependency-low `geist-document` crate.
+4. `ProjectDocument` lives in a new dependency-low `spectre-document` crate.
 
 This spec satisfies roadmap Milestone 2 and immediate work order item 2. It unblocks items 3 through 6 and supersedes the paused Slice B2 ownership questions in `docs/changes/canonical-clip-commands/SPEC.md`.
 
@@ -66,7 +66,7 @@ An aggregate may be an empty typed owner until its content sub-spec lands. An em
 
 ### The named arrangement aggregate
 
-`geist_document::arrangement::Arrangement` is the final arrangement authority. It is the entity model already implemented in `crates/geist-timeline/src/arrangement.rs`, relocated. Every other arrangement representation is demoted:
+`spectre_document::arrangement::Arrangement` is the final arrangement authority. It is the entity model already implemented in `crates/geist-timeline/src/arrangement.rs`, relocated. Every other arrangement representation is demoted:
 
 - `geist_timeline::Timeline` — legacy, frozen, deleted in slice 8.
 - `app::engine::Arrangement` — becomes render-generation content, not an authority.
@@ -75,15 +75,15 @@ An aggregate may be an empty typed owner until its content sub-spec lands. An em
 
 ## Crate and dependency boundaries
 
-New crate `crates/geist-document`, `#![deny(unsafe_code)]`, no serde, no renderer, no audio-backend dependency.
+New crate `crates/spectre-document`, `#![deny(unsafe_code)]`, no serde, no renderer, no audio-backend dependency.
 
 Dependency direction:
 
 - `spectre-core` owns shared domain vocabulary: the durable ID family, `MusicalTime`, `TICKS_PER_QUARTER`, sample coordinates, normalized values, and curve-shape vocabulary.
-- `geist-document` depends on `spectre-core` only.
-- `spectre-project` depends on `geist-document` and owns schema, serialization, migration, and the project package.
-- `geist-ui` depends on `geist-document` for read-only projections and typed intent types.
-- `geist-document` never depends on `geist-timeline`, `spectre-project`, `geist-ui`, or the app.
+- `spectre-document` depends on `spectre-core` only.
+- `spectre-project` depends on `spectre-document` and owns schema, serialization, migration, and the project package.
+- `geist-ui` depends on `spectre-document` for read-only projections and typed intent types.
+- `spectre-document` never depends on `geist-timeline`, `spectre-project`, `geist-ui`, or the app.
 
 `MusicalTime`, `TICKS_PER_QUARTER`, and the canonical identity allocator relocate out of `geist-timeline`. `geist-timeline` re-exports them during the compatibility window so no consumer breaks in the same slice as the move. `PROPOSED_FILE_TREE.md` is revised to match once slice 1 lands.
 
@@ -230,7 +230,7 @@ Deferred to their own specs and interviews: launcher content and launch quantiza
 8. The audio thread acknowledges both the executing generation and the applied control sequence, and the app never advances mirrors past acknowledgement.
 9. Stream saturation and rejected publication produce explicit reconciliation, never silent divergence.
 10. Retired generations, plugin instances, and assets are dropped off the callback.
-11. `geist-document` depends only on `spectre-core`.
+11. `spectre-document` depends only on `spectre-core`.
 12. Each legacy authority is deleted only after its four deletion criteria hold.
 13. A load validates the complete candidate document before touching live state; a failed load leaves the live document unchanged and reports exactly what failed.
 14. Unresolved assets, devices, plugins, modules, mappings, and targets round-trip losslessly, stay relinkable, and never block editing or saving the rest of the project.
@@ -238,7 +238,7 @@ Deferred to their own specs and interviews: launcher content and launch quantiza
 
 ## Slice boundaries
 
-- **D1 — Crate skeleton and vocabulary relocation.** Create `geist-document`; move shared vocabulary to `spectre-core`; re-export from `geist-timeline`. No behavior change.
+- **D1 — Crate skeleton and vocabulary relocation.** Create `spectre-document`; move shared vocabulary to `spectre-core`; re-export from `geist-timeline`. No behavior change.
 - **D2 — Document skeleton, revision, transactions, history.** Typed empty aggregates, transaction and result types, history with its failure semantics.
 - **D3 — Arrangement domain onto the document.** Canonical arrangement under document ownership; create, delete, move, cross-track move, right resize as transactions. This un-pauses canonical-clip-commands Slice C with the correct owner.
 - **D4 — Projection contract and arrangement UI projection.** Revision-stamped projections; UI reads projections and emits intents; parity tests.

@@ -553,7 +553,7 @@ All seventeen were settled 2026-08-03. Each entry keeps its rejected alternative
 | 14 | No implicit lane broadcast; editor-assisted adapter |
 | 15 | `MAX_LANES = 32` **(against recommendation)** |
 | 16 | Upmix by copy, downmix by mean |
-| 17 | `geist-document` owns the editor; T5a spike lands mid-sequence |
+| 17 | `spectre-document` owns the editor; T5a spike lands mid-sequence |
 
 ### 1. Is `Cv` one domain with a declared rate, or two domains?
 
@@ -685,7 +685,7 @@ Defaults: `Audio` and `Cv` sum; `Gate` takes the maximum; `Note` and `Midi` merg
 
 Two related boundary questions:
 
-- **Crate boundary.** Does `spectre-graph` keep the mutable app-thread `Graph` editor, or does `geist_document::graph` become the editor — the Milestone 4 aggregate the project-document spec already names as owning devices, chains, routing, sends, and returns — with `spectre-graph` reduced to compile-and-execute?
+- **Crate boundary.** Does `spectre-graph` keep the mutable app-thread `Graph` editor, or does `spectre_document::graph` become the editor — the Milestone 4 aggregate the project-document spec already names as owning devices, chains, routing, sends, and returns — with `spectre-graph` reduced to compile-and-execute?
 - **Sequencing.** Milestone 3 delivers no user-visible behavior until Milestone 4 attaches the hybrid track, because `app::engine::SynthProcessor` bypasses the graph entirely. Is it acceptable to build ten slices of engine with no production consumer, or should a thin Milestone 4 spike land mid-sequence to prove the contract against real audio?
 
-**Accepted:** `spectre-graph` becomes compile-and-execute only, with the durable graph model owned by `geist-document`, matching the aggregate table already accepted. And land the minimal T5a spike — one instrument, one effect, one meter, driven by the compiled graph — so the typed contract is proven against real audio before lanes, buses, and cycles are built on top of it. Ten slices validated only by unit tests is a large uncontrolled bet.
+**Accepted:** `spectre-graph` becomes compile-and-execute only, with the durable graph model owned by `spectre-document`, matching the aggregate table already accepted. And land the minimal T5a spike — one instrument, one effect, one meter, driven by the compiled graph — so the typed contract is proven against real audio before lanes, buses, and cycles are built on top of it. Ten slices validated only by unit tests is a large uncontrolled bet.

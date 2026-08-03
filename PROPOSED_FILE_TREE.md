@@ -42,7 +42,7 @@ geistdaw/
 │   │       ├── transport.rs            # AtomicTransport, TransportState, TempoMap
 │   │       └── errors.rs               # GeistError, GeistResult
 │   │
-│   ├── geist-document/                 # canonical app-thread project truth; depends only on spectre-core
+│   ├── spectre-document/                 # canonical app-thread project truth; depends only on spectre-core
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -148,7 +148,7 @@ geistdaw/
 │   │       ├── instance.rs
 │   │       └── plugin_node.rs          # LV2PluginNode implements AudioNode
 │   │
-│   ├── geist-timeline/                 # legacy arena timeline; D8 deletes what geist-document replaces
+│   ├── geist-timeline/                 # legacy arena timeline; D8 deletes what spectre-document replaces
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs                  # prelude re-exports the relocated document/core types

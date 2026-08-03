@@ -4,7 +4,7 @@
 // Description: Canonical stable-ID arrangement entities and ordered membership.
 // Notes: Additive model; legacy sample-based Timeline remains unchanged during migration.
 //
-// File: crates/geist-document/src/arrangement.rs
+// File: crates/spectre-document/src/arrangement.rs
 // Layer: document
 // Purpose: Exact clip lookup, ownership, ordering, and atomic structural edits
 // Status: Implemented; exact lookup and atomic ordered membership edits.
