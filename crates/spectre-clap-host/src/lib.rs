@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-clap-host/src/lib.rs
+// File: crates/spectre-clap-host/src/lib.rs
 // Layer: CLAP host
 // Purpose: CLAP host entrypoint; safe API over the raw clap-sys FFI bindings.
 // Status: Implemented incrementally; scanner first.

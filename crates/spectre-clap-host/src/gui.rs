@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-clap-host/src/gui.rs
+// File: crates/spectre-clap-host/src/gui.rs
 // Layer: CLAP host
 // Purpose: Safe wrapper over a plugin's clap.gui extension for embedded GUIs
 // Status: Implemented; embed lifecycle + window bridge. Compile-checked. FFI

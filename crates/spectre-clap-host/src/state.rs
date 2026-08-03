@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-clap-host/src/state.rs
+// File: crates/spectre-clap-host/src/state.rs
 // Layer: CLAP host
 // Purpose: Save and restore a plugin's opaque state via clap.state
 // Status: Implemented; in-memory stream bridge. Compile-checked; stream plumbing

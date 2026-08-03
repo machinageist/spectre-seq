@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-clap-host/src/bundle.rs
+// File: crates/spectre-clap-host/src/bundle.rs
 // Layer: CLAP host
 // Purpose: Load a .clap binary, resolve its entry point, enumerate its factory
 // Status: Implemented; library load + factory enumeration. Unsafe FFI confined here.

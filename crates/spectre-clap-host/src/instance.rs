@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-clap-host/src/instance.rs
+// File: crates/spectre-clap-host/src/instance.rs
 // Layer: CLAP host
 // Purpose: Drive one plugin through the CLAP lifecycle state machine
 // Status: Implemented; compile-checked. Behavior validated against real plugins.

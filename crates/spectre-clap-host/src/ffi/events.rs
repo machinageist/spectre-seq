@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-clap-host/src/ffi/events.rs
+// File: crates/spectre-clap-host/src/ffi/events.rs
 // Layer: CLAP host
 // Purpose: Empty input/output event lists for the no-events process bridge
 // Status: Implemented; stateless stubs. Note/param event routing lands later.

@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-clap-host/src/ffi/host_impl.rs
+// File: crates/spectre-clap-host/src/ffi/host_impl.rs
 // Layer: CLAP host
 // Purpose: The clap_host vtable this host presents to plugins
 // Status: Implemented. Advertises identity and the log, params, and gui host

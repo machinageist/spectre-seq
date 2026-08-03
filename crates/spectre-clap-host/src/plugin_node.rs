@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-clap-host/src/plugin_node.rs
+// File: crates/spectre-clap-host/src/plugin_node.rs
 // Layer: CLAP host
 // Purpose: Wrap a hosted CLAP plugin as a spectre-graph AudioNode
 // Status: Implemented; compile-checked. Audio bridging validated on real plugins.

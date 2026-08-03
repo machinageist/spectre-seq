@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-clap-host/src/db.rs
+// File: crates/spectre-clap-host/src/db.rs
 // Layer: CLAP host
 // Purpose: Persistent plugin metadata cache so scans skip unchanged bundles
 // Status: Implemented; flat CBOR file keyed by bundle path. Compile-checked;

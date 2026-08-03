@@ -38,7 +38,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | `spectre-config` | Workflow profile schema, TOML loader, keybindings, command intents, validation | Implemented |
 | `spectre-ui` | UI state, typed selection, commands, egui renderer, views, widgets, theme | Implemented incrementally |
 | `geist-vst-host` | VST3 host over raw `vst3` COM bindings; scanner, bundle, module, instance, `VstPluginNode` | Implemented, compile-checked; FFI crate, does not deny unsafe |
-| `geist-clap-host` | CLAP host over `clap-sys`; scanner, bundle, cache db, params, state, gui, instance, `ClapPluginNode` | Substantially implemented; **not on the active plan** per ADR 001 |
+| `spectre-clap-host` | CLAP host over `clap-sys`; scanner, bundle, cache db, params, state, gui, instance, `ClapPluginNode` | Substantially implemented; **not on the active plan** per ADR 001 |
 | `spectre-lv2-host` | LV2 host | Scanner only; `world.rs` and `instance.rs` are scaffolds |
 
 ### `plugins/`
@@ -84,7 +84,7 @@ spectre-automation     -> spectre-core
 spectre-ui             -> spectre-config
 
 geist-vst-host       -> spectre-core, spectre-graph
-geist-clap-host      -> spectre-core, spectre-graph
+spectre-clap-host      -> spectre-core, spectre-graph
 geist-synth          -> spectre-core, spectre-graph, spectre-dsp
 geist-fx             -> spectre-core, spectre-graph, spectre-dsp
 geist-modular        -> spectre-core, spectre-graph
@@ -106,7 +106,7 @@ worth naming because they are surprising:
   meet.
 
 Five workspace members build and test but contribute nothing to the running
-binary: `spectre-automation`, `geist-modular`, `geist-vst-host`, `geist-clap-host`,
+binary: `spectre-automation`, `geist-modular`, `geist-vst-host`, `spectre-clap-host`,
 `spectre-lv2-host`.
 
 ### Planned: `spectre-document`
@@ -203,7 +203,7 @@ These are load-bearing gaps, not omissions from this document.
    and an evaluator, and nothing depends on it.
 5. **No plugin host is instantiated.** ADR 001 makes VST3 the active target;
    `geist-vst-host` is implemented and compile-checked, but the binary never loads
-   it. `geist-clap-host` is substantially implemented (bundle, cache db, params,
+   it. `spectre-clap-host` is substantially implemented (bundle, cache db, params,
    state, gui, instance, `ClapPluginNode`, FFI layer) despite ADR 001 describing it
    as a shelved scaffold — "shelved" is accurate about the *plan*, not about the
    code. `spectre-lv2-host` really is scanner-plus-scaffolds. `docs/clap_hosting.md`
@@ -247,7 +247,7 @@ Recorded so a future session does not re-derive them:
 - `INITIAL_PLAN.md:128` leaves the project encoding open between CBOR and
   MessagePack; the filename of ADR 003 asserts CBOR. The accepted project-format
   decision settles the package shape but **not** the encoding. See ADR 003.
-- ADR 001 calls `geist-clap-host` a shelved scaffold. The crate is substantially
+- ADR 001 calls `spectre-clap-host` a shelved scaffold. The crate is substantially
   implemented. The plan decision stands; the description of the code does not.
 - `PROPOSED_FILE_TREE.md` predates the `spectre-document` decision and the vocabulary
   relocation into `spectre-core`. Per the roadmap it is revised only after authority

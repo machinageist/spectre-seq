@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-clap-host/src/params.rs
+// File: crates/spectre-clap-host/src/params.rs
 // Layer: CLAP host
 // Purpose: Read-side view of a plugin's clap.params extension
 // Status: Implemented; discovery + value read. Compile-checked; FFI calls

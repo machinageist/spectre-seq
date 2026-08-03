@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-clap-host/src/ffi/mod.rs
+// File: crates/spectre-clap-host/src/ffi/mod.rs
 // Layer: CLAP host
 // Purpose: Host-side FFI surface the host exposes to plugins
 // Status: Implemented incrementally; minimal stub host first.

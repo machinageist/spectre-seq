@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: crates/geist-clap-host/Cargo.toml
+# File: crates/spectre-clap-host/Cargo.toml
 # Layer: CLAP host
 # Purpose: CLAP plugin host; wraps clap-sys raw FFI in a safe Rust API.
 # Status: Implemented incrementally; scanner first. FFI deps land with that slice.
@@ -7,7 +7,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-clap-host"
+name = "spectre-clap-host"
 version = "0.1.0"
 edition = "2021"
 

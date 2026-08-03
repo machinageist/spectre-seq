@@ -62,7 +62,7 @@ Notes: Preserved as historical planning context; living product authority is lin
 
 ## Phase 4 — CLAP Host (Weeks 9–13)
 
-- `geist-clap-host`: wraps `clap-sys` raw FFI in a safe Rust API
+- `spectre-clap-host`: wraps `clap-sys` raw FFI in a safe Rust API
 - Scanner: walk `~/.clap`, `/usr/lib/clap`, platform-standard paths; load `.clap` bundles; cache metadata in a `sled` or `sqlite` DB
 - Each loaded plugin instance is a `ClapPluginNode` implementing `AudioNode` — slots into the process graph transparently
 - Handle: audio i/o, parameter get/set, parameter flush, note events, MIDI, save/restore state (blob of bytes)

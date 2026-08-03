@@ -123,7 +123,7 @@ geistdaw/
 │   │           ├── filter_bench.rs
 │   │           └── reverb_bench.rs
 │   │
-│   ├── geist-clap-host/                # CLAP plugin host
+│   ├── spectre-clap-host/                # CLAP plugin host
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs

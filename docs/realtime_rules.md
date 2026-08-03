@@ -142,7 +142,7 @@ formats a string or takes a logging lock.
 ### Deny unsafe by default
 
 Every workspace crate carries `#![deny(unsafe_code)]` except the three plugin-host
-crates — `geist-clap-host`, `spectre-lv2-host`, `geist-vst-host` — where FFI makes
+crates — `spectre-clap-host`, `spectre-lv2-host`, `geist-vst-host` — where FFI makes
 it unavoidable. Unsafe in those crates belongs behind a wrapper with its invariants
 written down, not at the call site.
 

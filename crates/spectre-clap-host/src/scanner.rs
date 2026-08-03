@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-clap-host/src/scanner.rs
+// File: crates/spectre-clap-host/src/scanner.rs
 // Layer: CLAP host
 // Purpose: Discover .clap bundles in the platform's standard plugin paths
 // Status: Implemented; standard paths plus a bounded, bundle-aware walk.

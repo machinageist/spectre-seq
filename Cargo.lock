@@ -1490,19 +1490,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "geist-clap-host"
-version = "0.1.0"
-dependencies = [
- "ciborium",
- "clap-sys",
- "libloading",
- "raw-window-handle",
- "serde",
- "spectre-core",
- "spectre-graph",
-]
-
-[[package]]
 name = "geist-daw"
 version = "0.1.0"
 dependencies = [
@@ -3535,6 +3522,19 @@ name = "spectre-automation"
 version = "0.1.0"
 dependencies = [
  "spectre-core",
+]
+
+[[package]]
+name = "spectre-clap-host"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+ "clap-sys",
+ "libloading",
+ "raw-window-handle",
+ "serde",
+ "spectre-core",
+ "spectre-graph",
 ]
 
 [[package]]
