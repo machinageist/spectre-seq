@@ -9,7 +9,7 @@
 //        engine. New clips carry id 0 until the app assigns a stable id.
 
 use egui::{pos2, vec2, Align2, FontId, Rect, Sense, Stroke, StrokeKind};
-use geist_config::commands::CommandIntent;
+use spectre_config::commands::CommandIntent;
 
 use crate::model::{Clip, TimelineModel, Transport};
 use crate::renderer::ViewPlan;

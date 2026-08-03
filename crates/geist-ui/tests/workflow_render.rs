@@ -3,8 +3,8 @@
 // Description: End-to-end workflow profile rendering coverage.
 // Notes: Bundled config must affect UI frame planning without touching project/audio truth.
 
-use geist_config::loader::load_workflow_toml;
-use geist_config::schema::{LensId, PanelId};
+use spectre_config::loader::load_workflow_toml;
+use spectre_config::schema::{LensId, PanelId};
 use geist_ui::egui_renderer::EguiRenderer;
 use geist_ui::prelude::UIState;
 use geist_ui::renderer::{PanelSlot, Renderer};

@@ -13,7 +13,7 @@ pub mod plugin_rack;
 pub mod step_sequencer;
 
 use crate::renderer::{PanelPlacement, RenderFrame};
-use geist_config::schema::{Density, LensId};
+use spectre_config::schema::{Density, LensId};
 
 // Complete renderer-neutral surface for the current UI frame
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -120,7 +120,7 @@ mod tests {
     use super::*;
     use crate::renderer::frame_from_state;
     use crate::state::{SelectedObject, UIState};
-    use geist_config::schema::{ContextShelfConfig, LensId, WorkflowProfile};
+    use spectre_config::schema::{ContextShelfConfig, LensId, WorkflowProfile};
 
     #[test]
     fn workspace_surface_uses_configured_lens_and_empty_actions() {

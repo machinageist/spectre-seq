@@ -9,7 +9,7 @@
 
 use crate::theme::SignalKind;
 use crate::widgets::Taper;
-use geist_config::commands::CommandIntent;
+use spectre_config::commands::CommandIntent;
 
 // Transport state mirrored from the audio thread
 #[derive(Clone, Debug, PartialEq)]

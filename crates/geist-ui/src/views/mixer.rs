@@ -7,7 +7,7 @@
 //        intents for the app to apply to audio truth.
 
 use egui::{vec2, RichText};
-use geist_config::commands::CommandIntent;
+use spectre_config::commands::CommandIntent;
 
 use crate::model::MixerModel;
 use crate::renderer::ViewPlan;

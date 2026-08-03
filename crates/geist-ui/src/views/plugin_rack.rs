@@ -7,7 +7,7 @@
 //        the slot vector is never mutated mid-iteration.
 
 use egui::RichText;
-use geist_config::commands::CommandIntent;
+use spectre_config::commands::CommandIntent;
 
 use crate::model::RackModel;
 use crate::renderer::ViewPlan;

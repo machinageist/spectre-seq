@@ -19,7 +19,7 @@ pub use meter::Meter;
 
 use crate::renderer::{PanelPlacement, PanelSlot};
 use crate::views::{ActionChip, WorkspaceSurface};
-use geist_config::schema::{Density, PanelId};
+use spectre_config::schema::{Density, PanelId};
 
 // Complete widget plan for a workspace frame
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -145,7 +145,7 @@ mod tests {
     use crate::renderer::frame_from_state;
     use crate::state::{SelectedObject, UIState};
     use crate::views::workspace_surface_from_frame;
-    use geist_config::schema::{ContextShelfConfig, LensId, PanelId, WorkflowProfile};
+    use spectre_config::schema::{ContextShelfConfig, LensId, PanelId, WorkflowProfile};
 
     #[test]
     fn widgets_use_configured_tabs_panels_and_actions() {

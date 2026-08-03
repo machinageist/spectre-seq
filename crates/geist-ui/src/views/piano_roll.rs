@@ -6,7 +6,7 @@
 //        click a note to remove it. Notes live in the model; edits emit intents.
 
 use egui::{pos2, vec2, Align2, FontId, Rect, Sense, Stroke, StrokeKind};
-use geist_config::commands::CommandIntent;
+use spectre_config::commands::CommandIntent;
 
 use crate::model::{Note, PianoRollModel};
 use crate::theme;

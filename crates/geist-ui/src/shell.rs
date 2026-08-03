@@ -7,8 +7,8 @@
 //        frame for the app to apply to project/audio truth.
 
 use egui::{pos2, vec2, RichText, Sense, Stroke};
-use geist_config::commands::CommandIntent;
-use geist_config::schema::{LensId, PanelId};
+use spectre_config::commands::CommandIntent;
+use spectre_config::schema::{LensId, PanelId};
 
 use crate::model::{ScopeFrame, SessionModel, SpectrumFrame};
 use crate::state::{UIState, WorkspacePane};

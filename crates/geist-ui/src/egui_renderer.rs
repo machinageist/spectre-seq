@@ -55,7 +55,7 @@ impl Renderer for EguiRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_config::schema::{LensId, PanelId, WorkflowProfile};
+    use spectre_config::schema::{LensId, PanelId, WorkflowProfile};
 
     #[test]
     fn renderer_frame_tracks_active_workflow_lens() {

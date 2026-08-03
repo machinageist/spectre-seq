@@ -45,7 +45,7 @@ Examples:
 
 Use human-readable versioned config files. Prefer TOML for global/user settings and project-local workflow overrides unless implementation proves another format materially better.
 
-The implementation home is `crates/geist-config`. That crate owns the workflow schema, TOML loading, validation diagnostics, safe fallback resolution, command alias schema, keybinding schema, and template references.
+The implementation home is `crates/spectre-config`. That crate owns the workflow schema, TOML loading, validation diagnostics, safe fallback resolution, command alias schema, keybinding schema, and template references.
 
 `crates/geist-ui` consumes the validated workflow profile through `UIState`. UI commands can switch configured lenses, apply a new workflow snapshot, execute declarative aliases, and queue non-UI command intents for the app/project layer instead of mutating DAW truth directly.
 

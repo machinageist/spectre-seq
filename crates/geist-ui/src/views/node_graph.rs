@@ -7,7 +7,7 @@
 //        this slice establishes the spatial map and color language.
 
 use egui::{pos2, vec2, Align2, FontId, Pos2, Rect, Sense, Shape, Stroke, StrokeKind};
-use geist_config::commands::CommandIntent;
+use spectre_config::commands::CommandIntent;
 
 use crate::model::{GraphModel, GraphNode};
 use crate::renderer::ViewPlan;

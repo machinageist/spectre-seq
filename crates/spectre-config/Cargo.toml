@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: crates/geist-config/Cargo.toml
+# File: crates/spectre-config/Cargo.toml
 # Layer: config
 # Purpose: User and project workflow configuration.
 # Status: Phase 8 scaffold with validated schema.
@@ -7,7 +7,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-config"
+name = "spectre-config"
 version = "0.1.0"
 edition = "2021"
 

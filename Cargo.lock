@@ -1519,14 +1519,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "geist-config"
-version = "0.1.0"
-dependencies = [
- "serde",
- "toml",
-]
-
-[[package]]
 name = "geist-core"
 version = "0.1.0"
 
@@ -1536,7 +1528,6 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "geist-audio-backend",
- "geist-config",
  "geist-core",
  "geist-fx",
  "geist-graph",
@@ -1547,6 +1538,7 @@ dependencies = [
  "hound",
  "rfd",
  "rtrb",
+ "spectre-config",
 ]
 
 [[package]]
@@ -1628,7 +1620,7 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "egui",
- "geist-config",
+ "spectre-config",
 ]
 
 [[package]]
@@ -3603,6 +3595,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "spectre-config"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml",
 ]
 
 [[package]]

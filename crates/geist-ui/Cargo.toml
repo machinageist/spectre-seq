@@ -13,7 +13,7 @@ edition = "2021"
 
 [dependencies]
 # Workflow profiles, lenses, panels, and typed command intents
-geist-config = { path = "../geist-config" }
+spectre-config = { path = "../spectre-config" }
 # Immediate-mode GUI; the concrete renderer behind the Renderer trait (wgpu later)
 egui = "0.34"
 

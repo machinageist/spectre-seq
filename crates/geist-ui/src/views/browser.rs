@@ -6,7 +6,7 @@
 //        disposable UI state.
 
 use egui::{vec2, RichText, Sense};
-use geist_config::commands::CommandIntent;
+use spectre_config::commands::CommandIntent;
 
 use crate::model::BrowserModel;
 use crate::renderer::ViewPlan;

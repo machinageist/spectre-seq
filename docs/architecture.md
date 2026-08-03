@@ -35,7 +35,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | `geist-timeline` | Transport, tempo map, playhead, arena clips/patterns, legacy `Timeline`, canonical `Arrangement`/`ClipEntity`, identity | Mixed; see "Competing arrangement authorities" |
 | `geist-automation` | Curves, lanes, routes, modulation matrix, evaluator | Implemented; **no consumer in the app binary** |
 | `geist-project` | On-disk project schema, CBOR serialize, TOML settings, blake3 asset map, migration, autosave | Implemented; **zero workspace dependencies** — a standalone serde DTO tree |
-| `geist-config` | Workflow profile schema, TOML loader, keybindings, command intents, validation | Implemented |
+| `spectre-config` | Workflow profile schema, TOML loader, keybindings, command intents, validation | Implemented |
 | `geist-ui` | UI state, typed selection, commands, egui renderer, views, widgets, theme | Implemented incrementally |
 | `geist-vst-host` | VST3 host over raw `vst3` COM bindings; scanner, bundle, module, instance, `VstPluginNode` | Implemented, compile-checked; FFI crate, does not deny unsafe |
 | `geist-clap-host` | CLAP host over `clap-sys`; scanner, bundle, cache db, params, state, gui, instance, `ClapPluginNode` | Substantially implemented; **not on the active plan** per ADR 001 |
@@ -71,7 +71,7 @@ Actual `[dependencies]` edges between workspace members:
 
 ```
 geist-core        (no workspace deps)
-geist-config      (no workspace deps)
+spectre-config      (no workspace deps)
 geist-dsp         (no workspace deps; rustfft)
 geist-project     (no workspace deps; serde/ciborium/toml/blake3)
 geist-lv2-host    (no workspace deps)
@@ -81,7 +81,7 @@ geist-graph          -> geist-core
 geist-audio-backend  -> geist-core
 geist-timeline       -> geist-core
 geist-automation     -> geist-core
-geist-ui             -> geist-config
+geist-ui             -> spectre-config
 
 geist-vst-host       -> geist-core, geist-graph
 geist-clap-host      -> geist-core, geist-graph
@@ -91,7 +91,7 @@ geist-modular        -> geist-core, geist-graph
 
 app/geist-daw        -> geist-core, geist-graph, geist-audio-backend,
                         geist-synth, geist-fx, geist-timeline,
-                        geist-project, geist-ui, geist-config
+                        geist-project, geist-ui, spectre-config
 ```
 
 The direction is acyclic and `geist-core` is the only shared root. Two edges are
@@ -100,7 +100,7 @@ worth naming because they are surprising:
 - **`geist-project` depends on nothing in the workspace.** It is a parallel serde
   data model, not a projection of an in-memory one. Converting between it and live
   app state is `app/geist-daw/src/session.rs`'s job.
-- **`geist-ui` depends only on `geist-config`.** It does not see `geist-core` or
+- **`geist-ui` depends only on `spectre-config`.** It does not see `geist-core` or
   `geist-timeline`; it owns its own renderer-facing `SessionModel` and
   `TimelineModel` types. The app binary is the only place UI types and engine types
   meet.

@@ -5,7 +5,7 @@
 
 use crate::commands::UICommand;
 use crate::state::{SelectedObject, UIState, WorkspacePane};
-use geist_config::schema::{Density, LensId, PanelEdge, PanelId};
+use spectre_config::schema::{Density, LensId, PanelEdge, PanelId};
 
 // Swappable renderer boundary for egui now and wgpu later
 pub trait Renderer {
@@ -149,7 +149,7 @@ fn lens_title(lens: LensId) -> &'static str {
 mod tests {
     use super::*;
     use crate::state::{SelectedObject, UIState};
-    use geist_config::schema::{ContextShelfConfig, LensId, PanelId, WorkflowProfile};
+    use spectre_config::schema::{ContextShelfConfig, LensId, PanelId, WorkflowProfile};
 
     #[test]
     fn frame_uses_workflow_lens_order_and_layout() {

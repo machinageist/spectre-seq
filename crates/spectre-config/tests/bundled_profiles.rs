@@ -3,7 +3,7 @@
 // Description: Validation coverage for bundled workflow profile TOML files.
 // Notes: Bundled profiles must remain safe examples for creator-authored workflows.
 
-use geist_config::loader::load_workflow_toml;
+use spectre_config::loader::load_workflow_toml;
 use std::path::PathBuf;
 
 #[test]

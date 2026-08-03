@@ -7,7 +7,7 @@
 //        engine. Row 0 is the lowest note, drawn at the bottom like a keyboard.
 
 use egui::{pos2, vec2, Align2, FontId, Rect, RichText, Sense, Stroke, StrokeKind};
-use geist_config::commands::CommandIntent;
+use spectre_config::commands::CommandIntent;
 
 use crate::model::StepSequencerModel;
 use crate::theme;

@@ -33,7 +33,7 @@ eframe = "0.34"
 # Tactile-dark theme and Knob/Fader/Meter widgets for the front-end
 geist-ui = { path = "../../crates/geist-ui" }
 # Workflow profile parsing and startup precedence
-geist-config = { path = "../../crates/geist-config" }
+spectre-config = { path = "../../crates/spectre-config" }
 # WAV encoding for recorded audio clips
 hound = "3.5"
 # Native/portal file picker for manually relinking offline takes

@@ -13,8 +13,8 @@
 // =============================================================================
 
 use eframe::egui;
-use geist_config::commands::CommandIntent;
-use geist_config::templates::{TemplateKind, TemplateRef};
+use spectre_config::commands::CommandIntent;
+use spectre_config::templates::{TemplateKind, TemplateRef};
 use std::collections::HashMap;
 
 use geist_ui::model::{

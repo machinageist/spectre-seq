@@ -12,9 +12,9 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use geist_config::loader::WorkflowSource;
-use geist_config::schema::WorkflowProfile;
-use geist_config::validate::ConfigDiagnostic;
+use spectre_config::loader::WorkflowSource;
+use spectre_config::schema::WorkflowProfile;
+use spectre_config::validate::ConfigDiagnostic;
 use geist_ui::state::UIState;
 
 // Parsed process options that affect startup routing
@@ -94,7 +94,7 @@ fn resolve_ui_state_from_paths(
         ),
         (
             WorkflowSource::BundledProfile,
-            geist_config::loader::load_workflow_toml(&bundled_default),
+            spectre_config::loader::load_workflow_toml(&bundled_default),
         ),
     ];
 
@@ -103,7 +103,7 @@ fn resolve_ui_state_from_paths(
         if user.exists() {
             candidates.push((
                 WorkflowSource::UserProfile,
-                geist_config::loader::load_workflow_toml(&user),
+                spectre_config::loader::load_workflow_toml(&user),
             ));
         }
     }
@@ -112,14 +112,14 @@ fn resolve_ui_state_from_paths(
     if project.exists() {
         candidates.push((
             WorkflowSource::ProjectOverride,
-            geist_config::loader::load_workflow_toml(&project),
+            spectre_config::loader::load_workflow_toml(&project),
         ));
     }
 
     if let Some(explicit) = explicit {
         candidates.push((
             WorkflowSource::ProjectOverride,
-            geist_config::loader::load_workflow_toml(explicit),
+            spectre_config::loader::load_workflow_toml(explicit),
         ));
     }
 
@@ -141,7 +141,7 @@ fn bundled_default_workflow_path() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_config::schema::LensId;
+    use spectre_config::schema::LensId;
     use std::fs;
 
     #[test]

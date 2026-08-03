@@ -3,7 +3,7 @@
 // Description: UI state derived from project selection and workflow configuration.
 // Notes: UI state is disposable view state; project and audio truth live outside widgets.
 
-use geist_config::schema::{LayoutConfig, LensId, WorkflowProfile};
+use spectre_config::schema::{LayoutConfig, LensId, WorkflowProfile};
 
 // Renderer-facing UI state snapshot
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -199,7 +199,7 @@ pub enum UIStateError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_config::schema::{LensConfig, WorkflowProfile};
+    use spectre_config::schema::{LensConfig, WorkflowProfile};
 
     #[test]
     fn default_state_uses_default_workflow_startup_lens() {

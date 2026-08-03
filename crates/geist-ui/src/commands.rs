@@ -3,9 +3,9 @@
 // Description: UI command types emitted by widgets and workflow bindings.
 // Notes: Commands are typed app intents; workflow aliases cannot bypass validation.
 
-use geist_config::commands::CommandIntent;
-use geist_config::schema::{LensId, WorkflowProfile};
-use geist_config::validate::ConfigDiagnostic;
+use spectre_config::commands::CommandIntent;
+use spectre_config::schema::{LensId, WorkflowProfile};
+use spectre_config::validate::ConfigDiagnostic;
 use std::path::PathBuf;
 
 // Typed UI command boundary between widgets and the app layer

@@ -184,7 +184,7 @@ geistdaw/
 │   │       ├── autosave.rs             # background autosave thread + crash recovery
 │   │       └── settings.rs             # global settings (TOML via toml crate)
 │   │
-│   ├── geist-config/                   # user/project config; workflow profiles; no audio callback work
+│   ├── spectre-config/                   # user/project config; workflow profiles; no audio callback work
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs

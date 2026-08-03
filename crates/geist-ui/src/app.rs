@@ -5,15 +5,15 @@
 
 use crate::commands::{command_from_intent, UICommand, UICommandError};
 use crate::state::{SelectedObject, UIState, UIStateError};
-use geist_config::loader::{load_workflow_toml, resolve_workflow, WorkflowSource};
-use geist_config::validate::ConfigDiagnostic;
+use spectre_config::loader::{load_workflow_toml, resolve_workflow, WorkflowSource};
+use spectre_config::validate::ConfigDiagnostic;
 use std::path::Path;
 
 // Minimal app shell for workflow-driven UI state
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct App {
     state: UIState,
-    pending_app_intents: Vec<geist_config::commands::CommandIntent>,
+    pending_app_intents: Vec<spectre_config::commands::CommandIntent>,
 }
 
 impl App {
@@ -33,7 +33,7 @@ impl App {
         candidates: impl IntoIterator<
             Item = (
                 WorkflowSource,
-                Result<geist_config::schema::WorkflowProfile, Vec<ConfigDiagnostic>>,
+                Result<spectre_config::schema::WorkflowProfile, Vec<ConfigDiagnostic>>,
             ),
         >,
     ) -> (Self, Vec<(WorkflowSource, ConfigDiagnostic)>) {
@@ -59,11 +59,11 @@ impl App {
         &self.state
     }
 
-    pub fn pending_app_intents(&self) -> &[geist_config::commands::CommandIntent] {
+    pub fn pending_app_intents(&self) -> &[spectre_config::commands::CommandIntent] {
         &self.pending_app_intents
     }
 
-    pub fn drain_pending_app_intents(&mut self) -> Vec<geist_config::commands::CommandIntent> {
+    pub fn drain_pending_app_intents(&mut self) -> Vec<spectre_config::commands::CommandIntent> {
         self.pending_app_intents.drain(..).collect()
     }
 
@@ -136,8 +136,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geist_config::commands::CommandIntent;
-    use geist_config::schema::{LensId, WorkflowProfile};
+    use spectre_config::commands::CommandIntent;
+    use spectre_config::schema::{LensId, WorkflowProfile};
     use std::fs;
     use std::path::PathBuf;
 
