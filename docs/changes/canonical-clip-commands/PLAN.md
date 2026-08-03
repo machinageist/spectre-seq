@@ -99,7 +99,7 @@ Decisions:
 - MIDI clips directly own notes with stable `NoteId`, clip-relative `MusicalTime`, channel, pitch, normalized velocity, and nonzero duration.
 - MIDI duplication deep-copies notes with newly allocated note IDs.
 - Automation uses a typed track-parameter or graph-node-parameter target and clip-relative musical breakpoints.
-- Automation values are normalized to `0.0..=1.0`; segment shape reuses `geist_automation::CurveShape`.
+- Automation values are normalized to `0.0..=1.0`; segment shape reuses `spectre_automation::CurveShape`.
 - Missing automation targets preserve an unresolved, saveable clip and curve.
 - Target resolution is derived rather than persisted, and cross-track movement never retargets implicitly.
 - Right resize masks rather than deletes out-of-bound MIDI notes and automation points.

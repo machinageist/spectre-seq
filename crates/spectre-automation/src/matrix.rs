@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-automation/src/matrix.rs
+// File: crates/spectre-automation/src/matrix.rs
 // Layer: automation
 // Purpose: ModMatrix: Vec<ModRoute>
 // Status: Implemented; route list summing source contributions per target.

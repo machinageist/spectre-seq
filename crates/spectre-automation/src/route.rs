@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-automation/src/route.rs
+// File: crates/spectre-automation/src/route.rs
 // Layer: automation
 // Purpose: ModRoute { src: PortId, dst: PortId, depth, bipolar }
 // Status: Implemented; one modulation connection with depth and polarity.

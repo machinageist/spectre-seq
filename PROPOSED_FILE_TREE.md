@@ -161,7 +161,7 @@ geistdaw/
 │   │       ├── playhead.rs             # sample-accurate playhead position
 │   │       └── commands.rs             # command objects for undo/redo
 │   │
-│   ├── geist-automation/               # automation lanes + modulation matrix
+│   ├── spectre-automation/               # automation lanes + modulation matrix
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs

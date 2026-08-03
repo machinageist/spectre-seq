@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-automation/src/tests/mod_sum_tests.rs
+// File: crates/spectre-automation/src/tests/mod_sum_tests.rs
 // Layer: automation
 // Purpose: End-to-end checks of base + modulation summation and clamping
 // Status: Implemented; exercises the unified evaluator across all layers.

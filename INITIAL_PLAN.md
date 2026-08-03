@@ -100,7 +100,7 @@ Notes: Preserved as historical planning context; living product authority is lin
 
 ## Phase 7 — Automation & Modulation (Weeks 16–22)
 
-- `geist-automation`: unifies automation lanes and real-time modulation into one system
+- `spectre-automation`: unifies automation lanes and real-time modulation into one system
 - Automation lane: breakpoint curve over timeline position; evaluated per-block, outputs `f32` into parameter target
 - Modulation source: any `PortType::CV` output in the graph can target any `PortType::Parameter` input — this IS the modular routing feature
 - Modulation matrix stored as `Vec<ModRoute { src: PortId, dst: PortId, depth: f32, bipolar: bool }>`

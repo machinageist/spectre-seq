@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-automation/src/evaluator.rs
+// File: crates/spectre-automation/src/evaluator.rs
 // Layer: automation
 // Purpose: per-block curve evaluation + mod sum resolution
 // Status: Implemented; unifies automation lanes, modulation, and clamping.

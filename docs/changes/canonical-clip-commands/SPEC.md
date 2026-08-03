@@ -90,7 +90,7 @@ An automation payload owns one typed target and its clip-relative curve. Initial
 - track parameter: `TrackId` plus `ParamId`;
 - graph or plugin parameter: `NodeId` plus `ParamId`.
 
-Breakpoint positions use clip-relative `MusicalTime`. Values are normalized to the inclusive `0.0..=1.0` range; parameter metadata maps normalized values to native and display units. Segment shape reuses `geist_automation::CurveShape`; the canonical timeline does not define another equivalent curve enum.
+Breakpoint positions use clip-relative `MusicalTime`. Values are normalized to the inclusive `0.0..=1.0` range; parameter metadata maps normalized values to native and display units. Segment shape reuses `spectre_automation::CurveShape`; the canonical timeline does not define another equivalent curve enum.
 
 Points remain sorted by position with at most one point at each tick. Setting an existing position replaces its normalized value and outgoing segment shape. The last point's outgoing shape is retained for round-trip fidelity but has no evaluation effect until a later point exists.
 

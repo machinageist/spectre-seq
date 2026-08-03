@@ -1,5 +1,5 @@
 # ==============================================================================
-# File: crates/geist-automation/Cargo.toml
+# File: crates/spectre-automation/Cargo.toml
 # Layer: automation
 # Purpose: Automation lanes + modulation matrix unified into parameter values.
 # Status: Implemented incrementally; curve shapes first.
@@ -7,7 +7,7 @@
 # ==============================================================================
 
 [package]
-name = "geist-automation"
+name = "spectre-automation"
 version = "0.1.0"
 edition = "2021"
 

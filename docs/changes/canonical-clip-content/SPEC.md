@@ -299,7 +299,7 @@ Ordering rationale: MIDI content depends on nothing outside `spectre-core` and a
 
 - D1 relocation complete: `MusicalTime` in `spectre-core`, arrangement in `spectre-document`.
 - D2 complete: document, revision, transactions, history, allocators.
-- `CurveShape` relocated from `geist-automation` to `spectre-core`, per Milestone 1's removal of the timeline-to-automation dependency. This spec's expression curves and envelopes both consume it.
+- `CurveShape` relocated from `spectre-automation` to `spectre-core`, per Milestone 1's removal of the timeline-to-automation dependency. This spec's expression curves and envelopes both consume it.
 - The assets aggregate must land before CC3. See Decision 2.
 
 ## Planning status

@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-automation/src/curve.rs
+// File: crates/spectre-automation/src/curve.rs
 // Layer: automation
 // Purpose: CurveSegment: linear, exponential, bezier
 // Status: Implemented; shape interpolation between two breakpoint values.

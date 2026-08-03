@@ -33,7 +33,7 @@ Root `Cargo.toml` declares `members = ["xtask", "crates/*", "plugins/*", "app/ge
 | `spectre-dsp` | Oscillators, filters, envelopes, LFOs, fx primitives, FFT, math/SIMD helpers, benches | Implemented incrementally |
 | `spectre-audio-backend` | Backend abstraction, `BlockBridge`, cpal backend, capture ring, xrun counter | cpal implemented; JACK and PipeWire are scaffolds |
 | `geist-timeline` | Transport, tempo map, playhead, arena clips/patterns, legacy `Timeline`, canonical `Arrangement`/`ClipEntity`, identity | Mixed; see "Competing arrangement authorities" |
-| `geist-automation` | Curves, lanes, routes, modulation matrix, evaluator | Implemented; **no consumer in the app binary** |
+| `spectre-automation` | Curves, lanes, routes, modulation matrix, evaluator | Implemented; **no consumer in the app binary** |
 | `spectre-project` | On-disk project schema, CBOR serialize, TOML settings, blake3 asset map, migration, autosave | Implemented; **zero workspace dependencies** — a standalone serde DTO tree |
 | `spectre-config` | Workflow profile schema, TOML loader, keybindings, command intents, validation | Implemented |
 | `geist-ui` | UI state, typed selection, commands, egui renderer, views, widgets, theme | Implemented incrementally |
@@ -80,7 +80,7 @@ xtask             (no workspace deps)
 spectre-graph          -> spectre-core
 spectre-audio-backend  -> spectre-core
 geist-timeline       -> spectre-core
-geist-automation     -> spectre-core
+spectre-automation     -> spectre-core
 geist-ui             -> spectre-config
 
 geist-vst-host       -> spectre-core, spectre-graph
@@ -106,7 +106,7 @@ worth naming because they are surprising:
   meet.
 
 Five workspace members build and test but contribute nothing to the running
-binary: `geist-automation`, `geist-modular`, `geist-vst-host`, `geist-clap-host`,
+binary: `spectre-automation`, `geist-modular`, `geist-vst-host`, `geist-clap-host`,
 `spectre-lv2-host`.
 
 ### Planned: `spectre-document`
@@ -199,7 +199,7 @@ These are load-bearing gaps, not omissions from this document.
    every node** (`crates/spectre-graph/src/process_list.rs:205-214`). There is no
    per-port event routing, no control-rate buffer, no polyphonic lane, and no rate
    conversion. Typed multi-rate routing is roadmap Milestone 3.
-4. **Automation is not connected.** `geist-automation` implements curves, lanes,
+4. **Automation is not connected.** `spectre-automation` implements curves, lanes,
    and an evaluator, and nothing depends on it.
 5. **No plugin host is instantiated.** ADR 001 makes VST3 the active target;
    `geist-vst-host` is implemented and compile-checked, but the binary never loads

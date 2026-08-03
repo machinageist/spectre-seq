@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-automation/src/lib.rs
+// File: crates/spectre-automation/src/lib.rs
 // Layer: automation
 // Purpose: Automation lanes + modulation matrix unified into parameter values
 // Status: Implemented incrementally; curve shapes first.

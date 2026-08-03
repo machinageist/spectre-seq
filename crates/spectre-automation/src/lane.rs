@@ -1,5 +1,5 @@
 // =============================================================================
-// File: crates/geist-automation/src/lane.rs
+// File: crates/spectre-automation/src/lane.rs
 // Layer: automation
 // Purpose: AutomationLane: breakpoint curve over timeline
 // Status: Implemented; sorted breakpoints with per-segment curve evaluation.
