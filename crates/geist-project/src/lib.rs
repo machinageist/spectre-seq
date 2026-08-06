@@ -101,7 +101,7 @@ pub fn from_bytes(bytes: &[u8]) -> Result<ProjectEnvelope, ProjectError> {
     Ok(envelope)
 }
 
-// Revalidate invariants that derived serde decoding cannot enforce
+// Revalidate project-level invariants after validated field decoding
 fn validate(envelope: &ProjectEnvelope) -> Result<(), ProjectError> {
     if envelope.project.id.raw() == 0 {
         return Err(ProjectError::InvalidProject("object ID must be nonzero"));

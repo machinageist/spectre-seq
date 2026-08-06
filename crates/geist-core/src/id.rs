@@ -3,15 +3,26 @@
 // Description: Stable 64-bit object identity (CORE-001)
 // Notes: Nonzero, generator-scoped uniqueness; project-wide duplicate validation arrives with persisted object collections
 
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 
 // Splitmix64 increment constant
 const SPLITMIX_GAMMA: u64 = 0x9E37_79B9_7F4A_7C15;
 
 // Stable identity for every user-visible object
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
 pub struct ObjectId(u64);
+
+impl<'de> Deserialize<'de> for ObjectId {
+    // Decode the transparent integer while enforcing nonzero identity
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = u64::deserialize(deserializer)?;
+        Self::from_raw(raw).ok_or_else(|| D::Error::custom("object ID must be nonzero"))
+    }
+}
 
 impl ObjectId {
     // Construct from a raw nonzero value
@@ -86,5 +97,23 @@ mod tests {
     fn zero_is_rejected() {
         assert!(ObjectId::from_raw(0).is_none());
         assert!(ObjectId::from_raw(1).is_some());
+    }
+
+    #[test]
+    fn zero_json_is_rejected() {
+        let error = serde_json::from_str::<ObjectId>("0").unwrap_err();
+
+        assert!(error.to_string().contains("object ID must be nonzero"));
+    }
+
+    #[test]
+    fn nonzero_numeric_json_round_trips_exactly() {
+        for raw in [1, 1_311_768_467_463_790_320, u64::MAX] {
+            let id = ObjectId::from_raw(raw).unwrap();
+            let json = serde_json::to_string(&id).unwrap();
+
+            assert_eq!(json, raw.to_string());
+            assert_eq!(serde_json::from_str::<ObjectId>(&json).unwrap(), id);
+        }
     }
 }

@@ -47,6 +47,7 @@ pub struct TrackView {
 // One backend-defined parameter and its current app-thread value
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParameterControl {
+    pub instance_id: ObjectId,
     pub descriptor: DspParameter,
     pub value: f32,
 }
@@ -54,6 +55,7 @@ pub struct ParameterControl {
 // One device card rendered from the stabilized backend contract
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeviceControl {
+    pub instance_id: ObjectId,
     pub key: &'static str,
     pub name: &'static str,
     pub role: &'static str,
@@ -62,12 +64,14 @@ pub struct DeviceControl {
 
 impl DeviceControl {
     fn from_descriptors(
+        ids: &mut IdGen,
         key: &'static str,
         name: &'static str,
         role: &'static str,
         descriptors: &[DspParameter],
     ) -> Self {
         Self {
+            instance_id: ids.next_id(),
             key,
             name,
             role,
@@ -75,6 +79,7 @@ impl DeviceControl {
                 .iter()
                 .copied()
                 .map(|descriptor| ParameterControl {
+                    instance_id: ids.next_id(),
                     value: descriptor.default(),
                     descriptor,
                 })
@@ -144,18 +149,21 @@ impl AppModel {
             tracks: vec![track],
             devices: vec![
                 DeviceControl::from_descriptors(
+                    &mut ids,
                     "pulse",
                     "Pulse",
                     "Instrument · stereo out · note input",
                     &PULSE_PARAMETERS,
                 ),
                 DeviceControl::from_descriptors(
+                    &mut ids,
                     "gain",
                     "Gain",
                     "Effect · stereo in/out",
                     &GAIN_PARAMETERS,
                 ),
                 DeviceControl::from_descriptors(
+                    &mut ids,
                     "saturator",
                     "Saturator",
                     "Effect · stereo in/out",
@@ -248,7 +256,9 @@ impl AppModel {
                         parameter_key: descriptor.key,
                     })?;
                 Ok(DeviceParameterSnapshot::new(
+                    device.instance_id,
                     device_key,
+                    parameter.instance_id,
                     descriptor,
                     parameter.value,
                 ))

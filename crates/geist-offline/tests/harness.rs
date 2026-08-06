@@ -4,7 +4,7 @@
 // Notes: R2 gates — the fixture renders through the compiled plan and matches a hand-wired chain
 
 use geist_app::AppModel;
-use geist_core::{ParamSpec, ParamUnit};
+use geist_core::{ObjectId, ParamSpec, ParamUnit};
 use geist_dsp::{
     AudioProcessor, DeviceParameterSnapshot, DspParameter, Gain, ProcessContext, PulseInstrument,
     Saturator, Waveform, GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS,
@@ -234,40 +234,108 @@ fn app_defaults_match_backend_authoritative_default_render() {
     assert_eq!(report, expected);
 }
 
+fn id(raw: u64) -> ObjectId {
+    ObjectId::from_raw(raw).unwrap()
+}
+
 fn complete_snapshot() -> Vec<DeviceParameterSnapshot> {
     vec![
-        DeviceParameterSnapshot::new("pulse", PULSE_PARAMETERS[0], PULSE_PARAMETERS[0].default()),
-        DeviceParameterSnapshot::new("gain", GAIN_PARAMETERS[0], GAIN_PARAMETERS[0].default()),
         DeviceParameterSnapshot::new(
+            id(10),
+            "pulse",
+            id(11),
+            PULSE_PARAMETERS[0],
+            PULSE_PARAMETERS[0].default(),
+        ),
+        DeviceParameterSnapshot::new(
+            id(20),
+            "gain",
+            id(21),
+            GAIN_PARAMETERS[0],
+            GAIN_PARAMETERS[0].default(),
+        ),
+        DeviceParameterSnapshot::new(
+            id(30),
             "saturator",
+            id(31),
             SATURATOR_PARAMETERS[0],
             SATURATOR_PARAMETERS[0].default(),
         ),
         DeviceParameterSnapshot::new(
+            id(30),
             "saturator",
+            id(32),
             SATURATOR_PARAMETERS[1],
             SATURATOR_PARAMETERS[1].default(),
         ),
     ]
 }
 
+fn render_with_deserialized_gain_ids(
+    device_id_json: &str,
+    parameter_id_json: &str,
+) -> Result<RenderReport, String> {
+    let device_id = serde_json::from_str(device_id_json).map_err(|error| error.to_string())?;
+    let parameter_id =
+        serde_json::from_str(parameter_id_json).map_err(|error| error.to_string())?;
+    let mut snapshot = complete_snapshot();
+    snapshot[1] = DeviceParameterSnapshot::new(
+        device_id,
+        "gain",
+        parameter_id,
+        GAIN_PARAMETERS[0],
+        GAIN_PARAMETERS[0].default(),
+    );
+    render_app_snapshot(48_000.0, 2_048, &snapshot)
+}
+
+#[test]
+fn deserialized_zero_ids_cannot_enter_snapshot_render_construction() {
+    for (device_id, parameter_id) in [("0", "21"), ("20", "0")] {
+        let error = render_with_deserialized_gain_ids(device_id, parameter_id).unwrap_err();
+
+        assert!(error.contains("object ID must be nonzero"));
+    }
+}
+
 #[test]
 fn snapshot_constructor_contains_non_finite_and_out_of_range_values() {
     for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
-        let snapshot = DeviceParameterSnapshot::new("gain", GAIN_PARAMETERS[0], value);
-        assert_eq!(snapshot.value(), GAIN_PARAMETERS[0].default());
+        let snapshot =
+            DeviceParameterSnapshot::new(id(20), "gain", id(21), GAIN_PARAMETERS[0], value);
+        assert_eq!(
+            snapshot.value().to_bits(),
+            GAIN_PARAMETERS[0].default().to_bits()
+        );
     }
 
-    let below = DeviceParameterSnapshot::new("gain", GAIN_PARAMETERS[0], -1.0);
-    let above = DeviceParameterSnapshot::new("gain", GAIN_PARAMETERS[0], 100.0);
+    let below = DeviceParameterSnapshot::new(id(20), "gain", id(21), GAIN_PARAMETERS[0], -1.0);
+    let above = DeviceParameterSnapshot::new(id(20), "gain", id(21), GAIN_PARAMETERS[0], 100.0);
     assert_eq!(below.value(), GAIN_PARAMETERS[0].minimum());
     assert_eq!(above.value(), GAIN_PARAMETERS[0].maximum());
 }
 
 #[test]
+fn snapshot_constructor_preserves_signed_zero_and_subnormal_bits() {
+    for value in [-0.0_f32, f32::from_bits(1)] {
+        let snapshot =
+            DeviceParameterSnapshot::new(id(20), "gain", id(21), GAIN_PARAMETERS[0], value);
+        assert_eq!(snapshot.value().to_bits(), value.to_bits());
+    }
+    let below_zero = DeviceParameterSnapshot::new(
+        id(20),
+        "gain",
+        id(21),
+        GAIN_PARAMETERS[0],
+        f32::from_bits(0x8000_0001),
+    );
+    assert_eq!(below_zero.value().to_bits(), 0.0_f32.to_bits());
+}
+
+#[test]
 fn mismatched_device_and_parameter_identity_is_rejected() {
     let mut snapshot = complete_snapshot();
-    snapshot[0] = DeviceParameterSnapshot::new("pulse", GAIN_PARAMETERS[0], 0.0);
+    snapshot[0] = DeviceParameterSnapshot::new(id(10), "pulse", id(11), GAIN_PARAMETERS[0], 0.0);
     let error = render_app_snapshot(48_000.0, 2_048, &snapshot).unwrap_err();
 
     assert!(error.contains("pulse"));
@@ -295,6 +363,66 @@ fn duplicate_parameter_identity_is_rejected() {
 }
 
 #[test]
+fn duplicate_parameter_instance_id_is_rejected_before_render() {
+    let mut snapshot = complete_snapshot();
+    snapshot[3] = DeviceParameterSnapshot::new(
+        id(30),
+        "saturator",
+        snapshot[2].parameter_instance_id(),
+        SATURATOR_PARAMETERS[1],
+        SATURATOR_PARAMETERS[1].default(),
+    );
+
+    let error = render_app_snapshot(48_000.0, 2_048, &snapshot).unwrap_err();
+    assert!(error.contains("duplicate parameter instance ID"));
+}
+
+#[test]
+fn inconsistent_device_instance_identity_is_rejected_before_render() {
+    let mut snapshot = complete_snapshot();
+    snapshot[3] = DeviceParameterSnapshot::new(
+        id(33),
+        "saturator",
+        snapshot[3].parameter_instance_id(),
+        SATURATOR_PARAMETERS[1],
+        SATURATOR_PARAMETERS[1].default(),
+    );
+
+    let error = render_app_snapshot(48_000.0, 2_048, &snapshot).unwrap_err();
+    assert!(error.contains("inconsistent device instance identity"));
+}
+
+#[test]
+fn one_device_instance_id_cannot_alias_two_device_keys() {
+    let mut snapshot = complete_snapshot();
+    snapshot[1] = DeviceParameterSnapshot::new(
+        snapshot[0].device_instance_id(),
+        "gain",
+        snapshot[1].parameter_instance_id(),
+        GAIN_PARAMETERS[0],
+        GAIN_PARAMETERS[0].default(),
+    );
+
+    let error = render_app_snapshot(48_000.0, 2_048, &snapshot).unwrap_err();
+    assert!(error.contains("inconsistent device instance identity"));
+}
+
+#[test]
+fn device_and_parameter_instance_alias_is_rejected_before_render() {
+    let mut snapshot = complete_snapshot();
+    snapshot[1] = DeviceParameterSnapshot::new(
+        snapshot[1].parameter_instance_id(),
+        "gain",
+        snapshot[1].parameter_instance_id(),
+        GAIN_PARAMETERS[0],
+        GAIN_PARAMETERS[0].default(),
+    );
+
+    let error = render_app_snapshot(48_000.0, 2_048, &snapshot).unwrap_err();
+    assert!(error.contains("device and parameter instance IDs alias"));
+}
+
+#[test]
 fn complete_snapshot_is_order_independent() {
     let canonical = complete_snapshot();
     let expected = render_app_snapshot(48_000.0, 2_048, &canonical).unwrap();
@@ -312,7 +440,7 @@ fn offline_rejects_values_not_canonical_for_authoritative_descriptor() {
     let spoofed_spec = ParamSpec::new(ParamUnit::Linear, 0.0, 100.0, 50.0).unwrap();
     let spoofed_gain = DspParameter::new(GAIN_PARAMETERS[0].key, "Gain", spoofed_spec);
     let mut snapshot = complete_snapshot();
-    snapshot[1] = DeviceParameterSnapshot::new("gain", spoofed_gain, 50.0);
+    snapshot[1] = DeviceParameterSnapshot::new(id(20), "gain", id(21), spoofed_gain, 50.0);
 
     let error = render_app_snapshot(48_000.0, 2_048, &snapshot).unwrap_err();
     assert!(error.contains("non-canonical value"));

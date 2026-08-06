@@ -5,6 +5,7 @@
 
 use geist_app::{AppModel, Lens};
 use geist_dsp::{DeviceParameterKey, GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS};
+use std::collections::HashSet;
 
 #[test]
 fn transport_toggle_is_deterministic() {
@@ -65,6 +66,51 @@ fn prototype_device_controls_derive_from_backend_descriptors() {
     assert_eq!(devices[1].parameters[0].descriptor, GAIN_PARAMETERS[0]);
     assert_eq!(devices[2].parameters[0].descriptor, SATURATOR_PARAMETERS[0]);
     assert_eq!(devices[2].parameters[1].descriptor, SATURATOR_PARAMETERS[1]);
+}
+
+#[test]
+fn prototype_devices_and_parameters_have_unique_nonzero_instance_ids() {
+    let model = AppModel::prototype();
+    let mut ids = HashSet::new();
+
+    for track in model.tracks() {
+        assert_ne!(track.id.raw(), 0);
+        assert!(ids.insert(track.id));
+    }
+    for device in model.devices() {
+        assert_ne!(device.instance_id.raw(), 0);
+        assert!(ids.insert(device.instance_id));
+        for parameter in &device.parameters {
+            assert_ne!(parameter.instance_id.raw(), 0);
+            assert!(ids.insert(parameter.instance_id));
+        }
+    }
+}
+
+#[test]
+fn snapshot_preserves_control_instance_ids_across_value_edits() {
+    let mut model = AppModel::prototype();
+    let before = model.device_parameter_snapshot().unwrap();
+
+    model
+        .set_device_parameter("saturator", "drive", 7.25)
+        .unwrap();
+    let after = model.device_parameter_snapshot().unwrap();
+
+    for prior in before {
+        let current = after
+            .iter()
+            .find(|entry| {
+                entry.device_key() == prior.device_key()
+                    && entry.parameter_key() == prior.parameter_key()
+            })
+            .unwrap();
+        assert_eq!(current.device_instance_id(), prior.device_instance_id());
+        assert_eq!(
+            current.parameter_instance_id(),
+            prior.parameter_instance_id()
+        );
+    }
 }
 
 #[test]
@@ -191,4 +237,54 @@ fn device_parameter_snapshot_uses_canonical_identity_and_range() {
 
     assert_eq!(published_gain.parameter_key(), GAIN_PARAMETERS[0].key);
     assert_eq!(published_gain.value(), GAIN_PARAMETERS[0].maximum());
+}
+
+#[test]
+fn setter_and_snapshot_preserve_signed_zero_and_subnormal_bits() {
+    let mut model = AppModel::prototype();
+    for value in [-0.0_f32, f32::from_bits(1)] {
+        model.set_device_parameter("gain", "gain", value).unwrap();
+        let control = model
+            .devices()
+            .iter()
+            .find(|device| device.key == "gain")
+            .unwrap()
+            .parameters
+            .iter()
+            .find(|parameter| parameter.descriptor.key == GAIN_PARAMETERS[0].key)
+            .unwrap();
+        let snapshot = model.device_parameter_snapshot().unwrap();
+        let published = snapshot
+            .iter()
+            .find(|parameter| parameter.device_key() == "gain")
+            .unwrap();
+
+        assert_eq!(control.value.to_bits(), value.to_bits());
+        assert_eq!(published.value().to_bits(), value.to_bits());
+    }
+
+    model
+        .set_device_parameter("gain", "gain", f32::from_bits(0x8000_0001))
+        .unwrap();
+    let published = model
+        .device_parameter_snapshot()
+        .unwrap()
+        .into_iter()
+        .find(|parameter| parameter.device_key() == "gain")
+        .unwrap();
+    assert_eq!(published.value().to_bits(), 0.0_f32.to_bits());
+
+    model
+        .set_device_parameter("gain", "gain", f32::NAN)
+        .unwrap();
+    let published = model
+        .device_parameter_snapshot()
+        .unwrap()
+        .into_iter()
+        .find(|parameter| parameter.device_key() == "gain")
+        .unwrap();
+    assert_eq!(
+        published.value().to_bits(),
+        GAIN_PARAMETERS[0].default().to_bits()
+    );
 }

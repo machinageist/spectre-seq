@@ -16,7 +16,7 @@ Notes: This contract precedes instrument/effect UI and remains narrower than gra
 - **Supersedes:** removed prototype device APIs
 - **Superseded by:** none
 - **Open decisions:** control-rate modulation and multichannel layouts after the stereo vertical slice
-- **Known gaps:** live MIDI ingress, latency compensation, and graph compilation are later contracts
+- **Known gaps:** live MIDI ingress, latency compensation, and live callback publication are later contracts
 
 ## Processing representation
 
@@ -53,11 +53,24 @@ Bus identity is semantic rather than positional at the editable-graph layer. The
 
 ## Parameters
 
-- Device parameters have stable `ObjectId` identity and validated descriptors.
+- Every user-visible device and parameter has a stable nonzero project-instance `ObjectId` allocated from the project-scoped `IdGen`; all such IDs are unique within the project. A parameter's instance ID is distinct from its static `DeviceParameterKey`, which identifies one parameter slot on a device type.
 - R4 controls update plain values on the app thread; compiled snapshots contain callback-ready `f32` values.
 - V1 applies one parameter value per render quantum. Sample-accurate automation arrives with R9.
 - Parameter smoothing is owned by the device when discontinuities can click or destabilize processing.
 - UI labels, units, ranges, defaults, and disabled reasons derive from backend descriptors; UI code MUST NOT redefine DSP ranges.
+
+### `f32` numeric policy
+
+- `DspParameter` performs the core linear mapping in `f64` and publishes `f32`. Both directions are finite and monotone for finite inputs, and normalized `0`/`1` map bit-exactly to the plain minimum/maximum and back.
+- Normalized-to-plain publication rounds the exact linear result to nearest `f32`; its absolute plain-domain error is therefore at most one half of the enclosing `f32` quantization interval. This is the authoritative plain-domain bound and does not claim nonexistent extra precision.
+- For the R2 fixture evidence distribution—normalized `0`, the next value above `0`, quarter anchors, the next value below `1`, `1`, and 10,000 values from the fixed `0x1234_5678` LCG stream per descriptor—the normalized → plain → normalized round trip is bounded by `NORMALIZED_ROUND_TRIP_MAX_ULPS = 8192`. Tests apply the benchmark's descriptor order first, then cover every other native descriptor. The blind benchmark's worst observed fixture value was 3,005 ULP for `saturator.drive`.
+- The offset `saturator.drive` range `[1, 24]` is ill-conditioned in normalized ULPs near zero: rounding the plain `f32` near `1` and then subtracting that offset magnifies normalized ULP distance. Normalized inputs sufficiently close to an endpoint may quantize to that exact plain endpoint; they map back to exact normalized `0` or `1` and are governed by the plain-domain quantization bound rather than a universal normalized-ULP claim. Nextafter endpoint probes pin this behavior explicitly.
+
+### Signed zero and subnormals
+
+- Finite in-range signed zero is preserved bit-exactly. When a descriptor minimum is canonical `+0`, a candidate below it, including the negative minimum subnormal, clamps to that canonical `+0`.
+- Finite in-range parameter subnormals are preserved bit-exactly through the app setter and `DeviceParameterSnapshot` constructor/getter. Non-finite candidates map to the descriptor default.
+- This parameter-control policy does not define DSP signal-path denormal handling. Signal FTZ/DAZ or equivalent remains deferred to RT-003.
 
 ## Realtime contract
 

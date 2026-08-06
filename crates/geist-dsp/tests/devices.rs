@@ -6,7 +6,7 @@
 use geist_dsp::{
     AudioProcessor, DeviceClass, DeviceParameterKey, Gain, NoteEvent, NoteEventKind,
     ProcessContext, PulseInstrument, Saturator, ToneSource, Waveform, GAIN_PARAMETERS,
-    SATURATOR_PARAMETERS,
+    NORMALIZED_ROUND_TRIP_MAX_ULPS, PULSE_PARAMETERS, SATURATOR_PARAMETERS, TONE_PARAMETERS,
 };
 
 fn output(frames: usize) -> (Vec<f32>, Vec<f32>) {
@@ -32,6 +32,155 @@ fn processor_construction_uses_descriptor_validation() {
     assert!(Gain::new(GAIN_PARAMETERS[0].maximum()).is_ok());
     assert!(Gain::new(GAIN_PARAMETERS[0].maximum() + 0.1).is_err());
     assert!(Saturator::new(f32::NAN, SATURATOR_PARAMETERS[1].default()).is_err());
+}
+
+fn native_parameters() -> impl Iterator<Item = geist_dsp::DspParameter> {
+    PULSE_PARAMETERS
+        .into_iter()
+        .chain(GAIN_PARAMETERS)
+        .chain(SATURATOR_PARAMETERS)
+        .chain(TONE_PARAMETERS)
+}
+
+fn next_up(value: f32) -> f32 {
+    if value == 0.0 {
+        f32::from_bits(1)
+    } else if value > 0.0 {
+        f32::from_bits(value.to_bits() + 1)
+    } else {
+        f32::from_bits(value.to_bits() - 1)
+    }
+}
+
+fn next_down(value: f32) -> f32 {
+    if value == 0.0 {
+        f32::from_bits(0x8000_0001)
+    } else if value > 0.0 {
+        f32::from_bits(value.to_bits() - 1)
+    } else {
+        f32::from_bits(value.to_bits() + 1)
+    }
+}
+
+fn ulp_diff(left: f32, right: f32) -> u32 {
+    left.to_bits().abs_diff(right.to_bits())
+}
+
+#[test]
+fn every_native_parameter_meets_the_declared_normalized_round_trip_policy() {
+    let mut state = 0x1234_5678_u32;
+    for parameter in native_parameters() {
+        let fixtures = [0.0, next_up(0.0), 0.25, 0.5, 0.75, next_down(1.0), 1.0];
+        let mut previous_plain = f32::NEG_INFINITY;
+        for normalized in fixtures.into_iter().chain((0..10_000).map(|_| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (f64::from(state) / f64::from(u32::MAX)) as f32
+        })) {
+            let plain = parameter.from_normalized(normalized);
+            let round_trip = parameter.to_normalized(plain);
+            let adjacent_plain = parameter.from_normalized(next_up(normalized).min(1.0));
+            assert!(plain.is_finite());
+            assert!(round_trip.is_finite());
+            assert!(adjacent_plain >= plain);
+            assert!(plain >= previous_plain || !fixtures.contains(&normalized));
+            if fixtures.contains(&normalized) {
+                previous_plain = plain;
+            }
+            assert!(
+                ulp_diff(normalized, round_trip) <= NORMALIZED_ROUND_TRIP_MAX_ULPS,
+                "{}.{}: {normalized:e} -> {plain:e} -> {round_trip:e}",
+                parameter.name,
+                parameter.key.as_str()
+            );
+        }
+
+        assert_eq!(
+            parameter.from_normalized(0.0).to_bits(),
+            parameter.minimum().to_bits()
+        );
+        assert_eq!(
+            parameter.from_normalized(1.0).to_bits(),
+            parameter.maximum().to_bits()
+        );
+        assert_eq!(
+            parameter.to_normalized(parameter.minimum()).to_bits(),
+            0.0_f32.to_bits()
+        );
+        assert_eq!(
+            parameter.to_normalized(parameter.maximum()).to_bits(),
+            1.0_f32.to_bits()
+        );
+    }
+}
+
+#[test]
+fn normalized_to_plain_uses_nearest_f32_quantization_or_an_exact_endpoint() {
+    let mut state = 0xa341_316c_u32;
+    for parameter in native_parameters() {
+        for normalized in
+            [0.0, next_up(0.0), next_down(1.0), 1.0]
+                .into_iter()
+                .chain((0..10_000).map(|_| {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    (f64::from(state) / f64::from(u32::MAX)) as f32
+                }))
+        {
+            let exact = f64::from(parameter.minimum())
+                + f64::from(normalized)
+                    * (f64::from(parameter.maximum()) - f64::from(parameter.minimum()));
+            let plain = parameter.from_normalized(normalized);
+            assert_eq!(plain.to_bits(), (exact as f32).to_bits());
+        }
+
+        let next_from_zero = parameter.from_normalized(next_up(0.0));
+        if next_from_zero == parameter.minimum() {
+            assert_eq!(
+                parameter.to_normalized(next_from_zero).to_bits(),
+                0.0_f32.to_bits()
+            );
+        }
+        let next_from_one = parameter.from_normalized(next_down(1.0));
+        if next_from_one == parameter.maximum() {
+            assert_eq!(
+                parameter.to_normalized(next_from_one).to_bits(),
+                1.0_f32.to_bits()
+            );
+        }
+    }
+}
+
+#[test]
+fn descriptor_clamping_has_an_exact_signed_zero_and_subnormal_policy() {
+    let positive_zero_minimum = GAIN_PARAMETERS[0];
+    assert_eq!(
+        positive_zero_minimum.clamp(-0.0).to_bits(),
+        (-0.0_f32).to_bits()
+    );
+    assert_eq!(
+        positive_zero_minimum.clamp(f32::from_bits(1)).to_bits(),
+        f32::from_bits(1).to_bits()
+    );
+    assert_eq!(
+        positive_zero_minimum
+            .clamp(f32::from_bits(0x8000_0001))
+            .to_bits(),
+        0.0_f32.to_bits()
+    );
+    assert_eq!(
+        positive_zero_minimum.clamp(f32::NAN).to_bits(),
+        positive_zero_minimum.default().to_bits()
+    );
+
+    for parameter in native_parameters() {
+        assert_eq!(
+            parameter.clamp(next_down(parameter.minimum())).to_bits(),
+            parameter.minimum().to_bits()
+        );
+        assert_eq!(
+            parameter.clamp(next_up(parameter.maximum())).to_bits(),
+            parameter.maximum().to_bits()
+        );
+    }
 }
 
 #[test]

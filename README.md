@@ -13,7 +13,7 @@ Geist is an original, Rust-first digital audio workstation in early development.
 
 The repository contains one clean implementation workspace. The earlier prototype and its plans, assets, CI, audits, and feature lanes were removed on 2026-07-12; committed history remains available through Git.
 
-R0/R1 provides a tested musical kernel and versioned project envelope. A native interaction prototype makes the workspace launchable and reviewable. The first original instrument and effects now render through a deterministic offline chain, but live audio I/O, the editable/compiled graph, plugin hosting, and recording are not implemented. Read `docs/status/STATUS.md` before relying on any maturity claim.
+R0/R1 provides a tested musical kernel and versioned project envelope. A native interaction prototype makes the workspace launchable and reviewable. For deterministic offline R2, the editable graph compiles to an immutable validated render plan, and app-model parameter snapshots feed the compiled-plan Pulse → Gain → Saturator fixture. `geist-offline` is the current deterministic offline render and project-inspection harness. Live audio I/O and its callback bridge, plugin hosting, and recording are not implemented and remain later scope. Read `docs/status/STATUS.md` before relying on any maturity claim.
 
 ## Repository map
 
@@ -23,7 +23,7 @@ R0/R1 provides a tested musical kernel and versioned project envelope. A native 
 | `crates/geist-core/` | IDs, time, tempo, transport, events, and parameter contracts |
 | `crates/geist-dsp/` | Realtime-safe native sources, instruments, effects, and process contracts |
 | `crates/geist-graph/` | Editable device graph and immutable compiled render plan |
-| `crates/geist-offline/` | Deterministic project-inspection harness and future offline-render seam |
+| `crates/geist-offline/` | Current deterministic offline render and project-inspection harness |
 | `crates/geist-project/` | Versioned project envelope and validated decoding |
 | `docs/README.md` | Documentation authority and status vocabulary |
 | `docs/00-product/` | Accepted product direction |

@@ -3,7 +3,10 @@
 // Description: Backend-owned native-device parameter metadata
 // Notes: Project-instance identity is an ObjectId; this module's keys are stable per device type
 
-use geist_core::{ParamError, ParamSpec, ParamUnit};
+use geist_core::{ObjectId, ParamError, ParamSpec, ParamUnit};
+
+// R2 evidence-corpus ceiling; endpoint neighborhoods retain the plain-domain bound
+pub const NORMALIZED_ROUND_TRIP_MAX_ULPS: u32 = 8_192;
 
 // Stable parameter identity within a device type, distinct from project-instance ObjectId
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -76,19 +79,33 @@ impl DspParameter {
 // Owned renderer-neutral parameter value contained by one canonical DSP descriptor
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DeviceParameterSnapshot {
+    device_instance_id: ObjectId,
     device_key: &'static str,
+    parameter_instance_id: ObjectId,
     parameter_key: DeviceParameterKey,
     value: f32,
 }
 
 impl DeviceParameterSnapshot {
     // Contain app-thread input while preserving canonical device and parameter identity
-    pub fn new(device_key: &'static str, parameter: DspParameter, value: f32) -> Self {
+    pub fn new(
+        device_instance_id: ObjectId,
+        device_key: &'static str,
+        parameter_instance_id: ObjectId,
+        parameter: DspParameter,
+        value: f32,
+    ) -> Self {
         Self {
+            device_instance_id,
             device_key,
+            parameter_instance_id,
             parameter_key: parameter.key,
             value: parameter.clamp(value),
         }
+    }
+
+    pub const fn device_instance_id(&self) -> ObjectId {
+        self.device_instance_id
     }
 
     pub const fn device_key(&self) -> &'static str {
@@ -97,6 +114,10 @@ impl DeviceParameterSnapshot {
 
     pub const fn parameter_key(&self) -> DeviceParameterKey {
         self.parameter_key
+    }
+
+    pub const fn parameter_instance_id(&self) -> ObjectId {
+        self.parameter_instance_id
     }
 
     pub const fn value(&self) -> f32 {

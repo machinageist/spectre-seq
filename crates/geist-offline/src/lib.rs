@@ -12,6 +12,7 @@ use geist_graph::{Connection, EditableGraph, NodeId, PlanNoteInput};
 use geist_project::{from_bytes, ProjectDoc, ProjectEnvelope, SCHEMA_VERSION};
 use serde::Serialize;
 use serde_json::Map;
+use std::collections::{HashMap, HashSet};
 
 // Stable machine-readable report emitted by the offline harness
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -50,8 +51,39 @@ impl DeviceValues {
         let mut gain = None;
         let mut saturator_drive = None;
         let mut saturator_mix = None;
+        let mut device_ids_by_key = HashMap::new();
+        let mut device_keys_by_id = HashMap::new();
+        let mut parameter_ids = HashSet::new();
 
         for entry in snapshot {
+            if let Some(previous) =
+                device_ids_by_key.insert(entry.device_key(), entry.device_instance_id())
+            {
+                if previous != entry.device_instance_id() {
+                    return Err(format!(
+                        "inconsistent device instance identity for {}",
+                        entry.device_key()
+                    ));
+                }
+            }
+            if let Some(previous) =
+                device_keys_by_id.insert(entry.device_instance_id(), entry.device_key())
+            {
+                if previous != entry.device_key() {
+                    return Err(format!(
+                        "inconsistent device instance identity aliases {previous} and {}",
+                        entry.device_key()
+                    ));
+                }
+            }
+            if !parameter_ids.insert(entry.parameter_instance_id()) {
+                return Err(format!(
+                    "duplicate parameter instance ID for {}.{}",
+                    entry.device_key(),
+                    entry.parameter_key().as_str()
+                ));
+            }
+
             let (descriptor, target): (DspParameter, &mut Option<f32>) =
                 match (entry.device_key(), entry.parameter_key()) {
                     ("pulse", key) if key == PULSE_PARAMETERS[0].key => {
@@ -93,6 +125,13 @@ impl DeviceValues {
                     entry.parameter_key().as_str()
                 ));
             }
+        }
+
+        if device_keys_by_id
+            .keys()
+            .any(|device_id| parameter_ids.contains(device_id))
+        {
+            return Err("device and parameter instance IDs alias".into());
         }
 
         Ok(Self {
