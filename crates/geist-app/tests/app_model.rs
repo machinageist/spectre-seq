@@ -4,7 +4,7 @@
 // Notes: Pins behavior independently of egui rendering
 
 use geist_app::{AppModel, Lens};
-use geist_dsp::{GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS};
+use geist_dsp::{DeviceParameterKey, GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS};
 
 #[test]
 fn transport_toggle_is_deterministic() {
@@ -83,4 +83,112 @@ fn device_parameter_edits_use_backend_clamping() {
         .find(|parameter| parameter.descriptor.key.as_str() == "drive")
         .unwrap();
     assert_eq!(drive.value, drive.descriptor.maximum());
+}
+
+#[test]
+fn device_parameter_snapshot_is_owned_stable_and_descriptor_identified() {
+    let mut model = AppModel::prototype();
+    let before = model.device_parameter_snapshot().unwrap();
+
+    assert_eq!(before, model.device_parameter_snapshot().unwrap());
+    let pulse_parameter = PULSE_PARAMETERS[0];
+    let pulse_value = before
+        .iter()
+        .find(|parameter| {
+            parameter.device_key() == "pulse" && parameter.parameter_key() == pulse_parameter.key
+        })
+        .unwrap();
+    let _: DeviceParameterKey = pulse_value.parameter_key();
+    assert_eq!(pulse_value.value(), pulse_parameter.default());
+
+    model
+        .set_device_parameter(
+            "pulse",
+            pulse_parameter.key.as_str(),
+            pulse_parameter.maximum(),
+        )
+        .unwrap();
+    assert_eq!(pulse_value.value(), pulse_parameter.default());
+}
+
+#[test]
+fn device_parameter_snapshot_attributes_values_by_stable_identity() {
+    let mut model = AppModel::prototype();
+    for (device, parameter, value) in [
+        ("pulse", "level", 0.61),
+        ("gain", "gain", 1.37),
+        ("saturator", "drive", 4.25),
+        ("saturator", "mix", 0.83),
+    ] {
+        model
+            .set_device_parameter(device, parameter, value)
+            .unwrap();
+    }
+    let snapshot = model.device_parameter_snapshot().unwrap();
+    for (device, parameter, value) in [
+        ("pulse", "level", 0.61),
+        ("gain", "gain", 1.37),
+        ("saturator", "drive", 4.25),
+        ("saturator", "mix", 0.83),
+    ] {
+        let entry = snapshot
+            .iter()
+            .find(|entry| {
+                entry.device_key() == device && entry.parameter_key().as_str() == parameter
+            })
+            .unwrap();
+        assert_eq!(entry.value(), value, "{device}.{parameter}");
+    }
+}
+
+#[test]
+fn device_parameter_snapshot_clamps_edits_from_backend_descriptors() {
+    let mut model = AppModel::prototype();
+    model
+        .set_device_parameter("saturator", "drive", 100.0)
+        .unwrap();
+
+    let snapshot = model.device_parameter_snapshot().unwrap();
+    let drive = snapshot
+        .iter()
+        .find(|parameter| {
+            parameter.device_key() == "saturator" && parameter.parameter_key().as_str() == "drive"
+        })
+        .unwrap();
+
+    assert_eq!(drive.value(), SATURATOR_PARAMETERS[0].maximum());
+}
+
+#[test]
+fn device_parameter_snapshot_contains_non_finite_plain_values() {
+    let mut model = AppModel::prototype();
+    model
+        .set_device_parameter("gain", "gain", f32::NAN)
+        .unwrap();
+
+    let snapshot = model.device_parameter_snapshot().unwrap();
+    let published_gain = snapshot
+        .iter()
+        .find(|parameter| parameter.device_key() == "gain")
+        .unwrap();
+
+    assert!(published_gain.value().is_finite());
+    assert_eq!(published_gain.value(), GAIN_PARAMETERS[0].default());
+    assert!(published_gain.value() >= GAIN_PARAMETERS[0].minimum());
+    assert!(published_gain.value() <= GAIN_PARAMETERS[0].maximum());
+}
+
+#[test]
+fn device_parameter_snapshot_uses_canonical_identity_and_range() {
+    let mut model = AppModel::prototype();
+    model.set_device_parameter("gain", "gain", 100.0).unwrap();
+
+    let snapshot = model.device_parameter_snapshot().unwrap();
+    let published_gain = snapshot
+        .iter()
+        .find(|entry| entry.device_key() == "gain")
+        .unwrap();
+
+    assert_eq!(published_gain.parameter_key(), GAIN_PARAMETERS[0].key);
+    assert_eq!(published_gain.value(), GAIN_PARAMETERS[0].maximum());
 }

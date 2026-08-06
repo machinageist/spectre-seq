@@ -229,7 +229,7 @@ impl GeistPrototype {
             let x = rect.left() + index as f32 * rect.width() / 9.0;
             painter.line_segment(
                 [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                Stroke::new(1.0, Color32::from_rgb(40, 47, 59)),
+                Stroke::new(1.0_f32, Color32::from_rgb(40, 47, 59)),
             );
         }
         let clip = egui::Rect::from_min_size(
@@ -258,7 +258,7 @@ impl GeistPrototype {
                     egui::pos2(x, clip.bottom() - 12.0),
                     egui::pos2(x, clip.bottom() - 12.0 - h),
                 ],
-                Stroke::new(2.0, ACCENT),
+                Stroke::new(2.0_f32, ACCENT),
             );
         }
     }
@@ -316,8 +316,9 @@ impl GeistPrototype {
             .color(MUTED),
         );
         ui.add_space(12.0);
+        let mut edits = Vec::new();
         egui::ScrollArea::vertical().show(ui, |ui| {
-            for device in self.model.devices_mut() {
+            for device in self.model.devices() {
                 egui::Frame::new()
                     .fill(RAISED)
                     .corner_radius(8)
@@ -328,13 +329,14 @@ impl GeistPrototype {
                             ui.label(RichText::new(device.role).small().color(MUTED));
                         });
                         ui.add_space(5.0);
-                        for parameter in &mut device.parameters {
+                        for parameter in &device.parameters {
                             let descriptor = parameter.descriptor;
+                            let mut value = parameter.value;
                             ui.horizontal(|ui| {
                                 ui.set_min_width(520.0);
                                 ui.label(RichText::new(descriptor.name).strong());
                                 let slider = egui::Slider::new(
-                                    &mut parameter.value,
+                                    &mut value,
                                     descriptor.minimum()..=descriptor.maximum(),
                                 )
                                 .show_value(true)
@@ -346,14 +348,22 @@ impl GeistPrototype {
                                     descriptor.default()
                                 ));
                                 if ui.small_button("Reset").clicked() {
-                                    parameter.value = descriptor.default();
+                                    value = descriptor.default();
                                 }
                             });
+                            if value != parameter.value {
+                                edits.push((device.key, descriptor.key.as_str(), value));
+                            }
                         }
                     });
                 ui.add_space(10.0);
             }
         });
+        for (device_key, parameter_key, value) in edits {
+            self.model
+                .set_device_parameter(device_key, parameter_key, value)
+                .expect("UI controls use canonical device parameter identities");
+        }
     }
 
     fn workspace(&mut self, ctx: &egui::Context) {

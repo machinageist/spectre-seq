@@ -73,6 +73,37 @@ impl DspParameter {
     }
 }
 
+// Owned renderer-neutral parameter value contained by one canonical DSP descriptor
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeviceParameterSnapshot {
+    device_key: &'static str,
+    parameter_key: DeviceParameterKey,
+    value: f32,
+}
+
+impl DeviceParameterSnapshot {
+    // Contain app-thread input while preserving canonical device and parameter identity
+    pub fn new(device_key: &'static str, parameter: DspParameter, value: f32) -> Self {
+        Self {
+            device_key,
+            parameter_key: parameter.key,
+            value: parameter.clamp(value),
+        }
+    }
+
+    pub const fn device_key(&self) -> &'static str {
+        self.device_key
+    }
+
+    pub const fn parameter_key(&self) -> DeviceParameterKey {
+        self.parameter_key
+    }
+
+    pub const fn value(&self) -> f32 {
+        self.value
+    }
+}
+
 pub(crate) const fn parameter(
     key: &'static str,
     name: &'static str,

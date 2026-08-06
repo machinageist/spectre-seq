@@ -8,14 +8,14 @@ Notes: Exactly one milestone is active; the roadmap owns ordering
 # Current Milestone — R2 Offline Graph
 
 - **Status:** accepted
-- **Last verified:** 2026-07-17
+- **Last verified:** 2026-08-06
 - **Scope:** editable graph → validated compiled plan → deterministic offline render
 - **Decision authority:** Jeff
 - **Upstream sources:** `rebuild-roadmap.md`, GRAPH-001..002, DSP device I/O contract
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
 - **Supersedes:** the R0/R1 foundation milestone, exited 2026-07-17
 - **Open decisions:** input-bus summing semantics and explicit feedback pricing at their intake
-- **Known gaps:** app parameter-snapshot publication; fixture migration and the four render gates closed 2026-07-17
+- **Known gaps:** the offline app-snapshot seam, fixture migration, and the four render gates are closed; later live-audio work remains R3 scope
 
 ## R0/R1 exit record
 
@@ -27,9 +27,11 @@ R0/R1 exited 2026-07-17 with all exit evidence passing: formatting, strict Clipp
 
 The offline Pulse → Gain → Saturator fixture renders through the compiled plan, bit-identical to a hand-wired chain, with the silence, impulse, allocation, and deterministic-hash gates passing on that path.
 
+Slice 6 closes the app-path integration gap at the smallest offline seam. The renderer-neutral `DeviceParameterSnapshot` DTO lives in `geist-dsp`, keeps its fields private, exposes getters, and clamps through a supplied canonical `DspParameter`. `AppModel` exposes device structure read-only, routes edits through descriptor-clamped identity setters, and emits exactly the fixed four-parameter fixture by stable device and canonical parameter keys with explicit invariant errors. `render_app_snapshot` accepts exactly one each of `pulse.level`, `gain.gain`, `saturator.drive`, and `saturator.mix` in any order; it rejects empty, partial, duplicate, unknown, mismatched, non-finite, out-of-range, and non-canonical input before constructing processors for the immutable `CompiledPlan`. Targeted tests prove exact hand-wired equivalence for four distinct app edits, discriminate saturator drive from mix, preserve deterministic identical snapshots, match backend defaults, and fail closed on malformed fixture snapshots. `CompiledPlan::process` is unchanged; no live callback, audio backend, automation path, or completed full-workspace gate is implied.
+
 ## Requirements in scope
 
-GRAPH-001 (implemented; app-path integration evidence outstanding), GRAPH-002 intake, RT-001 as workspace policy.
+GRAPH-001 (implemented with offline app-path integration evidence), GRAPH-002 intake, RT-001 as workspace policy.
 
 ## Non-goals
 
@@ -39,6 +41,6 @@ Live audio I/O, callback bridge, MIDI ingress, latency compensation, VST3, recor
 
 - ~~The offline fixture renders through the compiled plan, not a hand-wired chain~~ — done 2026-07-17.
 - ~~Silence, impulse, allocation, and deterministic-hash tests pass on the plan path~~ — done 2026-07-17.
-- App-model device parameters publish to the offline plan (NEXT slice 6).
-- `cargo fmt`, strict Clippy, and the full workspace suite stay green.
-- Traceability and status match the implementation.
+- ~~App-model device parameters publish to the offline plan~~ — done 2026-08-06 with owned typed snapshots, fail-closed identity matching, backend defaults, and compiled-plan render evidence.
+- ~~`cargo fmt`, strict Clippy, and the full workspace suite stay green~~ — passed 2026-08-06 with 129/129 tests, the app smoke test, and the offline self-test.
+- ~~Traceability and status match the implementation~~ — updated 2026-08-06; R2 remains active for the next bounded interaction slice.

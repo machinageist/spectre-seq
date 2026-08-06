@@ -16,3 +16,6 @@ geist-graph = { path = "../geist-graph" }
 geist-project = { path = "../geist-project" }
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+geist-app = { path = "../geist-app" }

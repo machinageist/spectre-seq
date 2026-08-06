@@ -13,5 +13,5 @@ pub use io::{
     AudioProcessor, DeviceClass, DeviceIo, NoteEvent, NoteEventKind, ProcessContext, ProcessError,
     MAX_NOTE_EVENTS_PER_BLOCK,
 };
-pub use parameter::{DeviceParameterKey, DspParameter};
+pub use parameter::{DeviceParameterKey, DeviceParameterSnapshot, DspParameter};
 pub use source::{PulseInstrument, ToneSource, Waveform, PULSE_PARAMETERS, TONE_PARAMETERS};

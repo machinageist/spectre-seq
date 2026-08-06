@@ -698,6 +698,7 @@ dependencies = [
 name = "geist-offline"
 version = "0.0.1"
 dependencies = [
+ "geist-app",
  "geist-core",
  "geist-dsp",
  "geist-graph",

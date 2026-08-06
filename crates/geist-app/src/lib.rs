@@ -4,7 +4,9 @@
 // Notes: UI state delegates transport truth to geist-core; no audio engine is implied
 
 use geist_core::{IdGen, ObjectId, Transport, TransportCommand, TransportState};
-use geist_dsp::{DspParameter, GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS};
+use geist_dsp::{
+    DeviceParameterSnapshot, DspParameter, GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS,
+};
 
 // Persistent workspace lenses over one project selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,6 +82,36 @@ impl DeviceControl {
         }
     }
 }
+
+// Internal fixture-schema failure; public mutation cannot create this state
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceParameterSnapshotError {
+    MissingDevice(&'static str),
+    MissingParameter {
+        device_key: &'static str,
+        parameter_key: geist_dsp::DeviceParameterKey,
+    },
+}
+
+impl std::fmt::Display for DeviceParameterSnapshotError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingDevice(device_key) => {
+                write!(formatter, "missing canonical device: {device_key}")
+            }
+            Self::MissingParameter {
+                device_key,
+                parameter_key,
+            } => write!(
+                formatter,
+                "missing canonical parameter: {device_key}.{}",
+                parameter_key.as_str()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for DeviceParameterSnapshotError {}
 
 // Single source of truth for prototype interactions
 #[derive(Debug)]
@@ -188,8 +220,40 @@ impl AppModel {
         &self.devices
     }
 
-    pub fn devices_mut(&mut self) -> &mut [DeviceControl] {
-        &mut self.devices
+    // Publish the fixed offline fixture by stable device and parameter identity
+    pub fn device_parameter_snapshot(
+        &self,
+    ) -> Result<Vec<DeviceParameterSnapshot>, DeviceParameterSnapshotError> {
+        let fixture = [
+            ("pulse", PULSE_PARAMETERS[0]),
+            ("gain", GAIN_PARAMETERS[0]),
+            ("saturator", SATURATOR_PARAMETERS[0]),
+            ("saturator", SATURATOR_PARAMETERS[1]),
+        ];
+
+        fixture
+            .into_iter()
+            .map(|(device_key, descriptor)| {
+                let device = self
+                    .devices
+                    .iter()
+                    .find(|device| device.key == device_key)
+                    .ok_or(DeviceParameterSnapshotError::MissingDevice(device_key))?;
+                let parameter = device
+                    .parameters
+                    .iter()
+                    .find(|parameter| parameter.descriptor.key == descriptor.key)
+                    .ok_or(DeviceParameterSnapshotError::MissingParameter {
+                        device_key,
+                        parameter_key: descriptor.key,
+                    })?;
+                Ok(DeviceParameterSnapshot::new(
+                    device_key,
+                    descriptor,
+                    parameter.value,
+                ))
+            })
+            .collect()
     }
 
     pub fn set_device_parameter(

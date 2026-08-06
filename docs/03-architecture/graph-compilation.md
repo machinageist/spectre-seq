@@ -8,19 +8,29 @@ Notes: GRAPH-001 type seam; live callback execution and explicit feedback are la
 # Graph Compilation Contract
 
 - **Status:** implemented for offline R2; live-callback execution arrives at R3
-- **Last verified:** 2026-07-17
-- **Scope:** editable-graph semantics, compile-time validation, and plan execution
+- **Last verified:** 2026-08-06
+- **Scope:** editable-graph semantics, app-thread parameter snapshots, compile-time validation, and plan execution
 - **Decision authority:** Jeff
 - **Upstream sources:** [GRAPH-001..002](../01-requirements/requirements-ledger.md), [DSP device I/O contract](dsp-device-io.md), realtime rules
 - **Downstream dependents:** `geist-graph`, offline render fixtures, future live engine
 - **Supersedes:** none
 - **Superseded by:** none
 - **Open decisions:** input-bus summing/mixing semantics; explicit priced feedback edges (GRAPH-002); buffer-reuse optimization
-- **Known gaps:** live callback bridge, latency compensation, parameter snapshot publication
+- **Known gaps:** live callback bridge, latency compensation, and bounded realtime control transport/reclamation policy
 
 ## Type seam
 
 `EditableGraph` and `CompiledPlan` are distinct types in `geist-graph` (GRAPH-001). The editable graph is app-thread-only, owns no processors and no buffers, and cannot render. The compiled plan exposes no node or edge mutation API; `process` is its only execution surface.
+
+## Offline parameter snapshot seam
+
+The smallest app-to-offline seam transfers device values without exposing mutable UI state to rendering:
+
+- The renderer-neutral `DeviceParameterSnapshot` DTO lives in `geist-dsp`. Its fields are private; getters expose a static device key, typed backend `DeviceParameterKey`, and contained plain `f32`. Its constructor clamps through the supplied canonical `DspParameter`.
+- `AppModel::device_parameter_snapshot` returns an owned `Result<Vec<DeviceParameterSnapshot>, DeviceParameterSnapshotError>` for the fixed four-parameter fixture. The public app API exposes device structure read-only and routes value edits through descriptor-clamped identity setters. Snapshot publication resolves every value by stable device key plus canonical parameter key; invariant failures are explicit rather than replaced with defaults.
+- `render_app_snapshot` only borrows a completed snapshot. It requires exactly one each of `pulse.level`, `gain.gain`, `saturator.drive`, and `saturator.mix`, accepts any order, and rejects empty, partial, duplicate, unknown, mismatched, non-finite, out-of-range, or non-canonical values before graph-plan construction.
+- Accepted values are consumed by the compile factory while it constructs processors owned by the immutable `CompiledPlan`, before any render quantum executes. The plan is not mutated during processing.
+- This seam is offline-only. It defines neither a live callback bridge nor bounded control-to-render transport, automation semantics, or R3 audio-device behavior.
 
 ## V1 editable-graph semantics
 
@@ -50,6 +60,8 @@ Notes: GRAPH-001 type seam; live callback execution and explicit feedback are la
 - devices fully write every output channel per the DSP I/O contract, so no inter-quantum zeroing is required;
 - `last_output` borrows the output node's channels from the latest successful quantum.
 
+Slice 6 does not change `CompiledPlan::process`; its existing allocation-free, lock-free, bounded, no-I/O execution contract is not weakened by offline snapshot-based processor construction.
+
 ## Acceptance evidence
 
-`crates/geist-graph/tests/graph_plan.rs`: deterministic repeated render, implicit-cycle diagnostic, edit-time validation (unknown nodes, bus ranges, double-feed, self-connection), compile-time validation (missing input, factory layout mismatch), event routing refusals, frame-capacity bounds, impulse sample-exactness, and unreachable-node exclusion. `tests/plan_alloc.rs`: steady-state process quanta measured allocation- and deallocation-free by a counting allocator. `crates/geist-offline/tests/harness.rs`: the fixture renders through the plan bit-identically to a hand-wired chain, with exact-silence and deterministic-hash gates.
+`crates/geist-graph/tests/graph_plan.rs`: deterministic repeated render, implicit-cycle diagnostic, edit-time validation (unknown nodes, bus ranges, double-feed, self-connection), compile-time validation (missing input, factory layout mismatch), event routing refusals, frame-capacity bounds, impulse sample-exactness, and unreachable-node exclusion. `tests/plan_alloc.rs`: steady-state process quanta measured allocation- and deallocation-free by a counting allocator. `crates/geist-app/tests/app_model.rs`: 12/12 targeted tests pass, including owned/stable typed snapshot identity, identity-based value attribution, authoritative descriptor clamping, and non-finite containment through the setter seam. `crates/geist-offline/tests/harness.rs`: 15/15 targeted tests pass, including exact hand-wired equivalence for four distinct app edits, saturator drive/mix discrimination, exact fixture completeness and uniqueness, order independence, constructor containment of NaN/infinities/out-of-range input, authoritative-value defense, deterministic identical snapshots, backend-default equivalence, and unknown/mismatched identity rejection. Exact-silence and deterministic-hash gates remain on the plan path. On 2026-08-06, formatting, strict Clippy, all 129 workspace tests, the app smoke test, and the offline self-test passed.

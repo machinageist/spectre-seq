@@ -8,7 +8,7 @@ Notes: One row per requirement that has moved past proposed; grows with each sli
 # Traceability
 
 - **Status:** verified
-- **Last verified:** 2026-07-17
+- **Last verified:** 2026-08-06
 - **Scope:** requirements with implementation or verification evidence
 - **Decision authority:** Jeff
 - **Upstream sources:** `requirements-ledger.md`; `../02-reference-research/*observations*.md`
@@ -18,7 +18,7 @@ Notes: One row per requirement that has moved past proposed; grows with each sli
 - **Open decisions:** none
 - **Known gaps:** RT family has no implementation yet; GRAPH-002 has only the implicit-cycle seed
 
-Chain: provenance → requirement → implementation → evidence (repository-root workspace, 2026-07-12).
+Chain: provenance → requirement → implementation → evidence (repository-root workspace, 2026-08-06).
 
 | Requirement | Implementation | Evidence | State |
 |---|---|---|---|
@@ -33,14 +33,14 @@ Chain: provenance → requirement → implementation → evidence (repository-ro
 | R1 beat representation | `crates/geist-core/src/time.rs` | `beat_ticks_contract.rs`: accepted 960 PPQ, exact common grids, checked positive/negative overflow boundaries, transparent signed-integer JSON round trip | verified |
 | R0 offline harness | `crates/geist-offline/` | deterministic report test, malformed-project test, `cargo run --locked -p geist-offline -- --self-test` | verified |
 | R1 command/undo seed | `crates/geist-project/src/command.rs` | atomic failure rollback, reversible rename, redo invalidation, bounded-history eviction, identity/unknown-field preservation | implemented |
-| Interaction prototype | `crates/geist-app/`, `./geist` | seven app-model tests, process smoke test, verified native window startup, state-rich feedback report | prototype |
+| Interaction prototype | `crates/geist-app/`, `./geist` | twelve app-model tests, including owned/stable typed snapshot identity, read-only device schema, identity-based value attribution, canonical descriptor clamping, and non-finite containment through the setter seam; process smoke test; verified native window startup; state-rich feedback report | prototype |
 | DSP device I/O | `docs/03-architecture/dsp-device-io.md`, `crates/geist-dsp/src/io.rs` | layout, semantic event-order, bounded-capacity, overlap identity, buffer-shape, finite-output, deterministic-source, and sample-offset tests | implemented |
 | Native device seed | `crates/geist-dsp/` | Pulse instrument, ToneSource, Gain, Saturator; six device tests | implemented |
 | Native render fixture | `geist_offline::render_vertical_slice` via `geist-graph` plan | repeated render equality; bit-identical to a hand-wired chain; exact-silence gate; impulse sample-exactness; allocation-free steady-state quanta (counting allocator); FNV hash determinism | verified |
-| Backend-derived device UI | `geist_app::DeviceControl`, Build and Shape lenses | descriptor identity and backend clamping tests | prototype |
+| Backend-derived device UI | `geist_app::DeviceControl`, Build and Shape lenses, `geist_dsp::DeviceParameterSnapshot` | descriptor-derived controls; renderer-neutral private-field DTO with getters and a canonical clamping constructor; app export uses fixed fixture identities and authoritative DSP descriptors; offline tests require exactly one each of `pulse.level`, `gain.gain`, `saturator.drive`, and `saturator.mix`, accept any order, reject incomplete/duplicate/unknown identities, and defensively reject non-canonical values | prototype (offline-integrated) |
 | CORE-004 (atomic-save API design) | `docs/03-architecture/project-persistence.md` | accepted R1 design review: boundaries, ordered save algorithm, `SaveReceipt`/`SaveError`/`TargetState` vocabulary, failure-stage guarantees, deterministic fault-injection seam; filesystem implementation lands R4, crash qualification R5 | accepted (design) |
-| GRAPH-001 (plan/graph type seam) | `crates/geist-graph/src/lib.rs`, `docs/03-architecture/graph-compilation.md` | `graph_plan.rs`: deterministic repeated render, edit/compile validation, event-routing refusals, frame bounds, unreachable-node exclusion; plan exposes no mutation API; app-path integration test pending | implemented |
+| GRAPH-001 (plan/graph type seam) | `crates/geist-graph/src/lib.rs`, `docs/03-architecture/graph-compilation.md`, `geist_offline::render_app_snapshot` | `graph_plan.rs`: deterministic repeated render, edit/compile validation, event-routing refusals, frame bounds, unreachable-node exclusion; plan exposes no mutation API; targeted app/offline tests prove complete validated app snapshots select processor values during immutable-plan construction and deterministically affect render reports | implemented |
 | GRAPH-002 (explicit priced feedback) | implicit-cycle rejection only (`GraphError::Cycle` diagnostic) | cycle fixture in `graph_plan.rs`; explicit one-quantum-delay feedback edges not designed or implemented | proposed |
 | RT-001..003 | workspace policy only | — | proposed |
 
-Gate results (2026-07-17, repository root, rustc/cargo 1.96.1): formatting clean; strict Clippy clean; 114/114 tests pass; `./geist --smoke-test` and the offline self-test pass; R2 silence/impulse/allocation/hash gates pass on the compiled-plan path.
+Full-gate result (2026-08-06, repository root, rustc/cargo 1.96.1): formatting clean; strict Clippy clean; 129/129 tests pass; `./geist --smoke-test` and the offline self-test pass. The parameter-snapshot evidence includes 12/12 app-model tests and 15/15 offline harness tests; R2 silence/impulse/allocation/hash gates remain green on the compiled-plan path.
