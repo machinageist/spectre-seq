@@ -3,7 +3,11 @@
 // Description: Interaction-model tests for the launchable Geist prototype
 // Notes: Pins behavior independently of egui rendering
 
-use geist_app::{AppModel, Lens};
+use geist_app::{
+    open_device_in_shape_from_ui, set_device_parameter_from_ui, AppModel, Lens, ShapePresentation,
+    OPEN_IN_SHAPE_ACTION_LABEL, SHAPE_EMPTY_MESSAGE,
+};
+use geist_core::ObjectId;
 use geist_dsp::{DeviceParameterKey, GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS};
 use std::collections::HashSet;
 
@@ -54,7 +58,286 @@ fn feedback_report_captures_visible_state_and_user_notes() {
     assert!(report.contains("lens: Mix"));
     assert!(report.contains("transport: stopped"));
     assert!(report.contains("tracks: 1"));
+    assert!(report.contains("selected device: Pulse (pulse)"));
     assert!(report.contains("Mixer needs larger meters"));
+}
+
+#[test]
+fn prototype_selects_pulse_device_by_project_instance_identity() {
+    let model = AppModel::prototype();
+    let pulse = &model.devices()[0];
+
+    assert_eq!(pulse.key, "pulse");
+    assert_eq!(model.selected_device_id(), Some(pulse.instance_id));
+    assert_eq!(model.selected_device(), Some(pulse));
+}
+
+#[test]
+fn build_presentation_has_one_correct_action_per_existing_device() {
+    let model = AppModel::prototype();
+    let presentation = model.build_presentation();
+    let cards: Vec<_> = presentation.cards().collect();
+
+    assert_eq!(cards.len(), 3);
+    assert_eq!(cards.len(), model.devices().len());
+    for (card, device) in cards.iter().zip(model.devices()) {
+        assert!(std::ptr::eq(card.device(), device));
+        assert_eq!(card.device().instance_id, device.instance_id);
+        assert_eq!(card.action().label(), OPEN_IN_SHAPE_ACTION_LABEL);
+        assert_eq!(card.action().device_id(), device.instance_id);
+        assert_eq!(
+            card.is_selected(),
+            model.selected_device_id() == Some(device.instance_id)
+        );
+    }
+    assert_eq!(cards.iter().filter(|card| card.is_selected()).count(), 1);
+}
+
+#[test]
+fn build_presentation_selected_state_tracks_device_focus() {
+    let mut model = AppModel::prototype();
+    let gain_id = model.devices()[1].instance_id;
+
+    open_device_in_shape_from_ui(&mut model, gain_id, &mut String::new());
+
+    let selected: Vec<_> = model
+        .build_presentation()
+        .cards()
+        .filter(|card| card.is_selected())
+        .map(|card| card.device().instance_id)
+        .collect();
+    assert_eq!(selected, [gain_id]);
+}
+
+#[test]
+fn shape_presentation_exposes_only_selected_descriptor_backed_controls() {
+    let mut model = AppModel::prototype();
+    let saturator_id = model.devices()[2].instance_id;
+    model.open_device_in_shape(saturator_id).unwrap();
+    model
+        .set_device_parameter("saturator", "drive", 4.25)
+        .unwrap();
+
+    let presentation = model.shape_presentation();
+    let device = presentation.selected_device().unwrap();
+    assert_eq!(device.instance_id, saturator_id);
+    assert_eq!(device.key, "saturator");
+    assert_eq!(device.parameters.len(), SATURATOR_PARAMETERS.len());
+    assert_eq!(device.parameters[0].descriptor, SATURATOR_PARAMETERS[0]);
+    assert_eq!(device.parameters[0].value, 4.25);
+    assert_eq!(device.parameters[1].descriptor, SATURATOR_PARAMETERS[1]);
+    assert_eq!(presentation.empty_state_message(), None);
+    assert!(!model
+        .devices()
+        .iter()
+        .filter(|candidate| candidate.instance_id != saturator_id)
+        .any(|candidate| std::ptr::eq(candidate, device)));
+}
+
+#[test]
+fn shape_presentation_has_truthful_empty_selection_copy() {
+    let presentation = ShapePresentation::from_selected_device(None);
+
+    assert_eq!(presentation.selected_device(), None);
+    assert_eq!(
+        presentation.empty_state_message(),
+        Some(SHAPE_EMPTY_MESSAGE)
+    );
+    assert_eq!(
+        SHAPE_EMPTY_MESSAGE,
+        "No device selected. Open a device from Build to shape it."
+    );
+}
+
+#[test]
+fn ui_open_error_updates_status_without_mutating_valid_model_state() {
+    let mut model = AppModel::prototype();
+    model.select_lens(Lens::Mix);
+    let before_lens = model.lens();
+    let before_track = model.selected_track_id();
+    let before_device = model.selected_device_id();
+    let before_values = model.devices().to_vec();
+    let unknown = ObjectId::from_raw(u64::MAX).unwrap();
+    let mut status = String::new();
+
+    open_device_in_shape_from_ui(&mut model, unknown, &mut status);
+
+    assert_eq!(
+        status,
+        "Could not open device in Shape: unknown device. Return to Build and try again."
+    );
+    assert_eq!(model.lens(), before_lens);
+    assert_eq!(model.selected_track_id(), before_track);
+    assert_eq!(model.selected_device_id(), before_device);
+    assert_eq!(model.devices(), before_values);
+}
+
+#[test]
+fn ui_parameter_errors_update_status_without_mutating_valid_model_state() {
+    for (device_key, parameter_key, expected_error) in [
+        ("missing", "gain", "unknown device"),
+        ("gain", "missing", "unknown parameter"),
+    ] {
+        let mut model = AppModel::prototype();
+        let gain_id = model.devices()[1].instance_id;
+        model.open_device_in_shape(gain_id).unwrap();
+        let before_lens = model.lens();
+        let before_track = model.selected_track_id();
+        let before_device = model.selected_device_id();
+        let before_values = model.devices().to_vec();
+        let mut status = String::new();
+
+        set_device_parameter_from_ui(&mut model, device_key, parameter_key, 0.25, &mut status);
+
+        assert_eq!(
+            status,
+            format!(
+                "Could not update {device_key}.{parameter_key}: {expected_error}. Reopen the device from Build and try again."
+            )
+        );
+        assert_eq!(model.lens(), before_lens);
+        assert_eq!(model.selected_track_id(), before_track);
+        assert_eq!(model.selected_device_id(), before_device);
+        assert_eq!(model.devices(), before_values);
+    }
+}
+
+#[test]
+fn open_device_in_shape_atomically_focuses_existing_device_and_preserves_track() {
+    let mut model = AppModel::prototype();
+    model.select_lens(Lens::Build);
+    let track = model.selected_track_id();
+    let saturator_id = model
+        .devices()
+        .iter()
+        .find(|device| device.key == "saturator")
+        .unwrap()
+        .instance_id;
+
+    assert_eq!(model.open_device_in_shape(saturator_id), Ok(()));
+    assert_eq!(model.lens(), Lens::Shape);
+    assert_eq!(model.selected_track_id(), track);
+    assert_eq!(model.selected_device_id(), Some(saturator_id));
+    let selected = model.selected_device().unwrap();
+    assert_eq!(selected.key, "saturator");
+    assert_eq!(selected.parameters.len(), SATURATOR_PARAMETERS.len());
+    for (control, descriptor) in selected.parameters.iter().zip(SATURATOR_PARAMETERS) {
+        assert_eq!(control.descriptor, descriptor);
+        assert_ne!(control.instance_id.raw(), 0);
+    }
+}
+
+#[test]
+fn unknown_device_open_fails_without_partial_state_change() {
+    let mut model = AppModel::prototype();
+    model.select_lens(Lens::Mix);
+    let lens = model.lens();
+    let track = model.selected_track_id();
+    let selection = model.selected_device_id();
+    let devices = model.devices().to_vec();
+    let unknown = ObjectId::from_raw(u64::MAX).unwrap();
+    assert!(!model
+        .devices()
+        .iter()
+        .any(|device| device.instance_id == unknown));
+
+    assert_eq!(model.open_device_in_shape(unknown), Err("unknown device"));
+    assert_eq!(model.lens(), lens);
+    assert_eq!(model.selected_track_id(), track);
+    assert_eq!(model.selected_device_id(), selection);
+    assert_eq!(model.devices(), devices);
+}
+
+#[test]
+fn ordinary_lens_changes_preserve_device_selection() {
+    let mut model = AppModel::prototype();
+    let gain_id = model
+        .devices()
+        .iter()
+        .find(|device| device.key == "gain")
+        .unwrap()
+        .instance_id;
+    model.open_device_in_shape(gain_id).unwrap();
+
+    for lens in [Lens::Arrange, Lens::Build, Lens::Shape, Lens::Mix] {
+        model.select_lens(lens);
+        assert_eq!(model.selected_device_id(), Some(gain_id), "{lens}");
+    }
+}
+
+#[test]
+fn parameter_edits_preserve_selected_device_and_descriptor_identity() {
+    let mut model = AppModel::prototype();
+    let saturator_id = model
+        .devices()
+        .iter()
+        .find(|device| device.key == "saturator")
+        .unwrap()
+        .instance_id;
+    model.open_device_in_shape(saturator_id).unwrap();
+    let parameter_ids: Vec<_> = model
+        .selected_device()
+        .unwrap()
+        .parameters
+        .iter()
+        .map(|parameter| parameter.instance_id)
+        .collect();
+
+    model
+        .set_device_parameter("saturator", "drive", 100.0)
+        .unwrap();
+
+    let selected = model.selected_device().unwrap();
+    assert_eq!(model.selected_device_id(), Some(saturator_id));
+    assert_eq!(selected.parameters[0].descriptor, SATURATOR_PARAMETERS[0]);
+    assert_eq!(
+        selected.parameters[0].value,
+        SATURATOR_PARAMETERS[0].maximum()
+    );
+    assert_eq!(
+        selected
+            .parameters
+            .iter()
+            .map(|parameter| parameter.instance_id)
+            .collect::<Vec<_>>(),
+        parameter_ids
+    );
+}
+
+#[test]
+fn offline_snapshot_is_selection_independent_and_attributes_focused_edits() {
+    let mut model = AppModel::prototype();
+    let before = model.device_parameter_snapshot().unwrap();
+    let saturator = model
+        .devices()
+        .iter()
+        .find(|device| device.key == "saturator")
+        .unwrap();
+    let saturator_id = saturator.instance_id;
+    let drive_id = saturator.parameters[0].instance_id;
+
+    model.open_device_in_shape(saturator_id).unwrap();
+    assert_eq!(model.device_parameter_snapshot().unwrap(), before);
+
+    model
+        .set_device_parameter("saturator", "drive", 4.25)
+        .unwrap();
+    let after = model.device_parameter_snapshot().unwrap();
+    assert_eq!(after.len(), before.len());
+    let drive = after
+        .iter()
+        .find(|entry| {
+            entry.device_key() == "saturator" && entry.parameter_key().as_str() == "drive"
+        })
+        .unwrap();
+    assert_eq!(drive.device_instance_id(), saturator_id);
+    assert_eq!(drive.parameter_instance_id(), drive_id);
+    assert_eq!(drive.value(), 4.25);
+    for prior in before.iter().filter(|entry| {
+        !(entry.device_key() == "saturator" && entry.parameter_key().as_str() == "drive")
+    }) {
+        assert!(after.iter().any(|entry| entry == prior));
+    }
 }
 
 #[test]

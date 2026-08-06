@@ -16,4 +16,5 @@ fn smoke_mode_reports_launchable_prototype() {
     assert!(stdout.contains("Geist prototype ready"));
     assert!(stdout.contains("lens=Arrange"));
     assert!(stdout.contains("tracks=1"));
+    assert!(stdout.contains("selected_device=Pulse(pulse)"));
 }

@@ -13,7 +13,7 @@ Geist is an original, Rust-first digital audio workstation in early development.
 
 The repository contains one clean implementation workspace. The earlier prototype and its plans, assets, CI, audits, and feature lanes were removed on 2026-07-12; committed history remains available through Git.
 
-R0/R1 provides a tested musical kernel and versioned project envelope. A native interaction prototype makes the workspace launchable and reviewable. For deterministic offline R2, the editable graph compiles to an immutable validated render plan, and app-model parameter snapshots feed the compiled-plan Pulse → Gain → Saturator fixture. `geist-offline` is the current deterministic offline render and project-inspection harness. Live audio I/O and its callback bridge, plugin hosting, and recording are not implemented and remain later scope. Read `docs/status/STATUS.md` before relying on any maturity claim.
+R0/R1 provides a tested musical kernel and versioned project envelope. A native interaction prototype makes the workspace launchable and reviewable. For deterministic offline R2, the editable graph compiles to an immutable validated render plan, app-model parameter snapshots feed the compiled-plan Pulse → Gain → Saturator fixture, and Build can focus an existing device in Shape without losing track or device selection. `geist-offline` is the current deterministic offline render and project-inspection harness. Live audio I/O and its callback bridge, plugin hosting, and recording are not implemented and remain later scope. Read `docs/status/STATUS.md` before relying on any maturity claim.
 
 ## Repository map
 
@@ -42,7 +42,7 @@ From the repository root:
 
 The first build downloads and compiles the native UI dependencies. Later launches reuse Cargo's build cache.
 
-The prototype exposes Arrange, Build, Shape, and Mix lenses, track selection and creation, transport interaction, a context shelf, and an in-app feedback box. Enter observations in **Prototype Feedback**, click **Copy feedback report**, and paste the resulting state-rich report into the next development conversation.
+The prototype exposes Arrange, Build, Shape, and Mix lenses, track selection and creation, transport interaction, a context shelf, and an in-app feedback box. Each Build device has a labeled **Open in Shape** action; Shape edits only that stable project-instance selection through backend-owned descriptors. Enter observations in **Prototype Feedback**, click **Copy feedback report**, and paste the resulting state-rich report, including the selected device, into the next development conversation.
 
 Run the launch target without opening a window:
 

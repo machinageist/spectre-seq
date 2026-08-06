@@ -4,7 +4,7 @@
 // Notes: Interaction prototype only; audio and persistence wiring remain out of scope
 
 use eframe::egui::{self, Color32, CornerRadius, RichText, Stroke, Vec2};
-use geist_app::{AppModel, Lens};
+use geist_app::{open_device_in_shape_from_ui, set_device_parameter_from_ui, AppModel, Lens};
 
 const BG: Color32 = Color32::from_rgb(15, 18, 24);
 const PANEL: Color32 = Color32::from_rgb(24, 29, 38);
@@ -263,16 +263,30 @@ impl GeistPrototype {
         }
     }
 
-    fn build_devices(&self, ui: &mut egui::Ui) {
+    fn build_devices(&mut self, ui: &mut egui::Ui) {
         ui.label(
             RichText::new("Compiled stereo path · note events → instrument → effects → master")
                 .color(MUTED),
         );
         ui.add_space(18.0);
+        let mut open_in_shape = None;
+        let presentation = self.model.build_presentation();
+        let card_count = presentation.cards().len();
         ui.horizontal_top(|ui| {
-            for (index, device) in self.model.devices().iter().enumerate() {
+            for (index, card) in presentation.cards().enumerate() {
+                let device = card.device();
+                let selected = card.is_selected();
                 egui::Frame::new()
-                    .fill(RAISED)
+                    .fill(if selected {
+                        Color32::from_rgb(38, 58, 58)
+                    } else {
+                        RAISED
+                    })
+                    .stroke(if selected {
+                        Stroke::new(1.5_f32, ACCENT)
+                    } else {
+                        Stroke::NONE
+                    })
                     .corner_radius(8)
                     .inner_margin(14)
                     .show(ui, |ui| {
@@ -294,12 +308,23 @@ impl GeistPrototype {
                                 );
                             });
                         }
+                        ui.add_space(8.0);
+                        if selected {
+                            ui.label(RichText::new("Selected device").small().color(ACCENT));
+                        }
+                        let action = card.action();
+                        if ui.button(action.label()).clicked() {
+                            open_in_shape = Some(action.device_id());
+                        }
                     });
-                if index + 1 < self.model.devices().len() {
+                if index + 1 < card_count {
                     ui.label(RichText::new("→").size(24.0).color(WARM));
                 }
             }
         });
+        if let Some(id) = open_in_shape {
+            open_device_in_shape_from_ui(&mut self.model, id, &mut self.feedback_status);
+        }
         ui.add_space(18.0);
         ui.label(
             RichText::new("DSP is active in deterministic offline rendering; live audio routing is not connected yet.")
@@ -317,8 +342,9 @@ impl GeistPrototype {
         );
         ui.add_space(12.0);
         let mut edits = Vec::new();
+        let presentation = self.model.shape_presentation();
         egui::ScrollArea::vertical().show(ui, |ui| {
-            for device in self.model.devices() {
+            if let Some(device) = presentation.selected_device() {
                 egui::Frame::new()
                     .fill(RAISED)
                     .corner_radius(8)
@@ -356,13 +382,18 @@ impl GeistPrototype {
                             }
                         }
                     });
-                ui.add_space(10.0);
+            } else if let Some(message) = presentation.empty_state_message() {
+                ui.label(RichText::new(message).color(WARM));
             }
         });
         for (device_key, parameter_key, value) in edits {
-            self.model
-                .set_device_parameter(device_key, parameter_key, value)
-                .expect("UI controls use canonical device parameter identities");
+            set_device_parameter_from_ui(
+                &mut self.model,
+                device_key,
+                parameter_key,
+                value,
+                &mut self.feedback_status,
+            );
         }
     }
 
@@ -448,15 +479,20 @@ fn mix_surface(ui: &mut egui::Ui, tracks: &[geist_app::TrackView]) {
 
 fn smoke_test() {
     let model = AppModel::prototype();
+    let selected_device = model
+        .selected_device()
+        .map(|device| format!("{}({})", device.name, device.key))
+        .unwrap_or_else(|| "none".into());
     println!(
-        "Geist prototype ready lens={} tracks={} transport={}",
+        "Geist prototype ready lens={} tracks={} transport={} selected_device={}",
         model.lens(),
         model.tracks().len(),
         if model.is_playing() {
             "playing"
         } else {
             "stopped"
-        }
+        },
+        selected_device
     );
 }
 

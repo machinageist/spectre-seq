@@ -88,6 +88,88 @@ impl DeviceControl {
     }
 }
 
+pub const OPEN_IN_SHAPE_ACTION_LABEL: &str = "Open in Shape";
+pub const SHAPE_EMPTY_MESSAGE: &str = "No device selected. Open a device from Build to shape it.";
+
+// Borrow Build card content and its direct Shape action from the app model
+#[derive(Debug, Clone, Copy)]
+pub struct BuildDeviceCard<'a> {
+    device: &'a DeviceControl,
+    selected: bool,
+}
+
+impl<'a> BuildDeviceCard<'a> {
+    pub fn device(self) -> &'a DeviceControl {
+        self.device
+    }
+
+    pub fn is_selected(self) -> bool {
+        self.selected
+    }
+
+    pub fn action(self) -> OpenInShapeAction {
+        OpenInShapeAction {
+            device_id: self.device.instance_id,
+        }
+    }
+}
+
+// Identify the visible direct action without renderer-specific state
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpenInShapeAction {
+    device_id: ObjectId,
+}
+
+impl OpenInShapeAction {
+    pub fn label(self) -> &'static str {
+        OPEN_IN_SHAPE_ACTION_LABEL
+    }
+
+    pub fn device_id(self) -> ObjectId {
+        self.device_id
+    }
+}
+
+// Iterate existing devices without cloning or allocating presentation state
+#[derive(Debug, Clone, Copy)]
+pub struct BuildPresentation<'a> {
+    devices: &'a [DeviceControl],
+    selected_device: Option<ObjectId>,
+}
+
+impl<'a> BuildPresentation<'a> {
+    pub fn cards(
+        &self,
+    ) -> impl ExactSizeIterator<Item = BuildDeviceCard<'a>> + DoubleEndedIterator + '_ {
+        self.devices.iter().map(move |device| BuildDeviceCard {
+            device,
+            selected: self.selected_device == Some(device.instance_id),
+        })
+    }
+}
+
+// Expose only the selected Shape device and truthful empty-state copy
+#[derive(Debug, Clone, Copy)]
+pub struct ShapePresentation<'a> {
+    selected_device: Option<&'a DeviceControl>,
+}
+
+impl<'a> ShapePresentation<'a> {
+    pub fn from_selected_device(selected_device: Option<&'a DeviceControl>) -> Self {
+        Self { selected_device }
+    }
+
+    pub fn selected_device(self) -> Option<&'a DeviceControl> {
+        self.selected_device
+    }
+
+    pub fn empty_state_message(self) -> Option<&'static str> {
+        self.selected_device
+            .is_none()
+            .then_some(SHAPE_EMPTY_MESSAGE)
+    }
+}
+
 // Internal fixture-schema failure; public mutation cannot create this state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceParameterSnapshotError {
@@ -126,6 +208,7 @@ pub struct AppModel {
     tracks: Vec<TrackView>,
     devices: Vec<DeviceControl>,
     selected_track: Option<ObjectId>,
+    selected_device: Option<ObjectId>,
     ids: IdGen,
     feedback: String,
 }
@@ -142,34 +225,37 @@ impl AppModel {
             armed: false,
             level: 0.78,
         };
+        let devices = vec![
+            DeviceControl::from_descriptors(
+                &mut ids,
+                "pulse",
+                "Pulse",
+                "Instrument · stereo out · note input",
+                &PULSE_PARAMETERS,
+            ),
+            DeviceControl::from_descriptors(
+                &mut ids,
+                "gain",
+                "Gain",
+                "Effect · stereo in/out",
+                &GAIN_PARAMETERS,
+            ),
+            DeviceControl::from_descriptors(
+                &mut ids,
+                "saturator",
+                "Saturator",
+                "Effect · stereo in/out",
+                &SATURATOR_PARAMETERS,
+            ),
+        ];
+        let selected_device = devices.first().map(|device| device.instance_id);
         Self {
             transport: Transport::new(),
             lens: Lens::Arrange,
             selected_track: Some(track.id),
             tracks: vec![track],
-            devices: vec![
-                DeviceControl::from_descriptors(
-                    &mut ids,
-                    "pulse",
-                    "Pulse",
-                    "Instrument · stereo out · note input",
-                    &PULSE_PARAMETERS,
-                ),
-                DeviceControl::from_descriptors(
-                    &mut ids,
-                    "gain",
-                    "Gain",
-                    "Effect · stereo in/out",
-                    &GAIN_PARAMETERS,
-                ),
-                DeviceControl::from_descriptors(
-                    &mut ids,
-                    "saturator",
-                    "Saturator",
-                    "Effect · stereo in/out",
-                    &SATURATOR_PARAMETERS,
-                ),
-            ],
+            devices,
+            selected_device,
             ids,
             feedback: String::new(),
         }
@@ -226,6 +312,36 @@ impl AppModel {
 
     pub fn devices(&self) -> &[DeviceControl] {
         &self.devices
+    }
+
+    pub fn build_presentation(&self) -> BuildPresentation<'_> {
+        BuildPresentation {
+            devices: &self.devices,
+            selected_device: self.selected_device,
+        }
+    }
+
+    pub fn selected_device_id(&self) -> Option<ObjectId> {
+        self.selected_device
+    }
+
+    pub fn selected_device(&self) -> Option<&DeviceControl> {
+        let id = self.selected_device?;
+        self.devices.iter().find(|device| device.instance_id == id)
+    }
+
+    pub fn shape_presentation(&self) -> ShapePresentation<'_> {
+        ShapePresentation::from_selected_device(self.selected_device())
+    }
+
+    // Focus one existing device and enter Shape as one app-thread operation
+    pub fn open_device_in_shape(&mut self, id: ObjectId) -> Result<(), &'static str> {
+        if !self.devices.iter().any(|device| device.instance_id == id) {
+            return Err("unknown device");
+        }
+        self.selected_device = Some(id);
+        self.lens = Lens::Shape;
+        Ok(())
     }
 
     // Publish the fixed offline fixture by stable device and parameter identity
@@ -315,14 +431,44 @@ impl AppModel {
 
     pub fn feedback_report(&self) -> String {
         format!(
-            "Geist prototype feedback\nlens: {}\ntransport: {}\ntracks: {}\nselected track: {}\n\n{}",
+            "Geist prototype feedback\nlens: {}\ntransport: {}\ntracks: {}\nselected track: {}\nselected device: {}\n\n{}",
             self.lens,
             if self.is_playing() { "playing" } else { "stopped" },
             self.tracks.len(),
             self.selected_track()
                 .map(|track| track.name.as_str())
                 .unwrap_or("none"),
+            self.selected_device()
+                .map(|device| format!("{} ({})", device.name, device.key))
+                .unwrap_or_else(|| "none".into()),
             self.feedback.trim()
         )
+    }
+}
+
+// Surface recoverable focus failures on the UI thread
+pub fn open_device_in_shape_from_ui(
+    model: &mut AppModel,
+    id: ObjectId,
+    feedback_status: &mut String,
+) {
+    if let Err(error) = model.open_device_in_shape(id) {
+        *feedback_status =
+            format!("Could not open device in Shape: {error}. Return to Build and try again.");
+    }
+}
+
+// Surface recoverable parameter failures on the UI thread
+pub fn set_device_parameter_from_ui(
+    model: &mut AppModel,
+    device_key: &str,
+    parameter_key: &str,
+    value: f32,
+    feedback_status: &mut String,
+) {
+    if let Err(error) = model.set_device_parameter(device_key, parameter_key, value) {
+        *feedback_status = format!(
+            "Could not update {device_key}.{parameter_key}: {error}. Reopen the device from Build and try again."
+        );
     }
 }
