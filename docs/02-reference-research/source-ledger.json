@@ -90,7 +90,7 @@
       "mutable_url": true,
       "access_limitation": "The index does not display a manual revision or point version. The complete index was classified, but individual chapter contents were not inspected in this slice.",
       "coverage_status": "inventory-only",
-      "notes": "The classified user-manual matrix is recorded in docs/02-reference-research/vcv-rack.md. Plugin-development and Rack-development chapters are not automatically in Geist's behavioral research scope."
+      "notes": "The classified user-manual matrix is recorded in docs/02-reference-research/vcv-rack.md. Plugin-development and Rack-development chapters are not automatically in Spectre's behavioral research scope."
     },
     {
       "source_id": "SRC-REAPER7.77-OFFICIAL-VIDEOS",
@@ -359,7 +359,7 @@
       "mutable_url": true,
       "access_limitation": "Long-form practitioner session is stronger natural-work evidence than the tutorials, but automatic transcript coverage is sparse during music-only action and does not expose every pointer target, command, plugin state, or exact UI transition. It uses multiple third-party plugins and creator-owned sound content. No description or chapters are provided.",
       "coverage_status": "reviewed-workflow-source",
-      "notes": "Supports WF-FL-NICK-MIRA-003. Third-party presets, loops, and plugins are workflow context only and are not authorized Geist content or implementation references."
+      "notes": "Supports WF-FL-NICK-MIRA-003. Third-party presets, loops, and plugins are workflow context only and are not authorized Spectre content or implementation references."
     },
     {
       "source_id": "SRC-FL-OFFICIAL-RECORDING-2025",
@@ -637,7 +637,7 @@
       "mutable_url": true,
       "access_limitation": "Unversioned live manual page; extraction via assisted summarization with transcription risk until spot-verified.",
       "coverage_status": "claims-extracted",
-      "notes": "Supports OBS-VCV-VOLT-* in synth-modular-observations.md. These are Rack's plugin-ecosystem conventions, not Geist requirements."
+      "notes": "Supports OBS-VCV-VOLT-* in synth-modular-observations.md. These are Rack's plugin-ecosystem conventions, not Spectre requirements."
     },
     {
       "source_id": "SRC-SERUM2-SUPPORT-CPU-ARTICLE",

@@ -12,7 +12,7 @@ Notes: R1 design authority for R4 persistence and R5 crash-recovery qualificatio
 - **Scope:** synchronous project-file load and atomic replacement boundaries
 - **Decision authority:** Jeff
 - **Upstream sources:** [CORE-001, CORE-003, and CORE-004](../01-requirements/requirements-ledger.md), [decision gates 3, 4, and 14](../01-requirements/decision-gates.md), [rebuild roadmap](../06-plans/rebuild-roadmap.md)
-- **Downstream dependents:** `geist-project`, app project lifecycle, autosave/recovery, persistence tests
+- **Downstream dependents:** `spectre-project`, app project lifecycle, autosave/recovery, persistence tests
 - **Supersedes:** no prior active project-persistence architecture contract
 - **Superseded by:** none
 - **Open decisions:** exact OS API mapping and qualified filesystem matrix at R5 intake
@@ -20,7 +20,7 @@ Notes: R1 design authority for R4 persistence and R5 crash-recovery qualificatio
 
 ## Boundary and execution model
 
-`geist-project` will expose two blocking boundaries with these design-level signatures:
+`spectre-project` will expose two blocking boundaries with these design-level signatures:
 
 ```rust
 pub fn load_project(path: &Path) -> Result<ProjectEnvelope, LoadError>;
@@ -177,7 +177,7 @@ R4 save/reload MUST use the atomic boundary; R5 adds proof and recovery behavior
 
 ## Current codec qualification
 
-The current `geist_project::from_bytes` path performs semantic validation after decoding. The current `geist_project::to_bytes` path only serializes and **does not revalidate an in-memory envelope**. An in-memory value can therefore become semantically invalid after construction and still encode successfully today. Future save implementation MUST extract or expose one reusable semantic validator and call it before encoding and before touching the destination, while load calls the same validator after decode.
+The current `spectre_project::from_bytes` path performs semantic validation after decoding. The current `spectre_project::to_bytes` path only serializes and **does not revalidate an in-memory envelope**. An in-memory value can therefore become semantically invalid after construction and still encode successfully today. Future save implementation MUST extract or expose one reusable semantic validator and call it before encoding and before touching the destination, while load calls the same validator after decode.
 
 ## Acceptance checklist
 

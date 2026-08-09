@@ -16,7 +16,7 @@ Notes: Application and guide versions are intentionally represented separately
 - **Downstream dependents:** DAW workflow study, command ontology, recording/editing/routing requirements
 - **Supersedes:** none
 - **Superseded by:** none
-- **Open decisions:** how much end-user command composition Geist should support beyond remapping and validated declarative aliases
+- **Open decisions:** how much end-user command composition Spectre should support beyond remapping and validated declarative aliases
 - **Known gaps:** guide table of contents, official video-series inventory, application/guide delta, chapter claims, Action List semantics, custom actions, mouse modifiers, accessibility, persistence, and failure behavior
 
 ## Version and source boundary
@@ -75,7 +75,7 @@ REAPER's command system is evidence about extensibility and repeated workflow co
 2. Built-in actions, custom actions, extension actions, and executable scripts MUST remain separate evidence types.
 3. Context and focus MUST be recorded; an action available in one editor does not prove global behavior.
 4. User customization frequency requires field evidence, not inference from configurability.
-5. Geist's current product constraint permits validated typed commands and declarative aliases, not arbitrary code execution by default.
+5. Spectre's current product constraint permits validated typed commands and declarative aliases, not arbitrary code execution by default.
 6. REAPER action IDs, scripts, menu structures, toolbar layouts, and bindings MUST NOT be copied.
 
 ## Source-gap records
@@ -95,7 +95,7 @@ Work can proceed without inventing behavior by:
 - reviewing official HTML pages linked from the guide landing page;
 - processing a locally supplied or separately authorized official guide copy;
 - sampling complete practitioner workflows only as contextual field evidence;
-- designing the semantic command schema without choosing Geist defaults.
+- designing the semantic command schema without choosing Spectre defaults.
 
 ## Acceptance blocker
 

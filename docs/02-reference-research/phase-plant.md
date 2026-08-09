@@ -21,7 +21,7 @@ Notes: The official documentation page exposes no product/manual version or revi
 
 ## Boundary
 
-Phase Plant is a substantive sound-design reference, not a compatibility target. Geist does not seek preset, binary, Snapin, project, layout, or terminology compatibility. “Behavioral parity” and “compatibility mode” language in legacy Geist material has no authority.
+Phase Plant is a substantive sound-design reference, not a compatibility target. Spectre does not seek preset, binary, Snapin, project, layout, or terminology compatibility. “Behavioral parity” and “compatibility mode” language in legacy Spectre material has no authority.
 
 ## Source limitation
 
@@ -49,14 +49,14 @@ A field absent from official documentation remains unknown. Standard synthesizer
 
 ## Legacy-spec correction controls
 
-During extraction from `docs/specs/geist-modular-synth-spec.md` and related plans:
+During extraction from `docs/specs/spectre-modular-synth-spec.md` and related plans:
 
 1. External claims require an exact official source section.
-2. Geist limits and architecture move only to the requirements/architecture hierarchy after independent review.
+2. Spectre limits and architecture move only to the requirements/architecture hierarchy after independent review.
 3. Terms implying parity or compatibility are removed unless they describe an explicitly accepted target.
 4. Device counts, modulation counts, lane counts, polyphony, oversampling, and rate limits are not inherited.
 5. Algorithms, preset payloads, distinctive UI composition, factory content, and visual assets are excluded.
-6. Product implications remain `GEIST-CANDIDATE` until adopted with stable requirement IDs.
+6. Product implications remain `SPECTRE-CANDIDATE` until adopted with stable requirement IDs.
 
 ## Source-gap records
 

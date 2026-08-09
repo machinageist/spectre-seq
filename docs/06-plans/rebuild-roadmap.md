@@ -1,14 +1,14 @@
 <!--
 Author: Jeff
 Date: 2026-07-12
-Description: Dependency-ordered Geist DAW roadmap R0-R12
+Description: Dependency-ordered Spectre roadmap R0-R12
 Notes: Milestones close on demonstrable capability, not compilation alone
 -->
 
 # Rebuild Roadmap
 
 - **Status:** accepted
-- **Last verified:** 2026-07-17
+- **Last verified:** 2026-08-09
 - **Scope:** milestone order, outcomes, and exit gates
 - **Decision authority:** Jeff
 - **Upstream sources:** accepted vision and requirements
@@ -33,7 +33,7 @@ The repository root is the sole implementation workspace.
 | R8 — VST3 host | Isolated scan, fixtures, processing, state, editor, placeholders | VST intake | licensed binding decision and fixture matrix |
 | R9 — automation/modulation | Stable bindings, required sample accuracy, override/restore, overlays | PROD-002 | semantics tests |
 | R10 — session/live | Slots, scenes, quantized launch, per-track precedence, capture | PROD-001 | performance-capture drills |
-| R11 — Geist identity | Original modular surface, flagship synth, deep MIDI, effect catalog | identity intake | identity-layer QA |
+| R11 — Spectre identity | Original modular surface, flagship synth, deep MIDI, effect catalog | identity intake | identity-layer QA |
 | R12 — release qualification | Performance/soak, accessibility, recovery, packaging, documentation | release intake | published release gates |
 
-Reordering requires documented dependency reasoning. R2 is active; R0/R1 exited 2026-07-17.
+Reordering requires documented dependency reasoning. R3 is active; R0/R1 exited 2026-07-17 and R2 exited 2026-08-09 on its four render gates. R2's exit does not claim full GRAPH-002 satisfaction: explicit priced feedback stays gated at decision row 7 before R11.

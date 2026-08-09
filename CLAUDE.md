@@ -1,18 +1,18 @@
 <!--
 Author: Jeff
 Date: 2026-05-27
-Description: Claude working instructions for Geist DAW
+Description: Claude working instructions for Spectre
 Notes: Project-local agent entrypoint; load before any implementation or review
 -->
 
-# Geist DAW Claude Instructions
+# Spectre Claude Instructions
 
 ## Load order
 
 1. Read this file.
-2. Load `.claude/skills/geist-daw-working-context.md`.
+2. Load `.claude/skills/spectre-daw-working-context.md`.
 3. Read `docs/README.md`, `docs/status/STATUS.md`, and `docs/status/NEXT.md`.
-4. Load `geist-realtime-rust` for callback-adjacent Rust and `geist-validation-gates` before review.
+4. Load `spectre-realtime-rust` for callback-adjacent Rust and `spectre-validation-gates` before review.
 
 ## Non-negotiables
 
@@ -25,6 +25,6 @@ Notes: Project-local agent entrypoint; load before any implementation or review
 
 ## Local skills
 
-- `.claude/skills/geist-daw-working-context.md`
-- `.claude/skills/geist-realtime-rust.md`
-- `.claude/skills/geist-validation-gates.md`
+- `.claude/skills/spectre-daw-working-context.md`
+- `.claude/skills/spectre-realtime-rust.md`
+- `.claude/skills/spectre-validation-gates.md`

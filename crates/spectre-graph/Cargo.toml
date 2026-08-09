@@ -1,0 +1,14 @@
+# Author: Jeff
+# Date: 2026-07-17
+# Description: Editable device graph and immutable compiled render plan
+# Notes: GRAPH-001 type seam; depends only on core identity and the DSP process contract
+
+[package]
+name = "spectre-graph"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+spectre-core = { path = "../spectre-core" }
+spectre-dsp = { path = "../spectre-dsp" }

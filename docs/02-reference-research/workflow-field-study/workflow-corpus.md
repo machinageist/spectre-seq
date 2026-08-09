@@ -9,7 +9,7 @@ Notes: Index discovery is not a reviewed workflow observation
 
 - **Status:** draft
 - **Last verified:** 2026-07-11
-- **Scope:** direct sources selected for end-to-end musician-workflow observation across Geist reference products
+- **Scope:** direct sources selected for end-to-end musician-workflow observation across Spectre reference products
 - **Decision authority:** Jeff
 - **Upstream sources:** `docs/02-reference-research/workflow-field-study/methodology.md`; `docs/02-reference-research/source-ledger.json`
 - **Downstream dependents:** workflow observations, archetypes, command ontology, friction analysis, product implications

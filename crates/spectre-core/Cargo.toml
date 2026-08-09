@@ -1,0 +1,17 @@
+# Author: Jeff
+# Date: 2026-07-11
+# Description: Deterministic musical kernel: IDs, time, tempo, transport, events, parameters
+# Notes: No I/O, no allocation-sensitive realtime code yet; pure data and math
+
+[package]
+name = "spectre-core"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+serde_json.workspace = true

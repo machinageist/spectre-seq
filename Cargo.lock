@@ -658,66 +658,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "geist-app"
-version = "0.0.1"
-dependencies = [
- "eframe",
- "geist-core",
- "geist-dsp",
- "geist-project",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "geist-core"
-version = "0.0.1"
-dependencies = [
- "proptest",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "geist-dsp"
-version = "0.0.1"
-dependencies = [
- "geist-core",
- "proptest",
-]
-
-[[package]]
-name = "geist-graph"
-version = "0.0.1"
-dependencies = [
- "geist-core",
- "geist-dsp",
-]
-
-[[package]]
-name = "geist-offline"
-version = "0.0.1"
-dependencies = [
- "geist-app",
- "geist-core",
- "geist-dsp",
- "geist-graph",
- "geist-project",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "geist-project"
-version = "0.0.1"
-dependencies = [
- "geist-core",
- "proptest",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "gethostname"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2039,6 +1979,66 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "spectre-app"
+version = "0.0.1"
+dependencies = [
+ "eframe",
+ "serde",
+ "serde_json",
+ "spectre-core",
+ "spectre-dsp",
+ "spectre-project",
+]
+
+[[package]]
+name = "spectre-core"
+version = "0.0.1"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "spectre-dsp"
+version = "0.0.1"
+dependencies = [
+ "proptest",
+ "spectre-core",
+]
+
+[[package]]
+name = "spectre-graph"
+version = "0.0.1"
+dependencies = [
+ "spectre-core",
+ "spectre-dsp",
+]
+
+[[package]]
+name = "spectre-offline"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "spectre-app",
+ "spectre-core",
+ "spectre-dsp",
+ "spectre-graph",
+ "spectre-project",
+]
+
+[[package]]
+name = "spectre-project"
+version = "0.0.1"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "spectre-core",
 ]
 
 [[package]]

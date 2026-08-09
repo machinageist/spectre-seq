@@ -1,15 +1,15 @@
 <!--
 Author: Jeff
 Date: 2026-07-11
-Description: Clean-room reference research and acceptance methodology for Geist DAW
-Notes: Governs research provenance; does not adopt external behavior as a Geist requirement
+Description: Clean-room reference research and acceptance methodology for Spectre
+Notes: Governs research provenance; does not adopt external behavior as a Spectre requirement
 -->
 
 # Clean-Room Reference Research Methodology
 
 - **Status:** accepted
 - **Last verified:** 2026-07-11
-- **Scope:** external product research, claim provenance, coverage, review, and promotion into Geist requirements
+- **Scope:** external product research, claim provenance, coverage, review, and promotion into Spectre requirements
 - **Decision authority:** Jeff
 - **Upstream sources:** `docs/README.md`; clean-room and original-design constraints in the rebuild mandate
 - **Downstream dependents:** all files under `docs/02-reference-research/`; requirements ledger; traceability ledger
@@ -20,7 +20,7 @@ Notes: Governs research provenance; does not adopt external behavior as a Geist 
 
 ## Research boundary
 
-External products are evidence about publicly documented behavior and observed workflows. They are not Geist's architecture, visual design, limits, file formats, compatibility promises, or product identity.
+External products are evidence about publicly documented behavior and observed workflows. They are not Spectre's architecture, visual design, limits, file formats, compatibility promises, or product identity.
 
 Researchers MUST use publicly authorized sources. They MUST NOT use leaked/private manuals, proprietary project files, decompiled code, private formats, copied screenshots, factory assets, presets, samples, wavetables, or distinctive expression.
 
@@ -30,11 +30,11 @@ Every research record uses exactly one layer:
 
 - `OBSERVED`: behavior explicitly supported by a cited public source.
 - `SOURCE-GAP`: a relevant fact unavailable or ambiguous in the inspected source.
-- `GEIST-CANDIDATE`: an inference or possible product implication; no authority.
-- `GEIST-REQ`: an adopted requirement with a stable ID in the requirements ledger.
-- `IMPL-DECISION`: an original Geist decision linked to an architecture contract or ADR.
+- `SPECTRE-CANDIDATE`: an inference or possible product implication; no authority.
+- `SPECTRE-REQ`: an adopted requirement with a stable ID in the requirements ledger.
+- `IMPL-DECISION`: an original Spectre decision linked to an architecture contract or ADR.
 
-A dossier MUST NOT combine these layers in one untyped bullet. Only the requirements ledger can grant `GEIST-REQ` authority.
+A dossier MUST NOT combine these layers in one untyped bullet. Only the requirements ledger can grant `SPECTRE-REQ` authority.
 
 ## Source hierarchy
 
@@ -74,9 +74,9 @@ For each substantive reference:
 4. Decompose relevant text into atomic observations.
 5. For each observation, record preconditions, action, state transition, result, persistence, undo/redo, error behavior, realtime implications, offline implications, and unknown fields when those dimensions apply.
 6. Record cross-feature interactions and precedence.
-7. Keep inferred Geist implications separate.
+7. Keep inferred Spectre implications separate.
 8. Link adopted implications to accepted requirement IDs.
-9. Add scenario acceptance criteria only in Geist requirement/spec documents.
+9. Add scenario acceptance criteria only in Spectre requirement/spec documents.
 10. Perform a second-pass contradiction and terminology review.
 
 Unknown behavior MUST remain unknown. Researchers MUST NOT infer numeric limits, defaults, algorithms, timing, schemas, or edge cases from silence.

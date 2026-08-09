@@ -56,8 +56,8 @@ Notes: Observed public behavior only; version limitations recorded per source
 
 ## Cross-cutting patterns worth carrying into requirements work
 
-1. Three distinct modular signal contracts are now on record: VCV's voltage-typed mono cables with 16-channel polyphony, Bitwig's semantically typed always-stereo 4×-rate signals, and Phase Plant's implicit top-down mix bus with audio-rate modulation as the only cross-group routing. Geist's modular contract should be an explicit original decision benchmarked against all three.
+1. Three distinct modular signal contracts are now on record: VCV's voltage-typed mono cables with 16-channel polyphony, Bitwig's semantically typed always-stereo 4×-rate signals, and Phase Plant's implicit top-down mix bus with audio-rate modulation as the only cross-group routing. Spectre's modular contract should be an explicit original decision benchmarked against all three.
 2. Unison is consistently two-scoped (per-oscillator cheap vs. per-stack expensive) and both Kilohearts and Xfer treat per-voice effects as the cost center — favoring shared post-FX over per-voice duplication.
-3. Voice lifetime/stealing policies are documented product behavior (Phase Plant: oldest+quietest; Bitwig: distributed lifetime predicate) and belong in Geist's device-model contract, not in implementation folklore.
+3. Voice lifetime/stealing policies are documented product behavior (Phase Plant: oldest+quietest; Bitwig: distributed lifetime predicate) and belong in Spectre's device-model contract, not in implementation folklore.
 4. One-sample-latency edges (VCV cables, Phase Plant aux) are the standard way modular systems price feedback; both document it plainly.
-5. Pitch representations differ meaningfully (1 V/oct vs. ±0.1/octave around middle C vs. semitone offsets) — Geist must pick one canonical internal pitch type with explicit conversions.
+5. Pitch representations differ meaningfully (1 V/oct vs. ±0.1/octave around middle C vs. semitone offsets) — Spectre must pick one canonical internal pitch type with explicit conversions.

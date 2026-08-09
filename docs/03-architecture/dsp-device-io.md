@@ -12,7 +12,7 @@ Notes: This contract precedes instrument/effect UI and remains narrower than gra
 - **Scope:** native source, instrument, and audio-effect process boundaries
 - **Decision authority:** Jeff
 - **Upstream sources:** realtime rules, GRAPH-001..002, decision gate 6
-- **Downstream dependents:** `geist-dsp`, offline graph, live callback, device UI
+- **Downstream dependents:** `spectre-dsp`, offline graph, live callback, device UI
 - **Supersedes:** removed prototype device APIs
 - **Superseded by:** none
 - **Open decisions:** control-rate modulation and multichannel layouts after the stereo vertical slice

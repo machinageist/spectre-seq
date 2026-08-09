@@ -1,7 +1,7 @@
 <!--
 Author: Jeff
 Date: 2026-07-11
-Description: Controlled translation of workflow evidence and explicit product rationale into provisional Geist implications
+Description: Controlled translation of workflow evidence and explicit product rationale into provisional Spectre implications
 Notes: Research implications are not requirements, architecture decisions, priorities, or usability targets
 -->
 
@@ -9,7 +9,7 @@ Notes: Research implications are not requirements, architecture decisions, prior
 
 - **Status:** draft
 - **Last verified:** 2026-07-11
-- **Scope:** evidence-backed and product-rationale-backed questions for Geist workflow design
+- **Scope:** evidence-backed and product-rationale-backed questions for Spectre workflow design
 - **Decision authority:** Jeff
 - **Upstream sources:** `workflow-observations.jsonl`; `workflow-archetypes.md`; `command-ontology.md`; explicit product direction from Jeff dated 2026-07-11
 - **Downstream dependents:** future requirements ledger, usability scenarios, command priorities, architecture contracts, and rebuild roadmap
@@ -18,13 +18,13 @@ Notes: Research implications are not requirements, architecture decisions, prior
 - **Open decisions:** first release workflow boundary; native synthesis catalog; audio-interface backend/platform order; monitoring and latency target methodology
 - **Known gaps:** four FL Studio action-sequence observations have passed review; no
   genre-specific session, interface failure/recovery session, independent friction
-  discussion, or Geist prototype measurement has passed review
+  discussion, or Spectre prototype measurement has passed review
 
 ## Interpretation boundary
 
-This document separates explicit product rationale from external workflow evidence. Product rationale can establish what Geist is intended to serve; it cannot establish interaction details, performance budgets, default bindings, architecture, or acceptance targets without further specification and verification.
+This document separates explicit product rationale from external workflow evidence. Product rationale can establish what Spectre is intended to serve; it cannot establish interaction details, performance budgets, default bindings, architecture, or acceptance targets without further specification and verification.
 
-Nothing here is a stable Geist requirement ID. No observation count is a population-frequency claim.
+Nothing here is a stable Spectre requirement ID. No observation count is a population-frequency claim.
 
 ## Explicit product rationale
 
@@ -34,7 +34,7 @@ Jeff identified the primary intended creative use as modern electronic music, sp
 - forest psytrance;
 - deep dubstep.
 
-Geist must ultimately provide sufficiently modern synthesis and arrangement capability to author those styles rather than merely play back imported material. It must also support recording audio from common USB audio interfaces, including M-Audio- and Focusrite-class devices, and route that live input through the mixer in realtime.
+Spectre must ultimately provide sufficiently modern synthesis and arrangement capability to author those styles rather than merely play back imported material. It must also support recording audio from common USB audio interfaces, including M-Audio- and Focusrite-class devices, and route that live input through the mixer in realtime.
 
 Brand examples identify the device class and workflow expectation, not a vendor-specific compatibility promise. Supported devices ultimately depend on the declared operating-system audio backend matrix and class-compliant or vendor-driver behavior.
 
@@ -71,7 +71,7 @@ The four admitted FL Studio action-sequence observations support only provisiona
 
 - `WF-FL-ARRANGE-001` and `WF-FL-PLAYLIST-002` show that rapid duplication, bounded audition loops, variation branching, and orientation-preserving organization deserve cross-product study.
 - `WF-FL-NICK-MIRA-003` shows a professional loop of sound selection, note entry, audition, transformation, arrangement, version branching, revision, and bounce. It also shows that a usable loop may be deliberately rejected in favor of further transformation.
-- The professional session moves repeatedly among host, plugin editor, note editor, Playlist, mixer, slicer, save flow, and render flow. Selection, focus, audition position, and undo confidence across comparable Geist lenses therefore require direct study.
+- The professional session moves repeatedly among host, plugin editor, note editor, Playlist, mixer, slicer, save flow, and render flow. Selection, focus, audition position, and undo confidence across comparable Spectre lenses therefore require direct study.
 - Saving a new project version before substantial layering is observed once as revision-risk management. It is not yet a frequency or default-workflow claim.
 - `WF-FL-RECORD-004` establishes one prepared success path through interface selection,
   permissions, input choice, monitoring, arming, capture, and routing; it does not establish
@@ -101,4 +101,4 @@ The current corpus does not justify:
 - command-frequency or feature-priority scores;
 - promotion of any workflow archetype.
 
-Those decisions require broader workflow evidence, explicit architecture and platform decisions, and measured Geist prototypes.
+Those decisions require broader workflow evidence, explicit architecture and platform decisions, and measured Spectre prototypes.

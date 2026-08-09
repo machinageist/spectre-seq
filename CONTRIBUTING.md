@@ -1,13 +1,13 @@
 <!--
 Author: Jeff
 Date: 2026-07-17
-Description: Contribution workflow for the Geist DAW repository
+Description: Contribution workflow for the Spectre repository
 Notes: This repo is early-stage and specification-first; read docs/README.md before proposing changes
 -->
 
 # Contributing
 
-Geist is in early, specification-first development. `docs/README.md` owns documentation authority — read it, `docs/status/STATUS.md`, and `docs/status/NEXT.md` before proposing a change.
+Spectre is in early, specification-first development. `docs/README.md` owns documentation authority — read it, `docs/status/STATUS.md`, and `docs/status/NEXT.md` before proposing a change.
 
 ## Workflow
 
@@ -30,7 +30,7 @@ Run the commands in README's `## Validate` section:
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
-cargo run --locked -p geist-offline -- --self-test
+cargo run --locked -p spectre-offline -- --self-test
 ```
 
 CI runs the same commands on every push and pull request against `main`.

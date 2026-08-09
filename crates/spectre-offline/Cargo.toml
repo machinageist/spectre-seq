@@ -1,0 +1,21 @@
+# Author: Jeff
+# Date: 2026-07-12
+# Description: Deterministic offline harness for Spectre project and render contracts
+# Notes: R0 harness; R2 renders the native fixture through the compiled graph plan
+
+[package]
+name = "spectre-offline"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+spectre-core = { path = "../spectre-core" }
+spectre-dsp = { path = "../spectre-dsp" }
+spectre-graph = { path = "../spectre-graph" }
+spectre-project = { path = "../spectre-project" }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+spectre-app = { path = "../spectre-app" }

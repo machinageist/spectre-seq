@@ -61,7 +61,7 @@ The legacy Serum 2 specification relies primarily on the change guide, product m
 - product-page language remains advertised capability unless corroborated by stronger documentation;
 - undocumented parameter ranges, defaults, algorithms, timing, voice behavior, randomization, preset payloads, file formats, and edge cases remain `SOURCE-GAP`;
 - no Serum preset, wavetable, sample, visual, binary, or file compatibility requirement is implied;
-- no Serum numeric limit becomes a Geist limit without an independent product rationale.
+- no Serum numeric limit becomes a Spectre limit without an independent product rationale.
 
 ## Source-gap records
 

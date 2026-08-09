@@ -2,7 +2,7 @@
 Author: Jeff
 Date: 2026-07-11
 Description: Atomic clean-room behavioral observations from the Ableton Live 12 manual
-Notes: Observed public behavior only; no Geist requirement or implementation decision lives here
+Notes: Observed public behavior only; no Spectre requirement or implementation decision lives here
 -->
 
 # Ableton Live 12 — Atomic Observations

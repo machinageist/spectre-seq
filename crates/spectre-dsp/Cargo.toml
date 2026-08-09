@@ -1,0 +1,16 @@
+# Author: Jeff
+# Date: 2026-07-12
+# Description: Native realtime-safe DSP devices for Spectre
+# Notes: Processing APIs borrow preallocated planar buffers
+
+[package]
+name = "spectre-dsp"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+spectre-core = { path = "../spectre-core" }
+
+[dev-dependencies]
+proptest.workspace = true

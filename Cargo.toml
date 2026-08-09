@@ -1,17 +1,17 @@
 # Author: Jeff
 # Date: 2026-07-11
-# Description: Geist DAW workspace root
+# Description: Spectre workspace root
 # Notes: Workspace membership and shared dependency versions are explicit
 
 [workspace]
 resolver = "2"
 members = [
-    "crates/geist-app",
-    "crates/geist-core",
-    "crates/geist-dsp",
-    "crates/geist-graph",
-    "crates/geist-offline",
-    "crates/geist-project",
+    "crates/spectre-app",
+    "crates/spectre-core",
+    "crates/spectre-dsp",
+    "crates/spectre-graph",
+    "crates/spectre-offline",
+    "crates/spectre-project",
 ]
 
 [workspace.package]

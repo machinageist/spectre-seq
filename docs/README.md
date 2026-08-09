@@ -1,7 +1,7 @@
 <!--
 Author: Jeff
 Date: 2026-07-12
-Description: Documentation authority and repository map for Geist DAW
+Description: Documentation authority and repository map for Spectre
 Notes: Defines precedence, ownership, and status vocabulary
 -->
 
@@ -9,7 +9,7 @@ Notes: Defines precedence, ownership, and status vocabulary
 
 - **Status:** accepted
 - **Last verified:** 2026-07-12
-- **Scope:** all active Geist documentation
+- **Scope:** all active Spectre documentation
 - **Decision authority:** Jeff
 - **Upstream sources:** product direction and repository implementation
 - **Downstream dependents:** every active document and implementation slice

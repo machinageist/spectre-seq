@@ -28,7 +28,7 @@ The corpus SHOULD cover electronic composition/sound design, beatmaking, band an
 
 Jeff's explicit product rationale dated 2026-07-11 makes hypnotic techno, forest psytrance, deep dubstep, modern synthesis/arrangement, and realtime audio-interface input/monitoring priority sampling contexts. This prioritizes evidence collection; it does not pre-authorize feature details, platform backends, device compatibility, latency targets, or implementation choices.
 
-Major DAW references are Ableton Live, Bitwig Studio, FL Studio, REAPER, Logic Pro, and Cubase. Sound-design references are VCV Rack, Phase Plant, and Serum 2. Other tools require a stated Geist-relevant reason.
+Major DAW references are Ableton Live, Bitwig Studio, FL Studio, REAPER, Logic Pro, and Cubase. Sound-design references are VCV Rack, Phase Plant, and Serum 2. Other tools require a stated Spectre-relevant reason.
 
 The initial search floor is 8–12 substantive workflow accounts per major DAW across at least three workflow categories, and 5–8 per synth/modular reference. This is a saturation heuristic, not a statistical sample requirement. Poor evidence MUST be reported rather than padded.
 
@@ -85,4 +85,4 @@ The qualitative core-loop score considers observed recurrence, number of workflo
 
 A workflow category approaches online-source saturation when additional substantive sources repeat known action chains and friction without adding new command, transition, recovery, or role/context patterns. Saturation is recorded per product and archetype, never globally.
 
-Each accepted observation requires a direct source, relevant timestamp/page/section, extraction review, and confidence rationale. Product implications require corroboration or explicit low-confidence labeling. Final usability targets require Geist prototype testing; external workflows alone cannot set them.
+Each accepted observation requires a direct source, relevant timestamp/page/section, extraction review, and confidence rationale. Product implications require corroboration or explicit low-confidence labeling. Final usability targets require Spectre prototype testing; external workflows alone cannot set them.

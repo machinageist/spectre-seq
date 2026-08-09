@@ -1,8 +1,8 @@
 <!--
 Author: Jeff
 Date: 2026-07-11
-Description: Semantic command ontology for cross-product workflow research and future Geist command design
-Notes: Command identifiers are provisional research normalization, not accepted Geist API
+Description: Semantic command ontology for cross-product workflow research and future Spectre command design
+Notes: Command identifiers are provisional research normalization, not accepted Spectre API
 -->
 
 # Command Ontology
@@ -15,12 +15,12 @@ Notes: Command identifiers are provisional research normalization, not accepted 
 - **Downstream dependents:** shortcut analysis, friction analysis, product implications, UI command architecture, command requirements
 - **Supersedes:** none
 - **Superseded by:** none
-- **Open decisions:** final Geist command namespaces, typed payload model, alias semantics, and view-state command boundary
-- **Known gaps:** no reviewed command observations, no verified cross-product binding corpus, no frequency evidence, no accepted Geist command IDs
+- **Open decisions:** final Spectre command namespaces, typed payload model, alias semantics, and view-state command boundary
+- **Known gaps:** no reviewed command observations, no verified cross-product binding corpus, no frequency evidence, no accepted Spectre command IDs
 
 ## Authority warning
 
-Identifiers in this document are provisional research-normalization IDs. They allow actions described by different products to be compared without copying product action IDs or bindings. They are not accepted Geist API names, requirements, default shortcuts, or implementation decisions.
+Identifiers in this document are provisional research-normalization IDs. They allow actions described by different products to be compared without copying product action IDs or bindings. They are not accepted Spectre API names, requirements, default shortcuts, or implementation decisions.
 
 ## Normalization rules
 
@@ -35,7 +35,7 @@ A semantic command ID:
 7. identifies payload shape when evidence requires one;
 8. does not encode another product's terminology solely for familiarity;
 9. does not imply support merely by existing in this registry;
-10. receives a final Geist identifier only through requirements and architecture review.
+10. receives a final Spectre identifier only through requirements and architecture review.
 
 ## Command record model
 
@@ -160,7 +160,7 @@ The corpus must test, rather than assume, whether successful workflows require:
 - commands disabled with a reason when their preconditions are unmet;
 - command search filtered by context without hiding discoverability.
 
-These remain `GEIST-CANDIDATE` questions, not requirements.
+These remain `SPECTRE-CANDIDATE` questions, not requirements.
 
 ## Alias and macro research boundary
 
@@ -172,7 +172,7 @@ Cross-product research distinguishes:
 - product macros with unclear transaction boundaries;
 - arbitrary executable scripts or extensions.
 
-Geist's standing direction allows validated declarative aliases but does not authorize arbitrary code execution. Final alias semantics require architecture for validation, preconditions, atomicity, undo grouping, failure, realtime scheduling, versioning, and configuration portability.
+Spectre's standing direction allows validated declarative aliases but does not authorize arbitrary code execution. Final alias semantics require architecture for validation, preconditions, atomicity, undo grouping, failure, realtime scheduling, versioning, and configuration portability.
 
 ## Core-loop scoring gate
 

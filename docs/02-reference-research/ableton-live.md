@@ -2,7 +2,7 @@
 Author: Jeff
 Date: 2026-07-11
 Description: Versioned clean-room source inventory and coverage matrix for Ableton Live 12
-Notes: Inventory only; no external behavior is adopted as a Geist requirement here
+Notes: Inventory only; no external behavior is adopted as a Spectre requirement here
 -->
 
 # Ableton Live 12 Reference Dossier
@@ -13,7 +13,7 @@ Notes: Inventory only; no external behavior is adopted as a Geist requirement he
 - **Scope:** official Ableton Live 12 manual coverage relevant to DAW workflows and interaction research
 - **Decision authority:** Jeff
 - **Upstream sources:** `SRC-ABLETON-LIVE12-MANUAL-WELCOME`; `docs/02-reference-research/methodology.md`
-- **Downstream dependents:** workflow field study, Geist requirements ledger, application and subsystem specifications
+- **Downstream dependents:** workflow field study, Spectre requirements ledger, application and subsystem specifications
 - **Supersedes:** removed prototype-era Ableton specification
 - **Superseded by:** none
 - **Open decisions:** which device-reference chapters merit full behavioral extraction versus capability classification
@@ -21,7 +21,7 @@ Notes: Inventory only; no external behavior is adopted as a Geist requirement he
 
 ## Boundary
 
-This dossier inventories publicly documented Live 12 behavior. It does not approve feature parity, file compatibility, copied bindings, vendor limits, Max for Live support, Push support, visual imitation, or any Geist architecture.
+This dossier inventories publicly documented Live 12 behavior. It does not approve feature parity, file compatibility, copied bindings, vendor limits, Max for Live support, Push support, visual imitation, or any Spectre architecture.
 
 ## Version evidence
 
@@ -31,16 +31,16 @@ The official page title and navigation identify “Ableton Reference Manual Vers
 
 - `inventory-only`: title and direct chapter URL captured.
 - `section-inventoried`: the complete rendered heading hierarchy was captured from the direct chapter page, but section prose has not yet produced atomic claims.
-- `out-of-scope-candidate`: likely outside Geist's active product scope, but exclusion requires review and rationale.
+- `out-of-scope-candidate`: likely outside Spectre's active product scope, but exclusion requires review and rationale.
 - `claims-extracted`: atomic observations exist with source locations.
-- `reviewed-no-relevant-claims`: chapter reviewed and no Geist-relevant observations found.
+- `reviewed-no-relevant-claims`: chapter reviewed and no Spectre-relevant observations found.
 - `blocked-source-gap`: source cannot establish the needed behavior.
 
 ## Top-level manual coverage matrix
 
 Every row is currently `inventory-only`; listing is not claim extraction.
 
-| Chapter | Official title | Geist research domain | State |
+| Chapter | Official title | Spectre research domain | State |
 |---:|---|---|---|
 | 1 | Welcome to Live | source scope and terminology | inventory-only |
 | 2 | First Steps | installation, settings, audio/MIDI setup | inventory-only |
@@ -97,7 +97,7 @@ This matrix records the complete rendered heading hierarchy for the chapters ins
 
 Source: `https://www.ableton.com/en/live-manual/12/live-concepts/`
 
-| Sections | Geist research domain | State | Extraction gap |
+| Sections | Spectre research domain | State | Extraction gap |
 |---|---|---|---|
 | 3.1 Control Bar; 3.2 Status Bar | application shell, transport, diagnostics, global state | section-inventoried | command state, failure states, focus, persistence, and accessibility |
 | 3.3 Browser; 3.4 Sound Similarity | browser, assets, search and recommendation | section-inventoried | indexing, cache, preview, missing assets, errors, and deterministic behavior |
@@ -116,14 +116,14 @@ Source: `https://www.ableton.com/en/live-manual/12/live-concepts/`
 
 Source: `https://www.ableton.com/en/live-manual/12/working-with-the-browser/`
 
-| Sections | Geist research domain | State | Extraction gap |
+| Sections | Spectre research domain | State | Extraction gap |
 |---|---|---|---|
 | 4.1 Content Pane; 4.2 Search Bar; 4.2.1 Saving Search Results as Custom Labels | asset results, search, saved queries | section-inventoried | query semantics, indexing latency, empty/error states, persistence, and keyboard operation |
 | 4.3 Browser History | navigation state | section-inventoried | history scope, invalidation, project boundaries, and undo distinction |
 | 4.4 Filters and Tags; 4.4.1 Filter Groups; 4.4.2 Tags; 4.4.3 Tag Editor; 4.4.4 Quick Tags | metadata and faceted search | section-inventoried | metadata authority, user edits, conflicts, migration, and batch operation failure |
 | 4.5 Collections; 4.6 Library | favorites and installed content | section-inventoried | stable identity, portability, unavailable items, and content licensing boundaries |
 | 4.7 Places | external and user-controlled locations | section-inventoried | permissions, disconnects, path portability, case sensitivity, and rescanning |
-| 4.7.1 Downloading and Installing Packs; 4.7.2 Pack Info | downloadable content | bounded-inventory | Geist content delivery is undecided; provenance, licensing, interruption, and integrity remain unreviewed |
+| 4.7.1 Downloading and Installing Packs; 4.7.2 Pack Info | downloadable content | bounded-inventory | Spectre content delivery is undecided; provenance, licensing, interruption, and integrity remain unreviewed |
 | 4.7.3 Splice; 4.7.4 Ableton Cloud; 4.7.5 Push 3 Standalone transfers | vendor/cloud/hardware integrations | out-of-scope-candidate | useful only for workflow/friction evidence; no compatibility target |
 | 4.7.6 User Library; 4.7.7 Current Project; 4.7.8 User Folders | user assets and project-local assets | section-inventoried | ownership, collection, missing media, relocation, cache, and backup behavior |
 | 4.8 Navigating in the Browser; 4.9 Previewing Files | keyboard/pointer navigation and audition | section-inventoried | focus, transport interaction, preview routing, latency, concurrency, and accessibility |
@@ -133,7 +133,7 @@ Source: `https://www.ableton.com/en/live-manual/12/working-with-the-browser/`
 
 Source: `https://www.ableton.com/en/live-manual/12/managing-files-and-sets/`
 
-| Sections | Geist research domain | State | Extraction gap |
+| Sections | Spectre research domain | State | Extraction gap |
 |---|---|---|---|
 | 5.1 Sample Files; 5.1.1 Decoding Cache; 5.1.2 Analysis Files | decoding, streaming, cache, waveform/tempo analysis | section-inventoried | format constraints, cache invalidation, concurrency, corruption, disk pressure, deterministic analysis, and disposable-data boundaries |
 | 5.1.3 Exporting Audio and Video; 5.1.3.1–5.1.3.5 selection, rendering, encoding, video, and realtime rendering | export and render lifecycle | section-inventoried | signal-path equivalence, interruption, plugin realtime requirements, metadata, dither, SRC, partial-output cleanup, and failure reporting |
@@ -144,17 +144,17 @@ Source: `https://www.ableton.com/en/live-manual/12/managing-files-and-sets/`
 | 5.6 Locating Missing Files; 5.6.1 manual repair; 5.6.2 automatic repair | missing-media diagnosis and relinking | section-inventoried | matching rules, ambiguity, hashes, user confirmation, batch repair, undo, and non-destructive failure |
 | 5.7 Collecting External Files; 5.7.1 collect on export; 5.8 aggregated locate/collect | project collection and archive | section-inventoried | copy atomicity, deduplication, licensing, insufficient space, interruption, and verification |
 | 5.9 Finding Unused Files | cleanup and ownership | section-inventoried | reachability definition, shared assets, destructive safety, confirmation, and recovery |
-| 5.10 Packing Projects into Packs | distribution bundle | bounded-inventory | Geist archive/content format remains undecided; integrity, provenance, licensing, and compatibility are unreviewed |
-| 5.11 File Management FAQs; 5.11.1–5.11.5 project creation, presets, versions, save location, and folder structure | workflow guidance and project organization | section-inventoried | convert only explicit behaviors into atomic observations; recommendations do not become Geist architecture |
+| 5.10 Packing Projects into Packs | distribution bundle | bounded-inventory | Spectre archive/content format remains undecided; integrity, provenance, licensing, and compatibility are unreviewed |
+| 5.11 File Management FAQs; 5.11.1–5.11.5 project creation, presets, versions, save location, and folder structure | workflow guidance and project organization | section-inventoried | convert only explicit behaviors into atomic observations; recommendations do not become Spectre architecture |
 
 ## Initial scope notes
 
-- Chapters 31–32 are evidence about an extension ecosystem, not a Geist compatibility target.
+- Chapters 31–32 are evidence about an extension ecosystem, not a Spectre compatibility target.
 - Chapters 34–35 may inform controller workflows, but do not create Push compatibility requirements.
-- Chapter 27 remains relevant only if scoring/video enters Geist's accepted scope.
-- Device reference chapters may inform capability taxonomy; they MUST NOT be treated as a catalog Geist must clone.
+- Chapter 27 remains relevant only if scoring/video enters Spectre's accepted scope.
+- Device reference chapters may inform capability taxonomy; they MUST NOT be treated as a catalog Spectre must clone.
 - Chapter 41 is binding evidence only. Workflow frequency requires independent field observations.
 
 ## Next extraction slice
 
-Chapters 6, 7, 8, 9, 16, 17, 18, 19, 25, and 41 reached `claims-extracted` on 2026-07-11; atomic observations live in `ableton-live-observations.md` (`OBS-AB12-*`). Next: extract chapters 3–5 (already section-inventoried) plus 10 (Editing MIDI), 21 (Comping), and 36 (synchronization); then spot-verify extracted numeric claims against the rendered pages. No Geist requirement should be created until cross-reference and workflow evidence are reviewed.
+Chapters 6, 7, 8, 9, 16, 17, 18, 19, 25, and 41 reached `claims-extracted` on 2026-07-11; atomic observations live in `ableton-live-observations.md` (`OBS-AB12-*`). Next: extract chapters 3–5 (already section-inventoried) plus 10 (Editing MIDI), 21 (Comping), and 36 (synchronization); then spot-verify extracted numeric claims against the rendered pages. No Spectre requirement should be created until cross-reference and workflow evidence are reviewed.

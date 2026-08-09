@@ -34,7 +34,7 @@ Logic Pro is a substantive DAW reference for:
 - software-instrument, audio, and hybrid production;
 - mixing, routing, automation, and export;
 - key-command sets, windows, screensets, tools, and command search;
-- scoring and long-timeline work if adopted into Geist scope.
+- scoring and long-timeline work if adopted into Spectre scope.
 
 It is not a project, preset, instrument, effect, control-surface, layout, or key-command compatibility target.
 
@@ -47,7 +47,7 @@ It is not a project, preset, instrument, effect, control-surface, layout, or key
 | Logic Pro Effects User Guide | official PDF destination discovered | unreviewed |
 | Logic Pro Control Surfaces Support Guide | official PDF destination discovered | unreviewed |
 
-Discovery does not establish coverage. Device catalogs receive bounded treatment unless a Geist capability question requires them.
+Discovery does not establish coverage. Device catalogs receive bounded treatment unless a Spectre capability question requires them.
 
 ## Required coverage matrix
 
@@ -76,4 +76,4 @@ Discovery does not establish coverage. Device catalogs receive bounded treatment
 
 ## Next extraction slice
 
-Extract and classify the complete main-guide TOC from the official PDF, then isolate key-command, recording/comping, routing/mixing, project-recovery, and accessibility chapters. Related device guides remain bounded unless they answer an accepted Geist research question.
+Extract and classify the complete main-guide TOC from the official PDF, then isolate key-command, recording/comping, routing/mixing, project-recovery, and accessibility chapters. Related device guides remain bounded unless they answer an accepted Spectre research question.

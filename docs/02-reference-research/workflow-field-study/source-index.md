@@ -1,7 +1,7 @@
 <!--
 Author: Jeff
 Date: 2026-07-11
-Description: Human-readable index of clean-room and workflow research sources for Geist DAW
+Description: Human-readable index of clean-room and workflow research sources for Spectre
 Notes: The machine-readable source ledger is authoritative for individual source records
 -->
 
@@ -20,7 +20,7 @@ Notes: The machine-readable source ledger is authoritative for individual source
 
 ## Authority and interpretation
 
-`docs/02-reference-research/source-ledger.json` owns source-record facts. This document summarizes research progress. A source listed here is discovered, not exhaustively reviewed. No entry grants a Geist requirement or implementation decision.
+`docs/02-reference-research/source-ledger.json` owns source-record facts. This document summarizes research progress. A source listed here is discovered, not exhaustively reviewed. No entry grants a Spectre requirement or implementation decision.
 
 ## Official reference-source status
 
@@ -69,7 +69,7 @@ If a complete manual is available only inside a licensed installation, research 
 
 ### Open-source documentation
 
-Public source availability does not authorize copying source code, artwork, panels, patch files, or distinctive interaction composition. Geist research remains behavioral and attribution-preserving.
+Public source availability does not authorize copying source code, artwork, panels, patch files, or distinctive interaction composition. Spectre research remains behavioral and attribution-preserving.
 
 ## Promotion checklist
 

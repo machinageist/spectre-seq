@@ -24,7 +24,7 @@ Notes: Archetypes are research questions until reviewed observations support the
 - `partially-observed`: at least one reviewed source covers part of the chain.
 - `triangulated`: multiple independent reviewed sources and evidence classes cover the chain without material unresolved contradiction.
 - `requirement-candidate`: triangulated evidence and product rationale justify requirement review.
-- `accepted`: linked Geist scenario requirements have decision authority approval.
+- `accepted`: linked Spectre scenario requirements have decision authority approval.
 
 No archetype is a requirement merely because it appears here.
 
@@ -105,4 +105,4 @@ This gate is qualitative. Meeting its count floor does not imply population-leve
 
 ## Current conclusion
 
-All archetypes remain `research-question`. The registry establishes consistent extraction targets but provides no evidence for feature priority, command frequency, gesture budgets, or Geist requirements yet.
+All archetypes remain `research-question`. The registry establishes consistent extraction targets but provides no evidence for feature priority, command frequency, gesture budgets, or Spectre requirements yet.

@@ -16,7 +16,7 @@ Notes: The 15.0 Webhelp branch currently includes 15.0.20 material
 - **Downstream dependents:** DAW workflow study, command ontology, recording/editing/mixing requirements
 - **Supersedes:** none
 - **Superseded by:** none
-- **Open decisions:** whether scoring and post-production workflows are first-stage Geist targets
+- **Open decisions:** whether scoring and post-production workflows are first-stage Spectre targets
 - **Known gaps:** deterministic TOC, key commands/macros/logical editors, patch-pinned snapshot, chapter claims, persistence, error handling, and accessibility evidence
 
 ## Version and source boundary
@@ -58,7 +58,7 @@ It is not a project, preset, plugin, layout, macro, logical-editor, or key-comma
 
 ## Command-study controls
 
-Macros and logical editors are evidence about composable typed operations. They do not authorize arbitrary scripting in Geist. Each extracted command must retain context, selection/focus requirements, remappability, destructive effect, undo behavior, equivalent gesture, and discoverability.
+Macros and logical editors are evidence about composable typed operations. They do not authorize arbitrary scripting in Spectre. Each extracted command must retain context, selection/focus requirements, remappability, destructive effect, undo behavior, equivalent gesture, and discoverability.
 
 ## Source-gap records
 
@@ -66,7 +66,7 @@ Macros and logical editors are evidence about composable typed operations. They 
 - `GAP-CUBASE-0002`: no revision/publication date was shown.
 - `GAP-CUBASE-0003`: deterministic section inventory has not been captured.
 - `GAP-CUBASE-0004`: command, macro, workspace, modifier, and logical-editor semantics remain unreviewed.
-- `GAP-CUBASE-0005`: scoring/post-production relevance to Geist remains a product-scope decision.
+- `GAP-CUBASE-0005`: scoring/post-production relevance to Spectre remains a product-scope decision.
 
 ## Next extraction slice
 

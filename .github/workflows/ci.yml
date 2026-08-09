@@ -46,4 +46,4 @@ jobs:
         run: cargo test --locked --workspace
 
       - name: Offline deterministic self-test
-        run: cargo run --locked -p geist-offline -- --self-test
+        run: cargo run --locked -p spectre-offline -- --self-test

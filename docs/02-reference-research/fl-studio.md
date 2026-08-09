@@ -35,7 +35,7 @@ FL Studio is a substantive DAW workflow reference, especially for:
 - beatmaking, sampling, automation, and rapid variation workflows;
 - recording, routing, mixing, export, and project lifecycle behavior.
 
-It is not a compatibility target. Geist does not seek FL Studio project, pattern, preset, plugin, layout, theme, or binding compatibility.
+It is not a compatibility target. Spectre does not seek FL Studio project, pattern, preset, plugin, layout, theme, or binding compatibility.
 
 ## Required coverage matrix
 

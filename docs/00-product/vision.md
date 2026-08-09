@@ -1,15 +1,15 @@
 <!--
 Author: Jeff
 Date: 2026-07-11
-Description: Geist DAW product North Star — audience, identity, release bars, non-goals
+Description: Spectre product North Star — audience, identity, release bars, non-goals
 Notes: Accepted by Jeff through delegated decision authority on 2026-07-12
 -->
 
-# Geist Product Vision
+# Spectre Product Vision
 
 - **Status:** accepted
 - **Last verified:** 2026-07-12
-- **Scope:** who Geist is for, what it must be excellent at first, what makes it Geist, release bars, non-goals
+- **Scope:** who Spectre is for, what it must be excellent at first, what makes it Spectre, release bars, non-goals
 - **Decision authority:** Jeff
 - **Upstream sources:** Jeff's stated genre priorities and `docs/02-reference-research/`
 - **Downstream dependents:** requirements ledger, decision gates, rebuild roadmap, all specs
@@ -18,11 +18,11 @@ Notes: Accepted by Jeff through delegated decision authority on 2026-07-12
 - **Open decisions:** scoring/video remains outside current scope
 - **Known gaps:** workflow research remains below saturation
 
-## Who Geist is for
+## Who Spectre is for
 
-Geist serves electronic musicians who compose, sound-design, and perform their own material — first concretely: hypnotic techno, forest psytrance, deep dubstep, and modern synthesis-driven arrangement (Jeff's stated priority genres), spanning studio production and live performance with an audio interface, MIDI controllers, and hardware synths. Recording-band and scoring workflows are respected later-stage citizens, not the first target.
+Spectre serves electronic musicians who compose, sound-design, and perform their own material — first concretely: hypnotic techno, forest psytrance, deep dubstep, and modern synthesis-driven arrangement (Jeff's stated priority genres), spanning studio production and live performance with an audio interface, MIDI controllers, and hardware synths. Recording-band and scoring workflows are respected later-stage citizens, not the first target.
 
-## What Geist must be excellent at first
+## What Spectre must be excellent at first
 
 Accepted core loop, subject to evidence-driven refinement:
 
@@ -32,11 +32,11 @@ Accepted core loop, subject to evidence-driven refinement:
 4. Trustworthy capture: audio/MIDI recording with correct latency compensation, retrospective MIDI capture, and crash-salvageable media.
 5. Project safety: atomic save, autosave, recovery, missing-media repair — losing work is a product-killing defect.
 
-## What makes it distinctly Geist
+## What makes it distinctly Spectre
 
 - One project, linked lenses: timeline, performance grid, mixer, and a modular sound-flow view are views over one model with shared selection and stable identity — not separate apps stapled together.
-- Modulation as a first-class visible citizen: every parameter shows base value, automation, and modulation contribution distinctly (research shows both Live and Bitwig converge on override/restore semantics; Geist designs this in from the model outward).
-- An explicit, original modular signal contract: Geist defines its own typed signal model (pitch/gate/phase/audio) informed by — not copied from — VCV's voltage standards, Bitwig's typed stereo signals, and Phase Plant's stack routing.
+- Modulation as a first-class visible citizen: every parameter shows base value, automation, and modulation contribution distinctly (research shows both Live and Bitwig converge on override/restore semantics; Spectre designs this in from the model outward).
+- An explicit, original modular signal contract: Spectre defines its own typed signal model (pitch/gate/phase/audio) informed by — not copied from — VCV's voltage standards, Bitwig's typed stereo signals, and Phase Plant's stack routing.
 - Rust-native engine with a published realtime contract and enforced allocation/lock discipline on the callback path.
 - Keyboard-first, calm UI: context-scoped command resolution (the pattern both Live and Bitwig depend on), searchable and remappable commands, no spreadsheet density, no cable spaghetti by default.
 - Open source with original code, DSP, names, content, and formats.
@@ -47,7 +47,7 @@ Accepted core loop, subject to evidence-driven refinement:
 |---|---|
 | Credible alpha | R4 vertical slice verified: one track, MIDI clip, native synth + effect, transport, save/reload, offline bounce — honest telemetry, no fake surfaces |
 | Musician beta | Loop-first core loop end-to-end: recording, editing, launcher, automation, project safety (R5–R10), qualified on two platforms |
-| 1.0 | Adds VST3 hosting with crash containment, the Geist modular/synth identity layer (R11), accessibility baseline, packaging |
+| 1.0 | Adds VST3 hosting with crash containment, the Spectre modular/synth identity layer (R11), accessibility baseline, packaging |
 | Professional-ready | Mandate §9 gates: workflow, reliability, performance budgets, recovery drills, compatibility matrix, documentation |
 
 ## Non-goals (current stage)

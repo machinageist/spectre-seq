@@ -13,7 +13,7 @@ Notes: Mutable latest URL currently renders a guide labeled v5.3; this dossier d
 - **Scope:** official Bitwig Studio user-guide coverage relevant to DAW, modulation, Grid, controller, and touch workflows
 - **Decision authority:** Jeff
 - **Upstream sources:** `SRC-BITWIG-GUIDE-LATEST-WELCOME`; `docs/02-reference-research/methodology.md`
-- **Downstream dependents:** workflow field study, Geist requirements ledger, modular and UI specifications
+- **Downstream dependents:** workflow field study, Spectre requirements ledger, modular and UI specifications
 - **Supersedes:** removed prototype-era Bitwig specification
 - **Superseded by:** none
 - **Open decisions:** current guide/product version alignment; depth of Grid and device-catalog extraction
@@ -21,7 +21,7 @@ Notes: Mutable latest URL currently renders a guide labeled v5.3; this dossier d
 
 ## Boundary
 
-This dossier captures publicly documented behavior. It does not approve Bitwig parity, preset/project compatibility, copied layouts, copied bindings, vendor limits, The Grid compatibility, or a Bitwig-derived Geist architecture.
+This dossier captures publicly documented behavior. It does not approve Bitwig parity, preset/project compatibility, copied layouts, copied bindings, vendor limits, The Grid compatibility, or a Bitwig-derived Spectre architecture.
 
 ## Version warning
 
@@ -31,7 +31,7 @@ The official URL is mutable and contains `/userguide/latest/`. On 2026-07-11, it
 
 Every row is `inventory-only`. The official rendered navigation showed chapters 0–19 plus a separately listed credits page also labeled 19; this numbering is preserved rather than silently corrected.
 
-| Navigation label | Official title | Geist research domain | State |
+| Navigation label | Official title | Spectre research domain | State |
 |---:|---|---|---|
 | 0 | Welcome to Bitwig Studio | guide scope, dashboard, settings, conventions | inventory-only |
 | 1 | Bitwig Studio Concepts | project/object model | claims-extracted \|
@@ -58,9 +58,9 @@ Every row is `inventory-only`. The official rendered navigation showed chapters 
 ## Scope controls
 
 - Chapter 17 is a bounded modular-workflow reference. The Grid is not a compatibility target.
-- Chapter 19 may inform capability categories but does not define a mandatory Geist device catalog.
-- Chapter 18 can inform touch interaction; it does not decide Geist's supported platforms.
-- Operators and modulators may motivate candidates only after workflow corroboration and original Geist requirements.
+- Chapter 19 may inform capability categories but does not define a mandatory Spectre device catalog.
+- Chapter 18 can inform touch interaction; it does not decide Spectre's supported platforms.
+- Operators and modulators may motivate candidates only after workflow corroboration and original Spectre requirements.
 - Drum-family material visible in the welcome chapter does not create implementation requirements or justify copied device designs.
 
 ## Next extraction slice

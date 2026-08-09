@@ -21,7 +21,7 @@ Notes: User behavior and plugin-development documentation are deliberately separ
 
 ## Boundary
 
-VCV Rack is a substantive modular-workflow reference, not a compatibility target. Geist will not copy Rack source code, panel art, module layouts, patch files, voltage conventions, library content, or interaction composition. Publicly documented modular behavior may motivate original Geist candidates only after provenance and product review.
+VCV Rack is a substantive modular-workflow reference, not a compatibility target. Spectre will not copy Rack source code, panel art, module layouts, patch files, voltage conventions, library content, or interaction composition. Publicly documented modular behavior may motivate original Spectre candidates only after provenance and product review.
 
 ## Version evidence and limitation
 
@@ -29,7 +29,7 @@ The official manual index was accessed on 2026-07-11. Official site navigation i
 
 ## User-manual coverage matrix
 
-| Official chapter | Geist research domain | State |
+| Official chapter | Spectre research domain | State |
 |---|---|---|
 | Installing & Running | platform startup, filesystem locations, lifecycle | inventory-only |
 | Getting Started | empty patch to sound, add/connect/configure workflow | inventory-only |
@@ -43,7 +43,7 @@ The official manual index was accessed on 2026-07-11. Official site navigation i
 
 The same index exposes plugin-development chapters for tutorial, API guide, panels, manifest, presets, voltage standards, DSP, migration, and licensing, plus Rack-development chapters for building and versioning. These are not part of the user-behavior dossier.
 
-They MAY later serve as implementation comparisons or licensing evidence when a specific Geist architecture question requires them. They MUST NOT become Geist contracts by proximity, and they MUST NOT be used to copy implementation details.
+They MAY later serve as implementation comparisons or licensing evidence when a specific Spectre architecture question requires them. They MUST NOT become Spectre contracts by proximity, and they MUST NOT be used to copy implementation details.
 
 ## Required atomic observation dimensions
 
@@ -64,12 +64,12 @@ Undocumented engine behavior remains a `SOURCE-GAP`; it MUST NOT be inferred fro
 
 ## Legacy-spec correction controls
 
-The removed prototype-era modular-rack specification mixed VCV observations, Geist limits, UI choices, and implementation details. This dossier retains only source-grounded observations:
+The removed prototype-era modular-rack specification mixed VCV observations, Spectre limits, UI choices, and implementation details. This dossier retains only source-grounded observations:
 
 1. VCV claims move only into atomic sourced observations.
-2. Geist product choices move only into the requirements ledger after review.
+2. Spectre product choices move only into the requirements ledger after review.
 3. Graph execution, cycle policy, port types, and realtime behavior move only into original architecture contracts.
-4. Numeric limits are discarded unless independently justified as Geist requirements.
+4. Numeric limits are discarded unless independently justified as Spectre requirements.
 5. Terms implying VCV compatibility are removed unless Jeff explicitly creates such a target.
 
 ## Next extraction slice

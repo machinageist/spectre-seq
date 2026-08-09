@@ -37,7 +37,7 @@ Legend: **SD** = safe default adopted so work can proceed; **GATE** = must be ra
 | 13 | Undo architecture | Command-pattern transactions over the project model with grouped edits; no state-snapshot diffing | Low after R5 | **SD adopted**, GATE at R5 exit |
 | 14 | Autosave/recovery model | Journaled autosave to sidecar + atomic rename saves; recovery drill required at R5 exit | Medium | **SD adopted** |
 | 15 | Small synth vs flagship relationship | R4 ships a deliberately small original synth; R11 designs the flagship and modular identity from accepted requirements without prototype-code reuse. | High now | **Accepted** |
-| 16 | Reference-product numeric limits | No copied limits (e.g., wavetable frame sizes, unison caps); every numeric bound in Geist needs its own rationale row in the requirements ledger | n/a | **SD adopted** (standing rule) |
+| 16 | Reference-product numeric limits | No copied limits (e.g., wavetable frame sizes, unison caps); every numeric bound in Spectre needs its own rationale row in the requirements ledger | n/a | **SD adopted** (standing rule) |
 | 17 | Accessibility baseline | Keyboard-complete operation and screen-reader labels on all commands/params by beta; scoped audit at R4 | Low if deferred | GATE before beta |
 | 18 | Config/scripting boundary | Declarative, versioned, validated config; no embedded scripting language pre-1.0 | High | **SD adopted** |
 
