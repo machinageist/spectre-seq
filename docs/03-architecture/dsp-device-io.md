@@ -74,6 +74,8 @@ Bus identity is semantic rather than positional at the editable-graph layer. The
 
 ## Realtime contract
 
+`AudioProcessor` requires `Send`. A compiled plan is built on the app thread and moved to the audio thread, so a device that cannot cross threads could never run in a callback. This was added 2026-08-09 at R3 slice 5, when wiring the bridge into a real backend callback failed to compile: `CompiledPlan` stores `Box<dyn AudioProcessor>` and was therefore not `Send`. All four v1 devices satisfy the bound without change. A compile-time assertion pins `CompiledPlan`, the bridge, and both control halves as `Send`.
+
 `process` MUST NOT allocate, lock, block, perform I/O, format strings, log, serialize, inspect UI state, or panic for valid compiled-plan input. Recoverable layout/event errors are detected by validation outside the hot loop. DSP arithmetic uses `f32`; phase, coefficient, or time accumulators MAY use `f64` where documented.
 
 ## Runtime parameter seam

@@ -49,6 +49,12 @@ The equivalence evidence is the point of the slice: the test rebuilds the offlin
 
 Slice 4 surfaced a blocker that decision 22 now tracks. The accepted `AudioProcessor` contract bakes parameters in at construction and offers no callback-safe way to change them on a live plan, so the RT-002 parameter lane is implemented and tested but nothing can consume it. The bridge counts observed changes as `parameters_pending` rather than silently discarding them, keeping the gap visible. Recompiling a plan per change is not an option: compilation allocates.
 
+Slice 5 landed the RT-001 guards as `rt_guard.rs`. A thread-local flag marks an RT section and the global allocator records any allocation or deallocation inside one, so a violation is attributed to the exact call instead of inferred from before/after totals. A positive control deliberately allocates inside a guarded section and asserts the guard catches it, which is what makes every passing result meaningful rather than a broken probe reporting success. Guarded paths: bridge render, the frame-capacity and empty-block refusals, control drain, retire, and the plan driven through a real backend callback.
+
+Lock-freedom is enforced structurally, by scanning the RT modules for `Mutex`, `RwLock`, `Condvar`, `thread::sleep`, and logging macros. This is deliberately labeled the weaker of the two guarantees: it proves those modules never name a blocking primitive, not that no future call could reach one indirectly.
+
+Slice 5 also found and fixed a blocker that would have stopped the live shell outright. `AudioProcessor` carried no `Send` bound, so `CompiledPlan` held `Box<dyn AudioProcessor>` and was not `Send`, meaning the bridge could never be moved onto an audio thread. The bound is now on the trait, all four v1 devices satisfy it unchanged, and a compile-time assertion pins `CompiledPlan`, the bridge, and both control halves as `Send` so it cannot regress silently. The DSP device I/O contract records the change.
+
 No live driver has been opened yet; that is the slice 7 lifecycle drill on qualification hardware.
 
 ## Requirements in scope

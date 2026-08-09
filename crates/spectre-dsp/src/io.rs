@@ -155,7 +155,9 @@ impl NoteEventKind {
 }
 
 // Allocation-free native device process seam
-pub trait AudioProcessor {
+// Send is required: a compiled plan is built on the app thread and moved to the audio thread,
+// so a device that cannot cross threads could never run in the callback
+pub trait AudioProcessor: Send {
     fn io(&self) -> DeviceIo;
 
     fn process(
