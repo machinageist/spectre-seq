@@ -17,3 +17,4 @@ cpal-backend = ["dep:cpal"]
 [dependencies]
 cpal = { version = "0.15.3", optional = true }
 spectre-core = { path = "../spectre-core" }
+spectre-dsp = { path = "../spectre-dsp" }

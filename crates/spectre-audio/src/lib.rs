@@ -5,7 +5,9 @@
 //   Enumeration and open/close are app-thread operations and may allocate; the render callback
 //   is callback-reachable and inherits RT-001. No CompiledPlan execution lives here yet.
 
+pub mod control;
 pub mod null;
+pub mod spsc;
 
 #[cfg(feature = "cpal-backend")]
 pub mod cpal_backend;

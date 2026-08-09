@@ -37,7 +37,13 @@ Slice 2 landed `spectre-audio`, the decision-19 trait seam. `AudioBackend` owns 
 
 15 tests cover enumeration, inclusive config bounds, fail-closed lifecycle transitions including use-after-close, exact block geometry, rendering off the enumerating thread, and an allocation-free steady-state pump. cpal enumeration is asserted to be well-formed with or without hardware, so headless CI passes without pretending a device exists.
 
-This is not yet a bridge: no `CompiledPlan` executes on a callback, and no live driver has been opened. The inherited asset R3 still builds on is the immutable `CompiledPlan` with its measured allocation-free execution; slice 4 must drive that plan rather than introduce a second render path.
+Slice 3 landed the RT-002 transport as `spectre_audio::{spsc, control}`. The SPSC ring is bounded and wait-free in both directions: push and pop each perform a fixed number of steps with no loops, no locks, and no allocation after construction. `push` returns the rejected value instead of consuming it, which is what keeps a full lane from running a destructor on the audio thread.
+
+The three lanes implement decision 21 directly. Parameters use one `AtomicU32` latest-wins slot per registered target plus a version counter, so a 5,000-write sweep coalesces to a single application and cannot starve anything. Notes and transport are strict FIFO and are never dropped to make room; overflow returns an error and increments a counter read off-thread. Retired render state goes back to the app thread on a reclaim lane, and when that lane is full the value is handed back rather than dropped, because dropping it on the audio thread would deallocate.
+
+19 tests cover the transport, including bit-exact signed-zero, subnormal, and NaN delivery; cross-thread FIFO over 100,000 items; repeated mask wrap without corruption; teardown that drops elements straddling the wrap; a drop-witness proving retired state is released on the app thread and never the render thread; and allocation-free send and drain.
+
+This is still not a bridge: no `CompiledPlan` executes on a callback, and no live driver has been opened. Slice 4 must drive the existing plan rather than introduce a second render path.
 
 ## Requirements in scope
 
