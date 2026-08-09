@@ -297,6 +297,11 @@ impl ControlReceiver {
         self.notes.pop()
     }
 
+    // Report whether any note remains queued
+    pub fn notes_is_empty(&self) -> bool {
+        self.notes.is_empty()
+    }
+
     // Take the next queued transport command
     pub fn next_transport(&mut self) -> Option<TransportCommand> {
         self.transport.pop()

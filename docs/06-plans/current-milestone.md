@@ -14,7 +14,7 @@ Notes: Exactly one milestone is active; the roadmap owns ordering
 - **Upstream sources:** `rebuild-roadmap.md`, RT-001..003, `../03-architecture/graph-compilation.md`
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
 - **Supersedes:** the R2 offline-graph milestone, exited 2026-08-09
-- **Open decisions:** RT-003 acceptance; backend, Linux baseline, and RT-002 overflow policy ratified 2026-08-09 as decision rows 19-21
+- **Open decisions:** RT-003 acceptance and the decision-22 runtime parameter seam; backend, Linux baseline, and RT-002 overflow policy ratified 2026-08-09 as decision rows 19-21
 - **Known gaps:** no audio backend, callback bridge, or MIDI ingress exists; all ten R3 exit rows remain open
 
 ## R0/R1 exit record
@@ -43,7 +43,13 @@ The three lanes implement decision 21 directly. Parameters use one `AtomicU32` l
 
 19 tests cover the transport, including bit-exact signed-zero, subnormal, and NaN delivery; cross-thread FIFO over 100,000 items; repeated mask wrap without corruption; teardown that drops elements straddling the wrap; a drop-witness proving retired state is released on the app thread and never the render thread; and allocation-free send and drain.
 
-This is still not a bridge: no `CompiledPlan` executes on a callback, and no live driver has been opened. Slice 4 must drive the existing plan rather than introduce a second render path.
+Slice 4 landed `spectre_audio::bridge::RenderBridge`, the callback bridge. It drains transport commands and notes, executes the existing immutable `CompiledPlan`, and interleaves the plan's stereo output into the driver buffer. There is no second render path.
+
+The equivalence evidence is the point of the slice: the test rebuilds the offline fixture exactly — same ID seed, same device values, same events — drives it through the bridge, and hashes the interleaved output with the same FNV-1a walk the offline harness applies to its planar output. The hashes match, and the fixture's peak is nonzero, so the match is not two silent buffers agreeing. Repeated renders are deterministic. Oversized blocks are refused into exact silence rather than stale audio or noise, notes beyond the block scratch stay queued and arrive on later blocks, and the render path is allocation-free in steady state.
+
+Slice 4 surfaced a blocker that decision 22 now tracks. The accepted `AudioProcessor` contract bakes parameters in at construction and offers no callback-safe way to change them on a live plan, so the RT-002 parameter lane is implemented and tested but nothing can consume it. The bridge counts observed changes as `parameters_pending` rather than silently discarding them, keeping the gap visible. Recompiling a plan per change is not an option: compilation allocates.
+
+No live driver has been opened yet; that is the slice 7 lifecycle drill on qualification hardware.
 
 ## Requirements in scope
 

@@ -2278,6 +2278,8 @@ dependencies = [
  "cpal",
  "spectre-core",
  "spectre-dsp",
+ "spectre-graph",
+ "spectre-offline",
 ]
 
 [[package]]

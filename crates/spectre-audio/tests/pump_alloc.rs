@@ -125,6 +125,74 @@ fn draining_the_control_channel_is_allocation_free() {
     );
 }
 
+#[test]
+fn bridge_render_is_allocation_free() {
+    use spectre_audio::bridge::RenderBridge;
+    use spectre_audio::RenderBlock;
+    use spectre_dsp::{AudioProcessor, Gain, PulseInstrument, Saturator, Waveform};
+    use spectre_graph::{Connection, EditableGraph, NodeId};
+
+    const FRAMES: usize = 256;
+
+    let mut ids = IdGen::new(0x0000_4252_4944_4745);
+    let pulse = NodeId::new(ids.next_id());
+    let gain = NodeId::new(ids.next_id());
+    let saturator = NodeId::new(ids.next_id());
+
+    let mut graph = EditableGraph::new();
+    graph
+        .add_node(
+            pulse,
+            PulseInstrument::new(Waveform::Saw, 0.3).unwrap().io(),
+        )
+        .unwrap();
+    graph.add_node(gain, Gain::new(0.7).unwrap().io()).unwrap();
+    graph
+        .add_node(saturator, Saturator::new(2.5, 0.35).unwrap().io())
+        .unwrap();
+    for (from, to) in [(pulse, gain), (gain, saturator)] {
+        graph
+            .connect(Connection {
+                from,
+                from_bus: 0,
+                to,
+                to_bus: 0,
+            })
+            .unwrap();
+    }
+    let plan = graph
+        .compile(saturator, FRAMES, &mut |node| {
+            if node == pulse {
+                Ok(Box::new(PulseInstrument::new(Waveform::Saw, 0.3)?))
+            } else if node == gain {
+                Ok(Box::new(Gain::new(0.7)?))
+            } else {
+                Ok(Box::new(Saturator::new(2.5, 0.35)?))
+            }
+        })
+        .unwrap();
+
+    let (mut sender, receiver) = control_channel(&[], 256, 32).unwrap();
+    let mut bridge = RenderBridge::new(plan, receiver, pulse, 48_000.0, 64);
+    let mut interleaved = vec![0.0_f32; FRAMES * 2];
+
+    // Warm-up block so first-touch cost stays outside the measurement
+    sender.send_note(note(1)).unwrap();
+    bridge.render(&mut RenderBlock::new(&mut interleaved, 2));
+
+    let before = traffic();
+    for sequence in 0..8 {
+        sender.send_note(note(sequence + 2)).unwrap();
+        sender.send_transport(TransportCommand::Play).unwrap();
+        bridge.render(&mut RenderBlock::new(&mut interleaved, 2));
+    }
+    let after = traffic();
+
+    assert_eq!(before, after, "bridge render must not allocate or free");
+    assert_eq!(bridge.telemetry().plan_errors(), 0);
+    assert_eq!(bridge.telemetry().blocks_rendered(), 9);
+}
+
 // Build a note-on carrying a distinguishing sequence number
 fn note(sequence: u64) -> NoteEvent {
     NoteEvent {

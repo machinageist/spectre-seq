@@ -1,0 +1,186 @@
+// Author: Jeff
+// Date: 2026-08-09
+// Description: Callback bridge driving the existing CompiledPlan from a backend render callback
+// Notes: This is the only render path. It executes the same immutable CompiledPlan the offline
+//   harness renders, so live output and offline output are the same computation. Every method
+//   reachable from `render` inherits RT-001: no allocation, no locks, no I/O, no logging, no
+//   panics. Note scratch is preallocated and pushes stay inside its capacity, so notes that do
+//   not fit stay queued for the next block rather than being dropped.
+
+use crate::control::ControlReceiver;
+use crate::RenderBlock;
+use spectre_core::Transport;
+use spectre_dsp::NoteEvent;
+use spectre_graph::{CompiledPlan, NodeId, PlanNoteInput};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+// Default depth of the per-block note scratch
+pub const DEFAULT_NOTE_SCRATCH: usize = 256;
+
+// Counters the render thread increments and the app thread reads
+#[derive(Debug, Default)]
+pub struct BridgeTelemetry {
+    blocks_rendered: AtomicU64,
+    plan_errors: AtomicU64,
+    frame_capacity_rejections: AtomicU64,
+    notes_deferred: AtomicU64,
+    parameters_pending: AtomicU64,
+}
+
+impl BridgeTelemetry {
+    // Count blocks the bridge has rendered
+    pub fn blocks_rendered(&self) -> u64 {
+        self.blocks_rendered.load(Ordering::Relaxed)
+    }
+
+    // Count blocks the plan refused to render
+    pub fn plan_errors(&self) -> u64 {
+        self.plan_errors.load(Ordering::Relaxed)
+    }
+
+    // Count blocks whose frame count fell outside the plan's preallocated capacity
+    pub fn frame_capacity_rejections(&self) -> u64 {
+        self.frame_capacity_rejections.load(Ordering::Relaxed)
+    }
+
+    // Count notes left queued because the block's scratch was full
+    pub fn notes_deferred(&self) -> u64 {
+        self.notes_deferred.load(Ordering::Relaxed)
+    }
+
+    // Count parameter changes observed but not yet applicable to a live plan
+    pub fn parameters_pending(&self) -> u64 {
+        self.parameters_pending.load(Ordering::Relaxed)
+    }
+}
+
+// Owns the compiled plan and drives it from the audio callback
+pub struct RenderBridge {
+    plan: CompiledPlan,
+    control: ControlReceiver,
+    // The one node that accepts note input in the v1 fixture chain
+    note_node: NodeId,
+    // Preallocated; pushes never exceed capacity, so rendering never allocates
+    notes: Vec<NoteEvent>,
+    sample_rate: f64,
+    transport: Transport,
+    telemetry: Arc<BridgeTelemetry>,
+}
+
+impl RenderBridge {
+    // Build a bridge over an already-compiled plan
+    pub fn new(
+        plan: CompiledPlan,
+        control: ControlReceiver,
+        note_node: NodeId,
+        sample_rate: f64,
+        note_scratch: usize,
+    ) -> Self {
+        Self {
+            plan,
+            control,
+            note_node,
+            notes: Vec::with_capacity(note_scratch.max(1)),
+            sample_rate,
+            transport: Transport::default(),
+            telemetry: Arc::new(BridgeTelemetry::default()),
+        }
+    }
+
+    // Share the telemetry handle with the app thread
+    pub fn telemetry(&self) -> Arc<BridgeTelemetry> {
+        Arc::clone(&self.telemetry)
+    }
+
+    // Report the transport state the render thread has applied
+    pub fn transport(&self) -> Transport {
+        self.transport
+    }
+
+    // Render one block: drain control, execute the plan, interleave the result
+    pub fn render(&mut self, block: &mut RenderBlock<'_>) {
+        let frames = block.frames();
+        if frames == 0 || frames > self.plan.max_frames() {
+            block.fill_silence();
+            self.telemetry
+                .frame_capacity_rejections
+                .fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+
+        self.apply_transport();
+        self.collect_notes();
+
+        // Parameter changes are observed but cannot reach live processors yet: the accepted
+        // AudioProcessor contract has no runtime parameter seam. Counting them keeps the gap
+        // visible instead of silently discarding edits.
+        let pending = self.control.drain_parameters(|_, _| {});
+        if pending > 0 {
+            self.telemetry
+                .parameters_pending
+                .fetch_add(pending as u64, Ordering::Relaxed);
+        }
+
+        let inputs = [PlanNoteInput {
+            node: self.note_node,
+            events: &self.notes,
+        }];
+        if self
+            .plan
+            .process(self.sample_rate, frames, &inputs)
+            .is_err()
+        {
+            block.fill_silence();
+            self.telemetry.plan_errors.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+
+        self.interleave(block, frames);
+        self.telemetry
+            .blocks_rendered
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    // Apply every queued transport command to the render-thread transport
+    fn apply_transport(&mut self) {
+        while let Some(command) = self.control.next_transport() {
+            self.transport.apply(command);
+        }
+    }
+
+    // Move queued notes into the block scratch, leaving any excess queued
+    fn collect_notes(&mut self) {
+        self.notes.clear();
+        while self.notes.len() < self.notes.capacity() {
+            match self.control.next_note() {
+                Some(event) => self.notes.push(event),
+                None => return,
+            }
+        }
+        // Scratch is full; whatever remains stays queued and is counted, never dropped
+        if !self.control.notes_is_empty() {
+            self.telemetry
+                .notes_deferred
+                .fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    // Copy the plan's stereo output into the driver's interleaved buffer
+    fn interleave(&self, block: &mut RenderBlock<'_>, frames: usize) {
+        let Some(output) = self.plan.last_output() else {
+            block.fill_silence();
+            return;
+        };
+        let channels = block.channels() as usize;
+        let samples = block.samples_mut();
+        for frame in 0..frames {
+            let base = frame * channels;
+            for (channel, slot) in (0..channels).zip(base..base + channels) {
+                // Channels beyond the plan's stereo pair repeat the last plan channel
+                let source = output[channel.min(1)];
+                samples[slot] = source[frame];
+            }
+        }
+    }
+}
