@@ -8,7 +8,7 @@ Notes: Safe defaults accepted by Jeff through delegated decision authority on 20
 # Decision Gates
 
 - **Status:** accepted
-- **Last verified:** 2026-07-12
+- **Last verified:** 2026-08-09
 - **Scope:** every decision the audits and mandate flagged as open, with recommendation, reversibility, and safe default
 - **Decision authority:** Jeff
 - **Upstream sources:** product vision, implementation evidence, and reference research
@@ -40,5 +40,10 @@ Legend: **SD** = safe default adopted so work can proceed; **GATE** = must be ra
 | 16 | Reference-product numeric limits | No copied limits (e.g., wavetable frame sizes, unison caps); every numeric bound in Spectre needs its own rationale row in the requirements ledger | n/a | **SD adopted** (standing rule) |
 | 17 | Accessibility baseline | Keyboard-complete operation and screen-reader labels on all commands/params by beta; scoped audit at R4 | Low if deferred | GATE before beta |
 | 18 | Config/scripting boundary | Declarative, versioned, validated config; no embedded scripting language pre-1.0 | High | **SD adopted** |
+| 19 | Audio backend | `cpal` behind an `AudioBackend` trait seam with a null implementation for CI and offline. Pure Rust, dual MIT/Apache matching this workspace, and covers CoreAudio, ALSA, and JACK from one API. Adopted to get the callback bridge built, not because it is the endgame: cpal owns its stream thread and its device-change and error-callback semantics are uneven across hosts. | High — the trait seam is the point; swapping the implementation must not touch the bridge | **Accepted** 2026-08-09, ratified by Jeff; qualification deferred to the R3 lifecycle drill |
+| 20 | Linux backend baseline | ALSA is the qualification baseline because it is present on every Linux host and PipeWire exposes an ALSA compatibility layer. JACK stays available behind a cargo feature for pro routing and never becomes a hard dependency. | High | **Accepted** 2026-08-09, ratified by Jeff |
+| 21 | RT-002 overflow policy | Split lanes. Parameter changes are latest-wins per `(device, parameter)` target, so an arbitrarily fast knob sweep occupies one slot and cannot starve the queue. Note and transport messages are strict FIFO and are never dropped; overflow on those lanes is a counted defect surfaced off-thread, not silent loss. | Medium — lane split is structural; per-lane policy is tunable | **Accepted** 2026-08-09, ratified by Jeff; satisfies RT-002's "defined overflow policy" clause |
 
 Rows marked **SD adopted** proceed now and are re-opened only by evidence. GATE rows block their named milestone, not current work.
+
+Row 19 carries a standing re-open trigger: if the R3 lifecycle drill or the RT-001 guards show cpal allocating, locking, or blocking on a callback-reachable path, the row re-opens and the direct CoreAudio/ALSA option is reconsidered. The trait seam exists so that re-opening costs an implementation, not a redesign.

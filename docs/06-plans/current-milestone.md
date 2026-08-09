@@ -14,8 +14,8 @@ Notes: Exactly one milestone is active; the roadmap owns ordering
 - **Upstream sources:** `rebuild-roadmap.md`, RT-001..003, `../03-architecture/graph-compilation.md`
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
 - **Supersedes:** the R2 offline-graph milestone, exited 2026-08-09
-- **Open decisions:** audio backend selection, RT-002 structure and overflow policy, RT-003 acceptance
-- **Known gaps:** no audio backend, callback bridge, or MIDI ingress exists; every R3 exit row is open
+- **Open decisions:** RT-003 acceptance; backend, Linux baseline, and RT-002 overflow policy ratified 2026-08-09 as decision rows 19-21
+- **Known gaps:** no audio backend, callback bridge, or MIDI ingress exists; all ten R3 exit rows remain open
 
 ## R0/R1 exit record
 
@@ -39,13 +39,21 @@ RT-001 (no allocation, deallocation, blocking locks, I/O, logging, or panics acr
 
 RT-001..003 are currently traced as workspace policy with no implementation. RT-003 remains `proposed` in the requirements ledger and needs acceptance during this milestone.
 
-## Open decisions at intake
+## Decisions ratified at intake
 
-These block R3 exit, not R3 start:
+Ratified 2026-08-09 as decision-gates rows 19-21:
 
-1. **Audio backend selection.** No decision-gates row covers it. Choosing between a cross-platform crate and direct per-platform backends needs its own row with reversibility and a license note, consistent with decision 1 (macOS and Linux co-first-class).
-2. **RT-002 concrete structure and overflow policy.** The requirement names bounded wait-free structures and off-thread reclamation, but no structure is chosen and the overflow behavior must be defined rather than discovered.
-3. **RT-003 acceptance.** The requirement is still proposed; its per-node-type injection fixtures define what containment means.
+1. **Audio backend.** `cpal` behind an `AudioBackend` trait seam with a null implementation for CI and offline use. Chosen to get the callback bridge built, with the trait seam making the backend replaceable. Row 19 carries a standing re-open trigger if the lifecycle drill or RT-001 guards catch cpal allocating, locking, or blocking on a callback-reachable path.
+2. **Linux baseline.** ALSA for qualification, since PipeWire exposes an ALSA compatibility layer; JACK behind a cargo feature and never a hard dependency.
+3. **RT-002 overflow policy.** Split lanes: parameters are latest-wins per `(device, parameter)` target; notes and transport are strict FIFO and never dropped, with overflow on those lanes counted and surfaced off-thread as a defect.
+
+Still open:
+
+- **RT-003 acceptance.** The requirement is still `proposed`; its per-node-type injection fixtures define what containment means. Slice 6 closes it.
+
+## Qualification hardware
+
+Jeff confirmed both macOS and Linux hardware are available, so the two-platform exit row is closable rather than partially blocked. The Linux pass runs at slice 7.
 
 ## Non-goals
 

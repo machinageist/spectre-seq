@@ -15,14 +15,14 @@ Notes: Only active-milestone slices belong here
 - **Downstream dependents:** implementation sessions
 - **Supersedes:** the R2 slice queue, closed 2026-08-09
 - **Superseded by:** none
-- **Open decisions:** audio backend selection blocks slice 2 and later
+- **Open decisions:** RT-003 acceptance, closed by slice 6; the backend decision that blocked slices 2+ was ratified 2026-08-09
 - **Known gaps:** later milestones are intentionally not decomposed here
 
 ## Next slices
 
-1. Add the audio-backend decision-gates row and ratify it. Record candidates, reversibility, license posture, and the macOS/Linux co-first-class constraint from decision 1. No code. This unblocks every later slice and is the only slice that can start today without a pending choice.
-2. Stand up the chosen backend behind a trait seam with an explicit null implementation, and prove device enumeration and open/close off the audio thread. No plan execution yet.
-3. Define the RT-002 control→render channel: bounded, wait-free, stated overflow policy, off-thread reclamation of retired state. Land it with concurrency tests before anything writes to it from the app thread.
+1. ~~Add the audio-backend decision-gates row and ratify it~~ — closed 2026-08-09 as decision rows 19 (cpal behind an `AudioBackend` trait seam, with a standing re-open trigger on RT-001 violations), 20 (ALSA baseline, JACK behind a feature), and 21 (split-lane RT-002 overflow policy). Jeff confirmed macOS and Linux qualification hardware, so the two-platform exit row stays closable.
+2. Stand up cpal behind the `AudioBackend` trait seam with an explicit null implementation for CI and offline, and prove device enumeration and open/close off the audio thread. No plan execution yet.
+3. Define the RT-002 control→render channel per decision 21: bounded, wait-free, split lanes (latest-wins parameters; strict-FIFO never-dropped notes and transport), off-thread reclamation of retired state. Land it with concurrency tests before anything writes to it from the app thread.
 4. Bridge the callback to the existing `CompiledPlan` for a fixed fixture, driving the same plan the offline harness renders. Prove callback output matches an offline render of identical input.
 5. Wrap every callback-reachable path in allocation and lock guards in CI (RT-001), extending the counting-allocator approach already used by the plan-execution tests.
 6. Accept RT-003 and land denormal flush plus NaN/Inf containment with per-node-type injection fixtures: isolate the offending node, emit silence, surface a diagnostic off-thread.
