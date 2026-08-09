@@ -24,6 +24,7 @@ The project was named Geist until 2026-08-09; the rename to Spectre changed iden
 | Path | Purpose |
 |---|---|
 | `crates/spectre-app/` | Native interaction prototype and renderer-neutral app model |
+| `crates/spectre-audio/` | Audio backend seam, device enumeration, and stream lifecycle |
 | `crates/spectre-core/` | IDs, time, tempo, transport, events, and parameter contracts |
 | `crates/spectre-dsp/` | Realtime-safe native sources, instruments, effects, and process contracts |
 | `crates/spectre-graph/` | Editable device graph and immutable compiled render plan |

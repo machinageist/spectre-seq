@@ -1,0 +1,19 @@
+# Author: Jeff
+# Date: 2026-08-09
+# Description: Audio backend seam and stream lifecycle for the R3 live shell
+# Notes: Decision 19; cpal sits behind the trait, the null backend serves CI and offline
+
+[package]
+name = "spectre-audio"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[features]
+# The real backend builds by default so it is always type-checked and linted
+default = ["cpal-backend"]
+cpal-backend = ["dep:cpal"]
+
+[dependencies]
+cpal = { version = "0.15.3", optional = true }
+spectre-core = { path = "../spectre-core" }

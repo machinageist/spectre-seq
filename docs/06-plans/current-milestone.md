@@ -31,7 +31,13 @@ GRAPH-002 did **not** close at R2 and is not claimed. Only implicit-cycle reject
 
 ## Current evidence
 
-None yet for R3. This milestone opens with no implementation. The inherited asset R3 builds on is the immutable `CompiledPlan` with its measured allocation-free steady-state execution; the callback bridge must drive that plan rather than introduce a second render path.
+Slice 2 landed `spectre-audio`, the decision-19 trait seam. `AudioBackend` owns device enumeration and stream construction; `AudioStream` owns the Stopped/Running/Closed lifecycle. Both are app-thread surfaces that may allocate. `StreamConfig` validates sample rate, channel count, and buffer size against explicit inclusive bounds before any driver call, so an invalid open fails before it reaches cpal.
+
+`NullBackend` drives its callback through an explicit `pump` rather than a timer, so tests observe exact block counts with no sleeps, no races, and no hardware; it serves CI and will serve offline rendering. `CpalBackend` is the only file where cpal types appear, sits behind a default-on `cpal-backend` feature, and counts stream errors into an atomic instead of formatting or logging on the audio thread.
+
+15 tests cover enumeration, inclusive config bounds, fail-closed lifecycle transitions including use-after-close, exact block geometry, rendering off the enumerating thread, and an allocation-free steady-state pump. cpal enumeration is asserted to be well-formed with or without hardware, so headless CI passes without pretending a device exists.
+
+This is not yet a bridge: no `CompiledPlan` executes on a callback, and no live driver has been opened. The inherited asset R3 still builds on is the immutable `CompiledPlan` with its measured allocation-free execution; slice 4 must drive that plan rather than introduce a second render path.
 
 ## Requirements in scope
 

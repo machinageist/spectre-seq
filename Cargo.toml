@@ -7,6 +7,7 @@
 resolver = "2"
 members = [
     "crates/spectre-app",
+    "crates/spectre-audio",
     "crates/spectre-core",
     "crates/spectre-dsp",
     "crates/spectre-graph",
