@@ -27,7 +27,7 @@ Statuses: `proposed`, `accepted`, `implemented`, `verified`.
 |---|---|---|---|---|
 | RT-001 | Audio-callback-reachable code MUST NOT allocate, deallocate, take blocking locks, perform I/O, log, or panic across the callback boundary. | accepted realtime product contract | allocation/lock guard wrapping every reachable callback path in CI | accepted |
 | RT-002 | All control↔render communication MUST use bounded wait-free structures with defined overflow policy and off-thread reclamation of retired state. | accepted realtime product contract | concurrency tests incl. loom/model tests on the chosen structure | accepted |
-| RT-003 | The engine MUST flush denormals (FTZ/DAZ or equivalent) and contain NaN/Inf by isolating the offending node and surfacing a diagnostic, outputting silence rather than noise. | OBS-VCV-VOLT-006 (0-on-NaN precedent); mandate §12.1 | injection tests: NaN/Inf/denormal fixtures per node type | proposed |
+| RT-003 | The engine MUST flush denormals (FTZ/DAZ or equivalent) and contain NaN/Inf by isolating the offending node and surfacing a diagnostic, outputting silence rather than noise. | OBS-VCV-VOLT-006 (0-on-NaN precedent); mandate §12.1 | injection tests: NaN/Inf/denormal fixtures per node type | accepted 2026-08-09; implemented in `CompiledPlan::process` with a software FTZ-equivalent flush |
 
 ## TIME — time, tempo, transport
 

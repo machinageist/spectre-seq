@@ -55,6 +55,10 @@ Lock-freedom is enforced structurally, by scanning the RT modules for `Mutex`, `
 
 Slice 5 also found and fixed a blocker that would have stopped the live shell outright. `AudioProcessor` carried no `Send` bound, so `CompiledPlan` held `Box<dyn AudioProcessor>` and was not `Send`, meaning the bridge could never be moved onto an audio thread. The bound is now on the trait, all four v1 devices satisfy it unchanged, and a compile-time assertion pins `CompiledPlan`, the bridge, and both control halves as `Send` so it cannot regress silently. The DSP device I/O contract records the change.
 
+Slice 6 accepted RT-003 and implemented it in `CompiledPlan::process`. Containment runs on each node's output before that output can reach any downstream device. Denormals flush to signed zero using a software FTZ-equivalent, chosen over CPU control-register manipulation because it is portable across the macOS and Linux targets and needs no platform-specific unsafe code. Any NaN or infinity silences that entire node — not just the offending sample — and records it as the last contaminated node, so a single poisoned sample cannot leak the rest of the block.
+
+Containment accumulates as plain integers on the render path, keeping `spectre-graph` free of atomics, and the bridge republishes them into its telemetry atomics each block so the app thread can read them without a lock. Seven injection tests cover NaN, both infinities, both denormal signs, clean output, cross-node isolation, whole-node silencing from one bad sample, accumulation across quanta, and the fact that the four shipping devices trip nothing during ordinary rendering. The poisoning source and effect devices are test-only, because the shipping devices already contain non-finite values at their own boundary and cannot produce the input this requirement is about.
+
 No live driver has been opened yet; that is the slice 7 lifecycle drill on qualification hardware.
 
 ## Requirements in scope

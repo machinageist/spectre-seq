@@ -9,7 +9,7 @@
 
 use crate::control::ControlReceiver;
 use crate::RenderBlock;
-use spectre_core::Transport;
+use spectre_core::{ObjectId, Transport};
 use spectre_dsp::NoteEvent;
 use spectre_graph::{CompiledPlan, NodeId, PlanNoteInput};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,6 +26,10 @@ pub struct BridgeTelemetry {
     frame_capacity_rejections: AtomicU64,
     notes_deferred: AtomicU64,
     parameters_pending: AtomicU64,
+    // RT-003 containment republished from the plan so the app thread can read it
+    contaminated_nodes: AtomicU64,
+    denormals_flushed: AtomicU64,
+    last_contaminated_node: AtomicU64,
 }
 
 impl BridgeTelemetry {
@@ -52,6 +56,21 @@ impl BridgeTelemetry {
     // Count parameter changes observed but not yet applicable to a live plan
     pub fn parameters_pending(&self) -> u64 {
         self.parameters_pending.load(Ordering::Relaxed)
+    }
+
+    // Count node-quanta silenced by RT-003 containment
+    pub fn contaminated_nodes(&self) -> u64 {
+        self.contaminated_nodes.load(Ordering::Relaxed)
+    }
+
+    // Count samples flushed from denormal to signed zero
+    pub fn denormals_flushed(&self) -> u64 {
+        self.denormals_flushed.load(Ordering::Relaxed)
+    }
+
+    // Identify the most recent contaminated node, or None if containment never fired
+    pub fn last_contaminated_node(&self) -> Option<ObjectId> {
+        ObjectId::from_raw(self.last_contaminated_node.load(Ordering::Relaxed))
     }
 }
 
@@ -136,10 +155,27 @@ impl RenderBridge {
             return;
         }
 
+        self.publish_containment();
         self.interleave(block, frames);
         self.telemetry
             .blocks_rendered
             .fetch_add(1, Ordering::Relaxed);
+    }
+
+    // Republish the plan's RT-003 counters so the app thread can read them without a lock
+    fn publish_containment(&self) {
+        let stats = self.plan.containment();
+        self.telemetry
+            .contaminated_nodes
+            .store(stats.contaminated_nodes, Ordering::Relaxed);
+        self.telemetry
+            .denormals_flushed
+            .store(stats.denormals_flushed, Ordering::Relaxed);
+        if let Some(node) = stats.last_contaminated {
+            self.telemetry
+                .last_contaminated_node
+                .store(node.object_id().raw(), Ordering::Relaxed);
+        }
     }
 
     // Apply every queued transport command to the render-thread transport

@@ -325,6 +325,7 @@ impl EditableGraph {
             max_frames,
             output_channels: [output_base, output_base + 1],
             rendered_frames: 0,
+            containment: ContainmentStats::default(),
         })
     }
 }
@@ -383,6 +384,35 @@ impl std::fmt::Display for PlanError {
 
 impl std::error::Error for PlanError {}
 
+// RT-003 containment outcome accumulated across quanta; plain integers so the render path
+// stays free of atomics and the owner publishes them off-thread at its own cadence
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ContainmentStats {
+    // Node-quanta whose output contained a NaN or infinity and was silenced
+    pub contaminated_nodes: u64,
+    // Samples flushed from denormal to signed zero
+    pub denormals_flushed: u64,
+    // Most recent node to produce non-finite output, for an actionable diagnostic
+    pub last_contaminated: Option<NodeId>,
+}
+
+// Flush denormals to signed zero and report whether the channel carried non-finite samples.
+// Callback-reachable: in-place, bounded, allocation-free, and free of branches that panic.
+fn contain_channel(samples: &mut [f32]) -> (bool, u64) {
+    let mut contaminated = false;
+    let mut flushed = 0;
+    for sample in samples.iter_mut() {
+        if !sample.is_finite() {
+            contaminated = true;
+        } else if *sample != 0.0 && sample.abs() < f32::MIN_POSITIVE {
+            // FTZ-equivalent: magnitude collapses, sign survives
+            *sample = if sample.is_sign_negative() { -0.0 } else { 0.0 };
+            flushed += 1;
+        }
+    }
+    (contaminated, flushed)
+}
+
 // Immutable compiled render plan; the only structure the render path executes.
 // It exposes no node or edge mutation API by design (GRAPH-001).
 pub struct CompiledPlan {
@@ -393,6 +423,7 @@ pub struct CompiledPlan {
     max_frames: usize,
     output_channels: [usize; 2],
     rendered_frames: usize,
+    containment: ContainmentStats,
 }
 
 impl std::fmt::Debug for CompiledPlan {
@@ -414,6 +445,11 @@ impl CompiledPlan {
     // Report how many plan steps execute per quantum
     pub fn step_count(&self) -> usize {
         self.steps.len()
+    }
+
+    // Report accumulated RT-003 containment activity for off-thread publication
+    pub fn containment(&self) -> ContainmentStats {
+        self.containment
     }
 
     // Execute one render quantum; allocation-free and lock-free for valid input
@@ -471,6 +507,19 @@ impl CompiledPlan {
                 &inputs[..step.input_channels],
                 &mut [&mut left[..frames], &mut right[..frames]],
             );
+            // RT-003: flush denormals and isolate a contaminated node before its output can
+            // reach any downstream device, so noise never propagates through the plan
+            if result.is_ok() {
+                let (bad_left, flushed_left) = contain_channel(&mut left[..frames]);
+                let (bad_right, flushed_right) = contain_channel(&mut right[..frames]);
+                self.containment.denormals_flushed += flushed_left + flushed_right;
+                if bad_left || bad_right {
+                    left[..frames].fill(0.0);
+                    right[..frames].fill(0.0);
+                    self.containment.contaminated_nodes += 1;
+                    self.containment.last_contaminated = Some(step.node);
+                }
+            }
             // Buffers return to the pool before any error propagates
             self.buffers[step.output_base] = left;
             self.buffers[step.output_base + 1] = right;
