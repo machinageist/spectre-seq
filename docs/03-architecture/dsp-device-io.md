@@ -8,7 +8,7 @@ Notes: This contract precedes instrument/effect UI and remains narrower than gra
 # DSP Device I/O Contract
 
 - **Status:** accepted for R2/R4 implementation
-- **Last verified:** 2026-07-12
+- **Last verified:** 2026-08-09
 - **Scope:** native source, instrument, and audio-effect process boundaries
 - **Decision authority:** Jeff
 - **Upstream sources:** realtime rules, GRAPH-001..002, decision gate 6
@@ -75,6 +75,23 @@ Bus identity is semantic rather than positional at the editable-graph layer. The
 ## Realtime contract
 
 `process` MUST NOT allocate, lock, block, perform I/O, format strings, log, serialize, inspect UI state, or panic for valid compiled-plan input. Recoverable layout/event errors are detected by validation outside the hot loop. DSP arithmetic uses `f32`; phase, coefficient, or time accumulators MAY use `f64` where documented.
+
+## Runtime parameter seam
+
+Accepted 2026-08-09 as decision 22, design-only. Implementation lands at R4, following the CORE-004 precedent where an API is accepted at one milestone and implemented at a later one. R3 does not implement this, and R3's exit does not depend on it.
+
+The problem this closes: v1 devices take their parameters as constructor arguments, so a compiled plan's processors are fixed once built. The RT-002 parameter lane can deliver a latest-wins value per `(device, parameter)` target to the render thread, but no processor can accept it. Recompiling a plan per change is rejected because compilation allocates and cannot run on the audio thread.
+
+Accepted shape:
+
+- `AudioProcessor` gains one callback-safe method that applies a single already-validated parameter value to a live processor, addressed by the same static parameter key the descriptors and offline snapshot DTO already use.
+- The method inherits the full realtime contract above: no allocation, no locks, no I/O, no formatting, no panics. It performs assignment and at most bounded arithmetic.
+- Validation and clamping happen on the app thread, against the existing `DspParameter` descriptors, before the value enters the RT-002 lane. The render thread applies values, it does not police them; a value that reaches a processor is already canonical.
+- Unknown keys are refused as a recoverable error, not a panic, keeping the fail-closed posture the offline snapshot path already uses.
+- Applying parameters is a separate step from `process`, executed once per block before it, so a block sees one coherent parameter set rather than values changing mid-render.
+- Smoothing stays the device's concern. `Gain` already smooths; devices whose parameters would click MUST smooth internally rather than requiring the caller to ramp.
+
+What this deliberately does not decide: sample-accurate parameter automation within a block. R3 and R4 apply parameters at block boundaries. Sample-accurate automation is PROD-002 at R9 and will extend this seam rather than replace it.
 
 ## Initial native devices
 

@@ -14,7 +14,7 @@ Notes: Exactly one milestone is active; the roadmap owns ordering
 - **Upstream sources:** `rebuild-roadmap.md`, RT-001..003, `../03-architecture/graph-compilation.md`
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
 - **Supersedes:** the R2 offline-graph milestone, exited 2026-08-09
-- **Open decisions:** RT-003 acceptance and the decision-22 runtime parameter seam; backend, Linux baseline, and RT-002 overflow policy ratified 2026-08-09 as decision rows 19-21
+- **Open decisions:** RT-003 acceptance; decision rows 19-22 all ratified 2026-08-09, with row 22's parameter seam accepted as design and implemented at R4
 - **Known gaps:** no audio backend, callback bridge, or MIDI ingress exists; all ten R3 exit rows remain open
 
 ## R0/R1 exit record
