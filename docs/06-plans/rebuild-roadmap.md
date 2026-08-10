@@ -36,4 +36,6 @@ The repository root is the sole implementation workspace.
 | R11 — Spectre identity | Original modular surface, flagship synth, deep MIDI, effect catalog | identity intake | identity-layer QA |
 | R12 — release qualification | Performance/soak, accessibility, recovery, packaging, documentation | release intake | published release gates |
 
-Reordering requires documented dependency reasoning. R3 is active; R0/R1 exited 2026-07-17 and R2 exited 2026-08-09 on its four render gates. R2's exit does not claim full GRAPH-002 satisfaction: explicit priced feedback stays gated at decision row 7 before R11.
+Reordering requires documented dependency reasoning. R4 is active. R0/R1 exited 2026-07-17, R2 exited 2026-08-09 on its four render gates, and R3 exited 2026-08-09 with all ten rows closed — two of them on macOS hardware only, per decision 23, with the Linux device drill carried to R4 as debt.
+
+Two exits carry explicit unclaimed scope. R2's exit does not claim full GRAPH-002 satisfaction: explicit priced feedback stays gated at decision row 7 before R11. R3's exit does not claim Linux support: no Linux audio device has been opened, and decision 1's co-first-class commitment is unchanged and undischarged.

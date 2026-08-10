@@ -16,7 +16,7 @@ Notes: One row per requirement that has moved past proposed; grows with each sli
 - **Supersedes:** none
 - **Superseded by:** none
 - **Open decisions:** none
-- **Known gaps:** RT-001..003 hold under a live macOS driver as of 2026-08-09; Linux qualification has not run. GRAPH-002 has only the implicit-cycle seed and did not close at R2 exit
+- **Known gaps:** RT-001..003 hold under a live macOS driver as of 2026-08-09. Linux device qualification has never run and is decision-23 debt carried to R4; no Linux support is claimed. GRAPH-002 has only the implicit-cycle seed and did not close at R2 exit
 
 Chain: provenance → requirement → implementation → evidence (repository-root workspace, 2026-08-09).
 

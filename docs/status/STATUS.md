@@ -16,7 +16,7 @@ Notes: Claims here link to live evidence; optimistic language is prohibited
 - **Supersedes:** all removed prototype-era status and handoff material
 - **Superseded by:** none
 - **Open decisions:** milestone-gated decisions in `../01-requirements/decision-gates.md`; rows 19-22 ratified 2026-08-09
-- **Known gaps:** Linux backend qualification and the Linux half of the lifecycle drill are the two outstanding R3 exit rows; macOS passed 2026-08-09; `./spectre` does not use the audio crate; live parameter application is deferred to R4 by decision 22
+- **Known gaps:** no Linux audio device has ever been opened, carried into R4 as decision-23 debt; `./spectre` does not use the audio crate, so nothing launchable makes sound; live parameter application is deferred to R4 by decision 22
 
 ## Repository state
 
@@ -52,7 +52,7 @@ Latest full-gate result (2026-08-09, after the Geist → Spectre rename and R3 s
 
 The rename changed no test count and no assertion: the same 155 tests pass before and after, and the pre-rename run on 2026-08-09 reproduced the 2026-08-06 result exactly. The only source churn beyond identifiers was rustfmt reordering `use` blocks, because `spectre_*` sorts differently than `geist_*`.
 
-R0/R1 exited 2026-07-17 and R2 (offline graph) exited 2026-08-09 on its four render gates. R3 (live shell) is the active milestone with eight of its ten exit rows closed. The two open rows are both half-satisfied: macOS hardware qualification passed 2026-08-09 with 0 xruns and 0.990 worst-case headroom, and only the Linux pass remains. R2's exit does not claim full GRAPH-002 satisfaction: only implicit-cycle rejection exists, and explicit priced feedback edges stay gated at decision row 7 before R11.
+R0/R1 exited 2026-07-17 and R2 (offline graph) exited 2026-08-09 on its four render gates. R3 (live shell) exited 2026-08-09 with all ten rows closed; R4 (credible alpha) is the active milestone and opens with no implementation. Two of R3's rows closed on macOS hardware alone under decision 23: cpal opened an M-Audio AIR 192|6 through CoreAudio for 173 driver callbacks with 0 xruns and 0.990 worst-case headroom. No Linux audio device has been opened, so no Linux support is claimed and decision 1's co-first-class commitment remains undischarged; the drill is carried to R4 as debt. R2's exit does not claim full GRAPH-002 satisfaction: only implicit-cycle rejection exists, and explicit priced feedback edges stay gated at decision row 7 before R11.
 
 The R1 exit disposition is complete: CORE-004's atomic-save API design is accepted via the project-persistence contract (implementation at R4, crash qualification at R5), and CORE-001 remains implemented with reorder evidence explicitly gated on the first persisted collection (R4) and migration evidence on the first schema migration (R5).
 

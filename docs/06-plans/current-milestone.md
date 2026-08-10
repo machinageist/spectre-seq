@@ -5,31 +5,32 @@ Description: The single active Spectre milestone
 Notes: Exactly one milestone is active; the roadmap owns ordering
 -->
 
-# Current Milestone — R3 Live Shell
+# Current Milestone — R4 Credible Alpha
 
 - **Status:** accepted
 - **Last verified:** 2026-08-09
-- **Scope:** qualified audio backend, callback bridge over the existing compiled plan, MIDI timestamps, health telemetry
+- **Scope:** track to master, MIDI clip, a small original synth/effect, minimal UI, save/reload, bounce
 - **Decision authority:** Jeff
-- **Upstream sources:** `rebuild-roadmap.md`, RT-001..003, `../03-architecture/graph-compilation.md`
+- **Upstream sources:** `rebuild-roadmap.md`, product seeds, decisions 8/13/14/22, CORE-004
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
-- **Supersedes:** the R2 offline-graph milestone, exited 2026-08-09
-- **Open decisions:** none. RT-003 accepted 2026-08-09; decision rows 19-22 all ratified 2026-08-09, with row 22's parameter seam accepted as design and implemented at R4
-- **Known gaps:** eight of ten exit rows are closed and the remaining two are half-satisfied. macOS hardware qualification passed 2026-08-09; the Linux pass is the only work left before R3 exits. Live parameter application is deferred to R4 by decision 22, and nothing in `./spectre` uses the audio crate yet
+- **Supersedes:** the R3 live-shell milestone, exited 2026-08-09
+- **Open decisions:** none new at intake; decisions 13 and 17 gate later milestones
+- **Known gaps:** R4 opens with no implementation. `./spectre` still does not use `spectre-audio`, so nothing the user can launch makes sound
 
-## R0/R1 exit record
+## Inherited debt
 
-R0/R1 exited 2026-07-17 with all exit evidence passing: formatting, strict Clippy, and the full workspace test suite; tempo/time/transport/event/ID/persistence property coverage; the deterministic offline harness; and traceability matching implementation. CORE-004's atomic-save design is accepted with implementation at R4; CORE-001's reorder/migration evidence is explicitly gated to R4/R5.
+R4 carries four obligations from earlier milestones. None is optional and none should be rediscovered later:
 
-## R2 exit record
+1. **Linux device qualification (decision 23).** R3 exited on macOS hardware alone. No Linux audio device has ever been opened. Discharge with `cargo test -p spectre-audio --test lifecycle_health -- --ignored --nocapture` on real Linux hardware. Until then no Linux support claim is authorized, and decision 1's co-first-class commitment remains undischarged.
+2. **Runtime parameter seam (decision 22).** The design is accepted in `../03-architecture/dsp-device-io.md`; the implementation lands here. The RT-002 parameter lane already exists and is tested but nothing consumes it, so the bridge counts edits as `parameters_pending`. A playable alpha needs this closed.
+3. **CORE-004 atomic save.** The API design is accepted in `../03-architecture/project-persistence.md`; the filesystem implementation lands here, with crash qualification at R5.
+4. **CORE-001 reorder evidence.** Explicitly gated on the first persisted collection, which R4 introduces.
 
-R2 exited 2026-08-09 against its stated roadmap exit gate. `spectre-graph` implements the GRAPH-001 split: an app-thread `EditableGraph` with stereo-bus semantics and single-feed inputs, and an immutable `CompiledPlan` built through validated compilation (ancestor inclusion, missing-input rejection, implicit-cycle diagnostics, factory layout verification, deterministic ordering, preallocated planar buffers). Plan execution is allocation-free and lock-free with take/restore buffer handoff.
+## Wiring gap
 
-The offline Pulse → Gain → Saturator fixture renders through the compiled plan, bit-identical to a hand-wired chain, with the silence, impulse, allocation, and deterministic-hash gates passing on that path. The renderer-neutral `DeviceParameterSnapshot` DTO carries app-model parameter edits into offline rendering, and `render_app_snapshot` rejects empty, partial, duplicate, aliased, unknown, mismatched, non-finite, out-of-range, and non-canonical input before constructing processors. Device Focus Drill-In added stable app-thread device selection and fail-closed Build → Shape focus without graph mutation, persistence, or live audio.
+R3 built a live shell that nothing launches. `spectre-audio` has a qualified backend, a control transport, a callback bridge, MIDI ingress, and health telemetry, all tested — but `./spectre` never constructs any of it, so Play still produces no sound. Connecting the app to the audio thread is the first thing that makes R4's other work observable, and it is the honest headline for this milestone.
 
-GRAPH-002 did **not** close at R2 and is not claimed. Only implicit-cycle rejection exists; explicit one-quantum-priced feedback edges remain unimplemented and stay gated at decision row 7 before the R11 modular surface. R2 exited on its four render gates, not on full GRAPH-002 satisfaction.
-
-## Current evidence
+## R3 exit record
 
 Slice 2 landed `spectre-audio`, the decision-19 trait seam. `AudioBackend` owns device enumeration and stream construction; `AudioStream` owns the Stopped/Running/Closed lifecycle. Both are app-thread surfaces that may allocate. `StreamConfig` validates sample rate, channel count, and buffer size against explicit inclusive bounds before any driver call, so an invalid open fails before it reaches cpal.
 
@@ -69,40 +70,37 @@ Slice 7's lifecycle drill is implemented and its deterministic half passes again
 
 ## Requirements in scope
 
-RT-001 (no allocation, deallocation, blocking locks, I/O, logging, or panics across the callback boundary), RT-002 (bounded wait-free control↔render communication with defined overflow policy and off-thread reclamation), RT-003 (denormal flush and NaN/Inf containment with node isolation, emitting silence rather than noise).
-
-RT-001..003 are currently traced as workspace policy with no implementation. RT-003 remains `proposed` in the requirements ledger and needs acceptance during this milestone.
-
-## Decisions ratified at intake
-
-Ratified 2026-08-09 as decision-gates rows 19-21:
-
-1. **Audio backend.** `cpal` behind an `AudioBackend` trait seam with a null implementation for CI and offline use. Chosen to get the callback bridge built, with the trait seam making the backend replaceable. Row 19 carries a standing re-open trigger if the lifecycle drill or RT-001 guards catch cpal allocating, locking, or blocking on a callback-reachable path.
-2. **Linux baseline.** ALSA for qualification, since PipeWire exposes an ALSA compatibility layer; JACK behind a cargo feature and never a hard dependency.
-3. **RT-002 overflow policy.** Split lanes: parameters are latest-wins per `(device, parameter)` target; notes and transport are strict FIFO and never dropped, with overflow on those lanes counted and surfaced off-thread as a defect.
-
-Still open:
-
-- **RT-003 acceptance.** The requirement is still `proposed`; its per-node-type injection fixtures define what containment means. Slice 6 closes it.
-
-## Qualification hardware
-
-Jeff confirmed both macOS and Linux hardware are available, so the two-platform exit row is closable rather than partially blocked. The Linux pass runs at slice 7.
+Product seeds for track routing, MIDI clips, and bounce; decision 22's parameter seam; CORE-004's atomic save; CORE-001 reorder evidence; decision 8's egui shell. RT-001..003 remain standing workspace policy and must not regress.
 
 ## Non-goals
 
-VST3 hosting, recording, arrangement editing, piano roll, automation and modulation, latency compensation beyond health telemetry, mixer routing, and UI build-out beyond what makes the callback bridge observable.
+VST3 hosting, recording, automation and modulation, session/live slots, mixer sends and returns, latency compensation, and the flagship synth. Those are R5 and later.
 
 ## Exit evidence
 
-Eight of ten rows are closed. The two open rows share one dependency: neither can close without running against a real audio device.
+- `./spectre` opens the qualified backend and produces sound through the existing compiled plan, with no second render path.
+- Decision 22's parameter seam is implemented, so a UI edit changes live audio.
+- A MIDI clip plays through a track into master.
+- One small original synth and one original effect ship as the alpha's voice.
+- Atomic save and reload round-trip a project containing tracks, clips, and device parameters (CORE-004 implementation, CORE-001 reorder evidence).
+- Offline bounce renders the same project deterministically and matches the live path's computation.
+- An end-to-end fixture plus a written manual QA protocol both pass.
+- Linux device qualification runs, discharging decision 23's debt.
+- `cargo fmt`, strict Clippy, and the full workspace suite stay green.
+- Traceability and status match the implementation.
 
-- **PARTIAL.** ~~Audio backend selected and recorded as a decision-gates row~~ (row 19, 2026-08-09) and ~~qualified on macOS~~ 2026-08-09: cpal opened an M-Audio AIR 192|6 through CoreAudio and rendered 173 real driver callbacks with 0 xruns, 0 plan errors, 0 contaminated nodes, and worst-case headroom 0.990. **Linux qualification has not run.**
+## R3 exit record
+
+R3's ten rows, as closed on 2026-08-09:
+
+All ten rows are closed, two of them on macOS only under decision 23. R3 exited 2026-08-09.
+
+- ~~Audio backend selected, recorded as a decision-gates row, and qualified on hardware~~ — closed 2026-08-09 **on macOS only**, per decision 23. cpal opened an M-Audio AIR 192|6 through CoreAudio and rendered 173 real driver callbacks with 0 xruns, 0 plan errors, 0 contaminated nodes, and worst-case headroom 0.990. Linux device qualification did not run and is carried to R4 as debt.
 - ~~The callback bridge drives the existing `CompiledPlan` with no second render path~~ — closed 2026-08-09; bridge output hashes identically to the offline render of the same fixture.
 - ~~Allocation and lock guards wrap every callback-reachable path in CI (RT-001)~~ — closed 2026-08-09 with an RT-section allocator guard and a positive control.
 - ~~Control↔render transfer uses a bounded wait-free structure with tested overflow policy and off-thread reclamation (RT-002)~~ — closed 2026-08-09.
 - ~~Denormal flush and NaN/Inf containment pass per-node-type injection fixtures, isolating the offending node and emitting silence (RT-003)~~ — closed 2026-08-09.
-- **PARTIAL.** The device lifecycle drill passes against the null backend (start/stop/restart, sample-rate changes, device loss reported without panic) and ~~against real macOS hardware~~ 2026-08-09, where two start/stop cycles on a live CoreAudio stream produced 173 callbacks with no panic, no xrun, and no audio-thread blocking. **The same drill has not run on Linux.**
+- ~~A device lifecycle drill covers start, stop, device change, sample-rate change, and device loss without panic or audio-thread blocking~~ — closed 2026-08-09 **on macOS only**, per decision 23. The drill passes against the null backend and against real macOS hardware, where two start/stop cycles on a live CoreAudio stream produced 173 callbacks with no panic, no xrun, and no blocking. The Linux run is carried to R4 as debt.
 - ~~MIDI events carry timestamps through to the plan with defined ordering at equal timestamps~~ — closed 2026-08-09; the plan itself validates the ordering the ingress produces.
 - ~~Health telemetry reports xruns and callback headroom off the audio thread~~ — closed 2026-08-09.
 - ~~`cargo fmt`, strict Clippy, and the full workspace suite stay green~~ — 230/230 tests pass with 1 ignored hardware drill, plus the smoke and offline self-tests.
@@ -119,12 +117,17 @@ Linux **build** qualification did run on 2026-08-09, in a Linux aarch64 containe
 
 The macOS run is the first time a live driver has ever been opened in this project. It confirms the callback bridge executes the compiled plan under a real driver, that RT-001 holds there, and that the render consumes about 1% of its time budget on this fixture.
 
-## How to close the remaining two rows
+## Single-platform exit and the debt it creates
 
-Both rows close together, on Linux:
+R3 exited on macOS qualification alone, decided by Jeff on 2026-08-09 and recorded as decision 23. This narrows decision 1, which makes macOS and Linux co-first-class, and the narrowing is deliberate and scoped to R3's exit rather than a change to decision 1 itself.
+
+What is and is not established:
+
+- **Established:** the backend, bridge, and RT-001..003 behavior hold under a real CoreAudio driver; the workspace builds and links against ALSA on Linux with all 34 non-hardware audio tests passing; and the drill fails closed where no device exists, so it cannot report a false pass.
+- **Not established:** that cpal's ALSA backend opens, streams, and survives device lifecycle events on real Linux hardware. No Linux audio device has ever been opened.
+
+The debt carries into R4 and must be discharged before any beta or release claim of Linux support:
 
 ```sh
 cargo test -p spectre-audio --test lifecycle_health -- --ignored --nocapture
 ```
-
-It prints backend, device, block count, xruns, worst headroom, plan errors, and containment count. Run it on a Linux host with a real ALSA device, add the row to the table above, and R3 exits. Until then no claim of a fully qualified backend or a completed two-platform lifecycle drill is authorized.

@@ -9,16 +9,28 @@ Notes: Only active-milestone slices belong here
 
 - **Status:** accepted
 - **Last verified:** 2026-08-09
-- **Scope:** immediately actionable R3 slices; the closed R2 queue is retained as an exit record
+- **Scope:** immediately actionable R4 slices; closed R2 and R3 queues retained as exit records
 - **Decision authority:** Jeff
 - **Upstream sources:** `STATUS.md`, `../06-plans/current-milestone.md`
 - **Downstream dependents:** implementation sessions
-- **Supersedes:** the R2 slice queue, closed 2026-08-09
+- **Supersedes:** the R3 slice queue, closed 2026-08-09
 - **Superseded by:** none
-- **Open decisions:** RT-003 acceptance, closed by slice 6; the backend decision that blocked slices 2+ was ratified 2026-08-09
-- **Known gaps:** later milestones are intentionally not decomposed here
+- **Open decisions:** none blocking R4 start; decision 23 leaves Linux device qualification as debt to discharge here
+- **Known gaps:** `./spectre` still does not use `spectre-audio`, so nothing launchable makes sound; later milestones are intentionally not decomposed here
 
 ## Next slices
+
+1. Wire `./spectre` to the qualified backend so Play produces sound through the existing compiled plan. R3 built a live shell nothing launches; this is what makes every later R4 slice observable. No new render path, no new DSP.
+2. Implement decision 22's runtime parameter seam on `AudioProcessor` per the accepted contract, then connect the RT-002 parameter lane the bridge already drains. A Shape edit must change live audio, and `parameters_pending` must stop incrementing.
+3. Discharge decision 23's Linux debt: run `cargo test -p spectre-audio --test lifecycle_health -- --ignored --nocapture` on real Linux hardware and record it in the milestone's qualification table. One command; it only needs the box.
+4. Introduce the track model with a track-to-master signal path, keeping the graph compilation contract intact.
+5. Add MIDI clips that play through a track, reusing the existing bounded event-ordering contract and MIDI ingress rather than a second event path.
+6. Ship one small original synth and one original effect as the alpha's voice, per decision 15's deliberately-small scope.
+7. Implement CORE-004's atomic save and reload over the accepted persistence contract, and land CORE-001's reorder evidence on the first persisted collection.
+8. Add offline bounce and prove it matches the live path's computation, extending the hash-equivalence approach the callback bridge already uses.
+9. Write and run the end-to-end fixture and the manual QA protocol that R4's exit requires.
+
+## Closed R3 queue
 
 1. ~~Add the audio-backend decision-gates row and ratify it~~ — closed 2026-08-09 as decision rows 19 (cpal behind an `AudioBackend` trait seam, with a standing re-open trigger on RT-001 violations), 20 (ALSA baseline, JACK behind a feature), and 21 (split-lane RT-002 overflow policy). Jeff confirmed macOS and Linux qualification hardware, so the two-platform exit row stays closable.
 2. ~~Stand up cpal behind the `AudioBackend` trait seam with an explicit null implementation~~ — landed 2026-08-09 as `spectre-audio`. `AudioBackend`/`AudioStream` traits, validated `StreamConfig`, `NullBackend` with a deterministic pump, and `CpalBackend` behind a default-on `cpal-backend` feature. 15 tests cover enumeration, config bounds, fail-closed lifecycle transitions, exact block geometry, off-thread rendering, and an allocation-free pump. CI now installs `libasound2-dev`.
