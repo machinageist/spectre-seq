@@ -13,3 +13,4 @@
 
 # Rebuild workspace build artifacts
 /rebuild/target
+resume-commands
