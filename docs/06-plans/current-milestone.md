@@ -115,6 +115,8 @@ Eight of ten rows are closed. The two open rows share one dependency: neither ca
 | macOS | 2026-08-09 | cpal / CoreAudio, M-Audio AIR 192\|6 | 173 | 0 | 0.990 | 0 | 0 |
 | Linux | not run | cpal / ALSA (decision 20 baseline) | — | — | — | — | — |
 
+Linux **build** qualification did run on 2026-08-09, in a Linux aarch64 container with `libasound2-dev`: the workspace compiles and links against ALSA and all 34 non-hardware `spectre-audio` tests pass, which is the first time the CI `libasound2-dev` step has been exercised. That is a build and portability result, **not** a device qualification. The same run confirmed the drill fails closed on a machine with no audio device, panicking with "no output device to qualify against" rather than reporting a false pass — so the Linux row cannot be satisfied by a container or a VM without real audio.
+
 The macOS run is the first time a live driver has ever been opened in this project. It confirms the callback bridge executes the compiled plan under a real driver, that RT-001 holds there, and that the render consumes about 1% of its time budget on this fixture.
 
 ## How to close the remaining two rows
