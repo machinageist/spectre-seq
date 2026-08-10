@@ -12,14 +12,15 @@ use crate::RenderBlock;
 use spectre_core::{ObjectId, Transport};
 use spectre_dsp::NoteEvent;
 use spectre_graph::{CompiledPlan, NodeId, PlanNoteInput};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 // Default depth of the per-block note scratch
 pub const DEFAULT_NOTE_SCRATCH: usize = 256;
 
 // Counters the render thread increments and the app thread reads
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct BridgeTelemetry {
     blocks_rendered: AtomicU64,
     plan_errors: AtomicU64,
@@ -30,6 +31,31 @@ pub struct BridgeTelemetry {
     contaminated_nodes: AtomicU64,
     denormals_flushed: AtomicU64,
     last_contaminated_node: AtomicU64,
+    // Blocks whose render took at least as long as the audio they produced
+    xruns: AtomicU64,
+    // Headroom as f32 bits: 1.0 means the block cost nothing, 0.0 means it consumed its budget
+    last_headroom_bits: AtomicU32,
+    worst_headroom_bits: AtomicU32,
+}
+
+impl Default for BridgeTelemetry {
+    // Worst-case headroom starts at infinity so the first block establishes the real minimum;
+    // a zero default would silently look like a saturated callback
+    fn default() -> Self {
+        Self {
+            blocks_rendered: AtomicU64::new(0),
+            plan_errors: AtomicU64::new(0),
+            frame_capacity_rejections: AtomicU64::new(0),
+            notes_deferred: AtomicU64::new(0),
+            parameters_pending: AtomicU64::new(0),
+            contaminated_nodes: AtomicU64::new(0),
+            denormals_flushed: AtomicU64::new(0),
+            last_contaminated_node: AtomicU64::new(0),
+            xruns: AtomicU64::new(0),
+            last_headroom_bits: AtomicU32::new(f32::INFINITY.to_bits()),
+            worst_headroom_bits: AtomicU32::new(f32::INFINITY.to_bits()),
+        }
+    }
 }
 
 impl BridgeTelemetry {
@@ -71,6 +97,21 @@ impl BridgeTelemetry {
     // Identify the most recent contaminated node, or None if containment never fired
     pub fn last_contaminated_node(&self) -> Option<ObjectId> {
         ObjectId::from_raw(self.last_contaminated_node.load(Ordering::Relaxed))
+    }
+
+    // Count blocks whose render consumed the whole time budget for the audio it produced
+    pub fn xruns(&self) -> u64 {
+        self.xruns.load(Ordering::Relaxed)
+    }
+
+    // Fractional headroom on the most recent block
+    pub fn last_headroom(&self) -> f32 {
+        f32::from_bits(self.last_headroom_bits.load(Ordering::Relaxed))
+    }
+
+    // Worst fractional headroom observed; negative means a block overran its budget
+    pub fn worst_headroom(&self) -> f32 {
+        f32::from_bits(self.worst_headroom_bits.load(Ordering::Relaxed))
     }
 }
 
@@ -119,6 +160,9 @@ impl RenderBridge {
 
     // Render one block: drain control, execute the plan, interleave the result
     pub fn render(&mut self, block: &mut RenderBlock<'_>) {
+        // Instant::now reads a monotonic clock through the vDSO/commpage: no syscall,
+        // no allocation, no lock, so it is safe on the callback path
+        let started = Instant::now();
         let frames = block.frames();
         if frames == 0 || frames > self.plan.max_frames() {
             block.fill_silence();
@@ -160,6 +204,30 @@ impl RenderBridge {
         self.telemetry
             .blocks_rendered
             .fetch_add(1, Ordering::Relaxed);
+        self.publish_headroom(started, frames);
+    }
+
+    // Publish how much of this block's time budget the render left unused
+    fn publish_headroom(&self, started: Instant, frames: usize) {
+        let budget = frames as f64 / self.sample_rate;
+        if budget <= 0.0 {
+            return;
+        }
+        let spent = started.elapsed().as_secs_f64();
+        let headroom = (1.0 - spent / budget) as f32;
+        self.telemetry
+            .last_headroom_bits
+            .store(headroom.to_bits(), Ordering::Relaxed);
+        // An xrun is a block that used its entire budget; the driver had nothing in reserve
+        if headroom <= 0.0 {
+            self.telemetry.xruns.fetch_add(1, Ordering::Relaxed);
+        }
+        let worst = f32::from_bits(self.telemetry.worst_headroom_bits.load(Ordering::Relaxed));
+        if headroom < worst {
+            self.telemetry
+                .worst_headroom_bits
+                .store(headroom.to_bits(), Ordering::Relaxed);
+        }
     }
 
     // Republish the plan's RT-003 counters so the app thread can read them without a lock

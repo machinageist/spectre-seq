@@ -14,8 +14,8 @@ Notes: Exactly one milestone is active; the roadmap owns ordering
 - **Upstream sources:** `rebuild-roadmap.md`, RT-001..003, `../03-architecture/graph-compilation.md`
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
 - **Supersedes:** the R2 offline-graph milestone, exited 2026-08-09
-- **Open decisions:** RT-003 acceptance; decision rows 19-22 all ratified 2026-08-09, with row 22's parameter seam accepted as design and implemented at R4
-- **Known gaps:** no audio backend, callback bridge, or MIDI ingress exists; all ten R3 exit rows remain open
+- **Open decisions:** none. RT-003 accepted 2026-08-09; decision rows 19-22 all ratified 2026-08-09, with row 22's parameter seam accepted as design and implemented at R4
+- **Known gaps:** eight of ten exit rows are closed. The two open rows share one dependency — no live audio driver has ever been opened, so neither backend qualification nor the hardware lifecycle drill has run. Live parameter application is deferred to R4 by decision 22, and nothing in `./spectre` uses the audio crate yet
 
 ## R0/R1 exit record
 
@@ -59,7 +59,13 @@ Slice 6 accepted RT-003 and implemented it in `CompiledPlan::process`. Containme
 
 Containment accumulates as plain integers on the render path, keeping `spectre-graph` free of atomics, and the bridge republishes them into its telemetry atomics each block so the app thread can read them without a lock. Seven injection tests cover NaN, both infinities, both denormal signs, clean output, cross-node isolation, whole-node silencing from one bad sample, accumulation across quanta, and the fact that the four shipping devices trip nothing during ordinary rendering. The poisoning source and effect devices are test-only, because the shipping devices already contain non-finite values at their own boundary and cannot produce the input this requirement is about.
 
-No live driver has been opened yet; that is the slice 7 lifecycle drill on qualification hardware.
+Slice 8 landed `spectre_audio::midi`, the timestamped ingress. Absolute sample timestamps become block-relative frame offsets; a message past the end of the block is refused so it can be delivered with its own block, and a message timestamped before the block is late rather than invalid, so it clamps to the block start and is counted instead of discarded. MIDI carries no note identity, so ingress allocates a nonzero ID per attack and matches the release from a fixed 16×128 table, which is also what makes all-notes-off coherent.
+
+Ordering at equal timestamps reuses the accepted contract key rather than restating it: `NoteEventKind::rank` became public so producers sort by exactly the key block validation enforces, and a second definition cannot drift out of step. Sorting uses `sort_unstable_by`, which does not allocate and is deterministic here because the unique sequence number makes the key a total order. Releases precede attacks at one offset, and equal-rank events keep the order the driver delivered them. Fourteen tests cover this, and the one that binds hardest feeds the ingress output straight into the real plan, which rejects unsorted events — a test that only inspected the array could agree with itself while violating the contract.
+
+Slice 9 landed the health telemetry. `BridgeTelemetry` publishes fractional headroom per block as `f32` bits in an atomic, tracks the worst case, and counts any block consuming its whole budget as an xrun. Worst-case headroom starts at infinity so the first block establishes the real minimum; a zero default would have looked indistinguishable from a saturated callback. `Instant::now` reads a monotonic clock through the vDSO/commpage, so measurement stays callback-safe, and the RT-001 guard covers the measured path.
+
+Slice 7's lifecycle drill is implemented and its deterministic half passes against the null backend: three start/stop/restart cycles with rendering preserved across each gap, sample-rate changes reopening without losing the device, and device loss reported through `BackendError::Closed` on every subsequent operation with recovery on a fresh stream. That covers the state machine, not a driver. No live driver has been opened, so backend qualification and the hardware drill both remain open.
 
 ## Requirements in scope
 
@@ -89,13 +95,25 @@ VST3 hosting, recording, arrangement editing, piano roll, automation and modulat
 
 ## Exit evidence
 
-- Audio backend selected, recorded as a decision-gates row, and qualified on at least one macOS and one Linux device.
-- The callback bridge drives the existing `CompiledPlan` with no second render path.
-- Allocation and lock guards wrap every callback-reachable path in CI (RT-001).
-- Control↔render transfer uses a bounded wait-free structure with tested overflow policy and off-thread reclamation (RT-002).
-- Denormal flush and NaN/Inf containment pass per-node-type injection fixtures, isolating the offending node and emitting silence (RT-003).
-- A device lifecycle drill covers start, stop, device change, sample-rate change, and device loss without panic or audio-thread blocking.
-- MIDI events carry timestamps through to the plan with defined ordering at equal timestamps.
-- Health telemetry reports xruns and callback headroom off the audio thread.
-- `cargo fmt`, strict Clippy, and the full workspace suite stay green.
-- Traceability and status match the implementation.
+Eight of ten rows are closed. The two open rows share one dependency: neither can close without running against a real audio device.
+
+- **OPEN (hardware).** ~~Audio backend selected and recorded as a decision-gates row~~ (row 19, 2026-08-09) — but qualification on at least one macOS and one Linux device has not run. No live driver has ever been opened.
+- ~~The callback bridge drives the existing `CompiledPlan` with no second render path~~ — closed 2026-08-09; bridge output hashes identically to the offline render of the same fixture.
+- ~~Allocation and lock guards wrap every callback-reachable path in CI (RT-001)~~ — closed 2026-08-09 with an RT-section allocator guard and a positive control.
+- ~~Control↔render transfer uses a bounded wait-free structure with tested overflow policy and off-thread reclamation (RT-002)~~ — closed 2026-08-09.
+- ~~Denormal flush and NaN/Inf containment pass per-node-type injection fixtures, isolating the offending node and emitting silence (RT-003)~~ — closed 2026-08-09.
+- **OPEN (hardware).** The device lifecycle drill is implemented and its deterministic half passes against the null backend: start/stop/restart cycles, sample-rate changes, and device loss reported without panic. The hardware half is `hardware_lifecycle_drill`, marked `#[ignore]`; it must run on macOS and on Linux before this row closes.
+- ~~MIDI events carry timestamps through to the plan with defined ordering at equal timestamps~~ — closed 2026-08-09; the plan itself validates the ordering the ingress produces.
+- ~~Health telemetry reports xruns and callback headroom off the audio thread~~ — closed 2026-08-09.
+- ~~`cargo fmt`, strict Clippy, and the full workspace suite stay green~~ — 230/230 tests pass with 1 ignored hardware drill, plus the smoke and offline self-tests.
+- ~~Traceability and status match the implementation~~ — updated 2026-08-09, including correcting stale claims that R3 had no implementation.
+
+## How to close the remaining two rows
+
+Both rows close together, by running the drill on each platform:
+
+```sh
+cargo test -p spectre-audio --test lifecycle_health -- --ignored --nocapture
+```
+
+It prints the backend, device, block count, xruns, worst headroom, plan errors, and containment count. Run it once on macOS and once on Linux, record both outputs here, and R3 exits. Until then R3 remains open, and no claim of a qualified backend or a completed lifecycle drill is authorized.

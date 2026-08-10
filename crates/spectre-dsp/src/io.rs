@@ -146,7 +146,10 @@ impl NoteEvent {
 }
 
 impl NoteEventKind {
-    fn rank(self) -> u8 {
+    // Semantic ordering rank at one frame offset: releases precede attacks.
+    // Public so event producers sort by the same key block validation enforces,
+    // rather than maintaining a second definition that can drift out of step.
+    pub fn rank(self) -> u8 {
         match self {
             Self::Off { .. } | Self::AllNotesOff { .. } => 0,
             Self::On { .. } => 1,
