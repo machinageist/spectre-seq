@@ -15,7 +15,7 @@ Notes: Exactly one milestone is active; the roadmap owns ordering
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
 - **Supersedes:** the R2 offline-graph milestone, exited 2026-08-09
 - **Open decisions:** none. RT-003 accepted 2026-08-09; decision rows 19-22 all ratified 2026-08-09, with row 22's parameter seam accepted as design and implemented at R4
-- **Known gaps:** eight of ten exit rows are closed. The two open rows share one dependency — no live audio driver has ever been opened, so neither backend qualification nor the hardware lifecycle drill has run. Live parameter application is deferred to R4 by decision 22, and nothing in `./spectre` uses the audio crate yet
+- **Known gaps:** eight of ten exit rows are closed and the remaining two are half-satisfied. macOS hardware qualification passed 2026-08-09; the Linux pass is the only work left before R3 exits. Live parameter application is deferred to R4 by decision 22, and nothing in `./spectre` uses the audio crate yet
 
 ## R0/R1 exit record
 
@@ -97,23 +97,32 @@ VST3 hosting, recording, arrangement editing, piano roll, automation and modulat
 
 Eight of ten rows are closed. The two open rows share one dependency: neither can close without running against a real audio device.
 
-- **OPEN (hardware).** ~~Audio backend selected and recorded as a decision-gates row~~ (row 19, 2026-08-09) — but qualification on at least one macOS and one Linux device has not run. No live driver has ever been opened.
+- **PARTIAL.** ~~Audio backend selected and recorded as a decision-gates row~~ (row 19, 2026-08-09) and ~~qualified on macOS~~ 2026-08-09: cpal opened an M-Audio AIR 192|6 through CoreAudio and rendered 173 real driver callbacks with 0 xruns, 0 plan errors, 0 contaminated nodes, and worst-case headroom 0.990. **Linux qualification has not run.**
 - ~~The callback bridge drives the existing `CompiledPlan` with no second render path~~ — closed 2026-08-09; bridge output hashes identically to the offline render of the same fixture.
 - ~~Allocation and lock guards wrap every callback-reachable path in CI (RT-001)~~ — closed 2026-08-09 with an RT-section allocator guard and a positive control.
 - ~~Control↔render transfer uses a bounded wait-free structure with tested overflow policy and off-thread reclamation (RT-002)~~ — closed 2026-08-09.
 - ~~Denormal flush and NaN/Inf containment pass per-node-type injection fixtures, isolating the offending node and emitting silence (RT-003)~~ — closed 2026-08-09.
-- **OPEN (hardware).** The device lifecycle drill is implemented and its deterministic half passes against the null backend: start/stop/restart cycles, sample-rate changes, and device loss reported without panic. The hardware half is `hardware_lifecycle_drill`, marked `#[ignore]`; it must run on macOS and on Linux before this row closes.
+- **PARTIAL.** The device lifecycle drill passes against the null backend (start/stop/restart, sample-rate changes, device loss reported without panic) and ~~against real macOS hardware~~ 2026-08-09, where two start/stop cycles on a live CoreAudio stream produced 173 callbacks with no panic, no xrun, and no audio-thread blocking. **The same drill has not run on Linux.**
 - ~~MIDI events carry timestamps through to the plan with defined ordering at equal timestamps~~ — closed 2026-08-09; the plan itself validates the ordering the ingress produces.
 - ~~Health telemetry reports xruns and callback headroom off the audio thread~~ — closed 2026-08-09.
 - ~~`cargo fmt`, strict Clippy, and the full workspace suite stay green~~ — 230/230 tests pass with 1 ignored hardware drill, plus the smoke and offline self-tests.
 - ~~Traceability and status match the implementation~~ — updated 2026-08-09, including correcting stale claims that R3 had no implementation.
 
+## Hardware qualification record
+
+| Platform | Date | Backend / device | Blocks | xruns | Worst headroom | Plan errors | Contaminated |
+|---|---|---|---|---|---|---|---|
+| macOS | 2026-08-09 | cpal / CoreAudio, M-Audio AIR 192\|6 | 173 | 0 | 0.990 | 0 | 0 |
+| Linux | not run | cpal / ALSA (decision 20 baseline) | — | — | — | — | — |
+
+The macOS run is the first time a live driver has ever been opened in this project. It confirms the callback bridge executes the compiled plan under a real driver, that RT-001 holds there, and that the render consumes about 1% of its time budget on this fixture.
+
 ## How to close the remaining two rows
 
-Both rows close together, by running the drill on each platform:
+Both rows close together, on Linux:
 
 ```sh
 cargo test -p spectre-audio --test lifecycle_health -- --ignored --nocapture
 ```
 
-It prints the backend, device, block count, xruns, worst headroom, plan errors, and containment count. Run it once on macOS and once on Linux, record both outputs here, and R3 exits. Until then R3 remains open, and no claim of a qualified backend or a completed lifecycle drill is authorized.
+It prints backend, device, block count, xruns, worst headroom, plan errors, and containment count. Run it on a Linux host with a real ALSA device, add the row to the table above, and R3 exits. Until then no claim of a fully qualified backend or a completed two-platform lifecycle drill is authorized.
