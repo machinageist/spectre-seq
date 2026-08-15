@@ -18,9 +18,27 @@ Notes: Every agent updates this before stopping, including after failures
 - **Open decisions:** criteria and tree sign-off
 - **Known gaps:** none at the handoff layer
 
-**Current feature:** none — Phase 0, repository-wide
-**Current state:** Phase 0 artifacts drafted, awaiting sign-off
-**Current owner role:** orchestrator
+**Current feature:** R4-1 — live-audio-wiring
+**Current state:** `spec-remediation-1`, owed. The spec is unmodified at iteration 1.
+**Current owner role:** remediation agent (not yet run to completion)
+
+> **Blocked on a usage cap until 05:30 America/Los_Angeles on 2026-08-15.** Two agents
+> were terminated mid-run. Neither left a partial edit in the spec; both leave work
+> owed. Re-dispatch after the reset.
+
+**Exact next action, in order:**
+
+1. **Re-dispatch R4-1 remediation iteration 1.** The spec still contains all three
+   Priority 1 defects. The scorecard at
+   `spec-scorecards/R4-1-live-audio-wiring-scorecard.md` has the findings; the first
+   one is confirmed against source — `crates/spectre-audio/tests/rt_guard.rs:294–297`
+   scans `src/bridge.rs`, `src/control.rs`, `src/spsc.rs`, `src/null.rs`, not the
+   `midi.rs` set the spec names, and the spec's own §4.1 table modifies `null.rs`.
+2. **Fresh blind re-verification** by an agent that has not seen the remediation.
+   Maximum 3 remediation rounds, then escalate to a gap report.
+3. **Then batch 2** — R4-2, R4-4, R4-7 at concurrency 3, per `feature-tree.md`.
+4. **Separately, D-R2 needs Jeff** before anything in
+   `docs/02-reference-research/serum-2-observations.md` may be cited.
 
 **Last completed action:** restarted the gauntlet from Phase 0. Fixed `.gitignore` so
 `gauntlet-output/` is tracked while `gauntlet-active/` and `gauntlet-universal/` stay

@@ -57,6 +57,48 @@ observation passes before the R4 UI-facing features (R4-4 track model, R4-6 firs
 devices) reach implementation. Until then those two benchmarks contribute little to
 grading and the effective bench is Ableton, Phase Plant, and VCV.
 
+### D-R2 — Provenance of the Serum 2 user guide, and whether its extraction can be accepted
+
+**Raised:** 2026-08-15, after the Serum 2 research pass was cut off by a usage cap.
+**Blocks:** promotion of any record in `docs/02-reference-research/serum-2-observations.md`.
+Blocks nothing in the R4 gauntlet.
+
+A research pass produced ~250 atomic Serum 2 observations, the large majority sourced
+from what it describes as an official **354-page Serum 2 User Guide, manual 1.0.3,
+documenting product 2.0.18**. If that guide is publicly authorized, it closes
+`GAP-SERUM2-0001` — the blocker that has held the Serum 2 dossier at
+`blocked-source-gap` since 2026-07-11 — and materially upgrades the weakest benchmark
+in Jeff's AAA set.
+
+**The problem.** The run was terminated before it wrote any source records. The ledger
+has no URL, publisher, access date, source class, or access limitation for that guide
+or for the three practitioner sources. So the file's central evidentiary claim rests on
+provenance that was never recorded.
+
+This is not a formality. `methodology.md` §"Research boundary" permits **publicly
+authorized sources only** and explicitly forbids leaked or private manuals.
+`serum-2.md` still carries the open decision *"whether a legitimately available
+installed/customer guide can be reviewed without redistribution,"* and
+`GAP-SERUM2-0004` records that authenticated-customer documentation was never
+assessed. Whether this guide sits inside or outside that boundary **is** the open
+question, and the extraction cannot answer it about itself.
+
+**Decision for Jeff:**
+
+1. Where did the guide come from — an official public endpoint, an authenticated
+   customer download, or a third-party upload? Only the first is unambiguously inside
+   the methodology; the second is the open decision; the third is outside.
+2. If inside: authorize a completion pass to write the ledger records, fix the
+   self-reported count errors, and run the second-pass contradiction review the
+   review gates require. `GAP-SERUM2-0001` and `-0002` may then close.
+3. If outside or unresolved: the file is deleted rather than quarantined, and the
+   dossier stays `blocked-source-gap`.
+
+**Recommendation:** do not promote anything from the file until (1) is answered. The
+work is preserved under a quarantine banner and cited by nothing. Note the run also
+disclosed that roughly half the guide's chapters remain `unreviewed`, so even the
+favorable path is a partial coverage matrix, not a source-complete dossier.
+
 ## Resolved
 
 ### D-G1 — Lens weighting for `criteria.md` — **accepted as proposed, 2026-08-14**
