@@ -15,7 +15,7 @@ Notes: Questions that outgrow a spec's section 8 land here; nothing here blocks 
 - **Downstream dependents:** `manifest.md`, affected specs
 - **Supersedes:** none
 - **Superseded by:** none
-- **Open decisions:** one, D-G1 below
+- **Open decisions:** none blocking; D-R1 is a research need, not a gate
 - **Known gaps:** none
 
 ## How this file is used
@@ -29,33 +29,40 @@ Entries are never deleted. Resolved ones move to the resolved section with the o
 
 ## Open
 
-### D-G1 — Lens weighting for `criteria.md`
+### D-R1 — Benchmark evidence gaps for Logic Pro and Serum 2
 
-**Raised:** 2026-08-14, Phase 0.3.
-**Blocks:** all of Phase 1. No spec may be dispatched until this closes.
+**Raised:** 2026-08-14, at Phase 1 dispatch.
+**Blocks:** nothing. Recorded so specs name the gap instead of filling it in.
 
-`criteria.md` version 1 proposes four lenses instead of the template's default three,
-on the reasoning that a realtime audio engine has a hard-constraint dimension no UI or
-competitive lens covers:
+Jeff set the AAA benchmark set to Ableton Live, Logic Pro, Serum 2, Phase Plant, and
+VCV Rack 2. The citable evidence behind those five is uneven:
 
-| Lens | Proposed weight |
-|---|---|
-| 1 — Realtime & Correctness | 35% |
-| 2 — DAW Workflow Depth | 25% |
-| 3 — Product Identity & Scope Discipline | 20% |
-| 4 — Truthfulness & Evidence | 20% |
+| Benchmark | `OBS-` records | Dossier research state |
+|---|---|---|
+| Ableton Live 12 | 85 | inventory-only |
+| Phase Plant | 11 | inventory-only |
+| VCV Rack 2 | 6 | inventory-only |
+| Serum 2 | 2 | **blocked-source-gap** |
+| Logic Pro | **0** | inventory-only |
 
-**Options:** accept as proposed; reweight; merge lenses 3 and 4 back into a
-three-lens shape; or add a fifth. The system supports two to five.
+Serum 2's dossier states it "cannot currently be marked source-complete or accepted
+for product planning." Logic Pro has no behavioral observations at all.
 
-**Recommendation:** accept as proposed. Lens 1 carries the largest weight because
-RT-001/002/003 are the requirements a DAW cannot be wrong about, and lens 4 is
-weighted equally with lens 3 because misdescribing current state is precisely what
-made run 1's output worthless.
+**Consequence for this run:** lens 2 criterion 2G requires specs to cite what exists
+and name what does not. A spec that says "no citable Logic Pro evidence for this
+surface" is correct and scores well; one that invents Logic behavior fails AF-6.
 
-Also pending in the same sign-off, though not itself a judgment call: confirmation
-that `feature-tree.md`'s nine features match the accepted R4 queue.
+**Decision for Jeff, not blocking:** whether to commission Logic Pro and Serum 2
+observation passes before the R4 UI-facing features (R4-4 track model, R4-6 first
+devices) reach implementation. Until then those two benchmarks contribute little to
+grading and the effective bench is Ableton, Phase Plant, and VCV.
 
 ## Resolved
 
-None yet.
+### D-G1 — Lens weighting for `criteria.md` — **accepted as proposed, 2026-08-14**
+
+Four lenses rather than the template's three, on the reasoning that a realtime audio
+engine has a hard-constraint dimension no UI or competitive lens covers. Weights:
+Realtime & Correctness 35%, DAW Workflow Depth 25%, Product Identity & Scope
+Discipline 20%, Truthfulness & Evidence 20%. Jeff authorized the run without
+amending them; `feature-tree.md`'s nine features were confirmed in the same breath.

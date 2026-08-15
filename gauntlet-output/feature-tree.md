@@ -7,7 +7,7 @@ Notes: Derived from the accepted milestone and slice queue; not discovered from 
 
 # Spectre — Gauntlet Feature Tree
 
-- **Status:** proposed
+- **Status:** accepted
 - **Last verified:** 2026-08-14
 - **Scope:** the nine R4 features the gauntlet will spec, in dependency order
 - **Decision authority:** Jeff
@@ -15,7 +15,7 @@ Notes: Derived from the accepted milestone and slice queue; not discovered from 
 - **Downstream dependents:** `manifest.md`, every file under `specs/`
 - **Supersedes:** none
 - **Superseded by:** none
-- **Open decisions:** awaits Jeff's sign-off; stays `proposed` until then
+- **Open decisions:** none; Jeff authorized the run on 2026-08-14
 - **Known gaps:** R4-3 is hardware-blocked; later milestones are deliberately not decomposed
 
 ## Derivation

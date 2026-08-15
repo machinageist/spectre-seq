@@ -7,7 +7,7 @@ Notes: Subordinate to docs/README.md conflict precedence; auto-fails trace to ac
 
 # Spectre — Quality Criteria
 
-- **Status:** proposed
+- **Status:** accepted
 - **Last verified:** 2026-08-14
 - **Scope:** grading standard for all gauntlet-authored specs and blind scorecards
 - **Decision authority:** Jeff
@@ -15,8 +15,8 @@ Notes: Subordinate to docs/README.md conflict precedence; auto-fails trace to ac
 - **Downstream dependents:** every file under `specs/` and `spec-scorecards/`
 - **Supersedes:** the uncriteria'd 2026-08-12 run
 - **Superseded by:** none
-- **Open decisions:** lens weights await Jeff's sign-off; this file stays `proposed` until then
-- **Known gaps:** lens 2 grades against a research corpus the field study itself marks below saturation
+- **Open decisions:** none; Jeff set the benchmark set and authorized the run on 2026-08-14
+- **Known gaps:** lens 2's benchmark evidence is uneven — Logic Pro has no citable behavioral records and Serum 2 has two; both are recorded as research needs rather than graded as spec failures
 
 **Criteria version:** 1
 
@@ -141,14 +141,43 @@ would fail if the behavior regressed. A test that cannot fail scores 0.
 
 ## Lens 2: DAW Workflow Depth (weight: 25%)
 
-**Standard:** the accepted research corpus in `docs/02-reference-research/` —
-Ableton Live, Bitwig Studio, Cubase, FL Studio, Logic Pro, Reaper, Serum 2,
-Phase Plant, VCV Rack — plus `workflow-field-study/`. Cite by observation ID
-(`OBS-…`) or source-ledger entry, never from memory.
+**Standard:** the AAA benchmark set is **Ableton Live, Logic Pro, Serum 2, Phase
+Plant, and VCV Rack 2** (Jeff, 2026-08-14). These are the A's in "AAA quality."
+Grade against the research corpus in `docs/02-reference-research/`, citing by
+observation ID (`OBS-…`) or source-ledger entry — never from memory.
 
-**Benchmark handling:** the corpus is already accepted research. Reuse it. Do not
+**Benchmark handling:** the corpus is already research of record. Reuse it. Do not
 re-derive competitor behavior from recollection, and respect the field study's own
-saturation warning — it grades what the evidence supports, not what a spec wishes.
+saturation warning — this lens grades what the evidence supports, not what a spec
+wishes.
+
+**Evidence inventory (verified 2026-08-14).** Citable depth is uneven, and the
+grading must respect that. This is the count of `OBS-` records available per
+benchmark:
+
+| Benchmark | Prefix | Records | Where | Usable for |
+|---|---|---|---|---|
+| Ableton Live 12 | `OBS-AB12-` | 85 | `ableton-live-observations.md` | concrete behavior, cited to manual sections |
+| Phase Plant | `OBS-PP-` | 11 | `synth-modular-observations.md` | generator/routing/unison architecture |
+| VCV Rack 2 | `OBS-VCV-VOLT-` | 6 | `synth-modular-observations.md` | signal/voltage conventions |
+| Serum 2 | `OBS-SR2-` | 2 | `synth-modular-observations.md` | CPU and keyboard behavior only |
+| Logic Pro | — | **0** | dossier is `inventory-only` | **nothing behavioral** |
+
+The dossiers themselves (`ableton-live.md`, `logic-pro.md`, `serum-2.md`,
+`phase-plant.md`, `vcv-rack.md`) are all status `draft`; Serum 2's is
+`blocked-source-gap` and states outright that it "cannot currently be marked
+source-complete or accepted for product planning."
+
+**The rule this creates.** A spec cites the benchmark evidence that exists and
+**names the gap where it does not**. Asserting Logic Pro behavior, or Serum 2
+behavior beyond `OBS-SR2-CPU-001` and `OBS-SR2-KB-001`, is a fabricated benchmark
+claim and fails under AF-6 and criterion 4C. "No citable evidence for {product} on
+this surface; recorded as a research need" is a **3**, not a penalty — naming the
+hole is the correct behavior. Inventing the hole's contents is the failure.
+
+Bitwig Studio (`OBS-BW53-`, 18 records) is not in Jeff's benchmark set but remains
+valid corroborating evidence, particularly for the convergent patterns already
+carried into PROD-001 and PROD-002.
 
 **2A. Loop-first core loop.** The feature supports sketch → branch → audition → grow
 without losing selection, zoom, or transport context (`vision.md`).
@@ -170,6 +199,10 @@ a pattern, the spec either follows it or states why Spectre diverges.
 
 **2F. Differentiation.** The spec says what Spectre does that the benchmark set does
 not, without claiming parity as completeness (`vision.md` non-goals).
+
+**2G. Benchmark evidence discipline.** Every benchmark claim carries an `OBS-` ID or
+source-ledger entry. Claims about a benchmark with no citable record are named as
+gaps, not filled in from recollection. See the evidence inventory above.
 
 ---
 
@@ -235,7 +268,7 @@ fails 4F and AF-2 together.
 | Lens | Criteria | Weight | Auto-fail conditions |
 |---|---|---|---|
 | 1 — Realtime & Correctness | 7 | 35% | AF-3 |
-| 2 — DAW Workflow Depth | 6 | 25% | AF-5 |
+| 2 — DAW Workflow Depth | 7 | 25% | AF-5 |
 | 3 — Product Identity & Scope Discipline | 6 | 20% | AF-4; 3B = 0 fails the spec |
 | 4 — Truthfulness & Evidence | 6 | 20% | AF-2, AF-6 |
 
