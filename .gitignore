@@ -14,3 +14,7 @@
 # Rebuild workspace build artifacts
 /rebuild/target
 resume-commands
+
+# Gauntlet tooling copies; run state in gauntlet-output/ is tracked
+gauntlet-active/
+gauntlet-universal/
