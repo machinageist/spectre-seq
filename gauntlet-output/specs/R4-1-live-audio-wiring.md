@@ -2,7 +2,10 @@
 Author: Jeff
 Date: 2026-08-15
 Description: R4-1 spec — wire ./spectre to the qualified audio backend so Play produces sound through the existing compiled plan
-Notes: No new render path and no new DSP; the RT modules scanned by rt_guard.rs are deliberately untouched. Today ./spectre makes no sound at all.
+Notes: No new render path and no new DSP. Iteration 2 corrects the rt_guard scan list (null.rs is
+  scanned, midi.rs is not) and rebuilds the RT-001 argument on what the null.rs edit actually contains,
+  replaces the invalid note-ordering guarantee with the counted fail-closed behavior, and makes tests 3
+  and 9 compilable. Today ./spectre makes no sound at all.
 -->
 
 # Spec: Live Audio Wiring
@@ -11,7 +14,7 @@ Notes: No new render path and no new DSP; the RT modules scanned by rt_guard.rs 
 **Parent feature:** `R4` Credible Alpha (root)
 **Spec author agent:** gauntlet spec agent, R4-1 leaf
 **Date:** 2026-08-15
-**Iteration:** 1
+**Iteration:** 2 (remediation 1)
 
 - **Status:** proposed
 - **Last verified:** 2026-08-15 (source read at commit `dae16bb`, branch `rename/geist-to-spectre`)
@@ -21,8 +24,8 @@ Notes: No new render path and no new DSP; the RT modules scanned by rt_guard.rs 
 - **Downstream dependents:** R4-2 (runtime parameter seam), R4-3 (Linux qualification), R4-5 (MIDI clips), R4-8 (offline bounce), R4-9 (e2e and QA)
 - **Supersedes:** none
 - **Superseded by:** none
-- **Open decisions:** §8 Q1–Q8
-- **Known gaps:** no benchmark in the accepted corpus has a citable observation about audio-device selection, driver configuration, or engine start/failure UX; recorded as a research need in §2G-adjacent notes below and in §8
+- **Open decisions:** §8 Q1–Q9
+- **Known gaps:** no benchmark in the accepted corpus has a citable observation about audio-device selection, driver configuration, or engine start/failure UX; recorded as a research need in Appendix A ("Named gaps") and in §8
 
 This spec is subordinate to the conflict precedence in `docs/README.md`. It proposes
 behavior; it does not amend an accepted requirement, decision row, or architecture
@@ -141,16 +144,20 @@ one global fact rather than a per-lens fork (vision.md, "One project, linked len
 5. Nothing is audible yet. The fixture instrument is note-driven and holds no note, so
    the chain renders exact silence — the same silence `spectre_offline::render_silence`
    already proves for this chain. This is a property of the material, not a mute gate.
-6. The user presses Play. The app sends `TransportCommand::Play` on the transport lane
-   and one held `NoteEventKind::On` on the note lane, in that order, then flips its own
-   UI transport state **only if both sends returned `Ok`**.
+6. The user presses Play. The app calls `start_audition`, which sends
+   `TransportCommand::Play` on the transport lane and then one held `NoteEventKind::On`
+   on the note lane, in that order. **The UI transport flips if and only if the transport
+   send returned `Ok`** — see §4.4's binding rule for why the note send cannot gate it.
 7. Within one block period the bridge drains both lanes, the `PulseInstrument` opens,
    and sound reaches the device.
-8. The user presses Stop. The app sends `NoteEventKind::AllNotesOff { channel: None }`
-   and then `TransportCommand::Stop`. The bridge collects notes after applying
-   transport (`bridge.rs:175–176`), so the release is delivered on the same block; the
-   instrument clears its active note (`crates/spectre-dsp/src/source.rs:194`) and the
-   chain returns to exact silence.
+8. The user presses Stop. The app calls `stop_audition`, which sends
+   `NoteEventKind::AllNotesOff { channel: None }` and then `TransportCommand::Stop`. The
+   bridge collects notes after applying transport (`bridge.rs:175–176`), so the release is
+   delivered on the same block; the instrument clears its active note
+   (`crates/spectre-dsp/src/source.rs:194`) and the chain returns to exact silence.
+   If step 6 and step 8 land inside the *same* block period, the two note events are
+   keyed out of order and the block is refused into exact silence with `plan_errors`
+   incremented — §4.3's note-ordering paragraph and §3.6 E10.
 
 **Branch — the engine cannot start.** Any `BackendError` from enumeration, rate query,
 config validation, or open leaves the engine in `Failed(error)`. The bar reads
@@ -197,9 +204,11 @@ work, not R4-1's, and this spec does not add one.
    `LiveEngine::state()`.
 7. `blocks <n> · headroom <p>% · xruns <n>` — data source: `EngineHealth`, an owned
    struct read from `BridgeTelemetry`'s atomics on the app thread each frame.
-8. `contained <n> · refused <n>` — data source: `BridgeTelemetry::contaminated_nodes`
-   and `frame_capacity_rejections`. Shown only when either is nonzero, because a
-   permanently-zero counter is noise; when nonzero it must never be hidden.
+8. `contained <n> · refused <n> · plan errors <n>` — data source:
+   `BridgeTelemetry::contaminated_nodes`, `frame_capacity_rejections`, and `plan_errors`.
+   Each is shown only when it is nonzero, because a permanently-zero counter is noise;
+   when nonzero it must never be hidden. `plan errors` is in this cluster because §4.3's
+   same-block Play→Stop refusal is counted there and would otherwise be a silent failure.
 9. `Retry engine` button — present only in the `Failed` state.
 
 **Empty states.** Before the first update, `Engine — starting`. That string is
@@ -265,11 +274,13 @@ inspector (`main.rs:210`), the same channel `set_device_parameter_from_ui` alrea
 | E4 | `UnsupportedSampleRate` / `UnsupportedChannels` / `UnsupportedBufferSize` from `StreamConfig::validate` | `Engine unavailable — <Display>` + Retry | change the OS device format, press Retry | no |
 | E5 | `BackendError::OpenFailed(s)` — the host refused the fixed buffer size or the stereo format | `Engine unavailable — stream open failed: <s>` + Retry | change device/format, press Retry; see §8 Q4 for the ALSA case | no |
 | E6 | `GraphError` while compiling the live plan (would indicate a broken snapshot) | `Engine unavailable — plan build failed: <Display>` + Retry | none in-app; this is a defect, and the message must say so rather than implying user error | no |
-| E7 | `ControlError::TransportLaneFull` or `NoteLaneFull` on a Play/Stop send | inspector status line: "Transport command refused: <Display>. Press again." **UI transport state does not change.** | press the button again | no |
+| E7 | `AuditionError::Transport(..)` — the transport lane refused the command (`ControlError::TransportLaneFull`, `control.rs:36`) | inspector status line: "Transport command refused: <Display>. Press again." **UI transport state does not change, and the note send is not attempted.** | press the button again | no |
+| E7b | `AuditionError::Note(..)` — the transport command was queued but the note lane refused (`ControlError::NoteLaneFull`, `control.rs:35`) | inspector status line: "Audition note refused: <Display>. Transport applied." **UI transport state changes**, because the queued command cannot be recalled from a wait-free lane | none needed for transport; press Play again to retry the note | no |
 | E8 | Device disappears mid-run (unplug) | counters stop advancing and `stream errors <n>` appears (nonzero `AudioStream::stream_errors`) | press Stop, then `Retry engine` to reopen | no |
 | E9 | Driver delivers a block larger than the plan's capacity | `refused <n>` counter becomes visible; audio is exact silence for those blocks, never stale | already fail-closed in shipped code; Retry re-opens at the current device format | no (audio only) |
+| E10 | Play and Stop land in the same block period, so the note-on and its `AllNotesOff` are keyed out of order (§4.3) | `plan errors <n>` counter becomes visible; that one block is exact silence and both note events are discarded together, leaving no stuck note | none required — the transport commands still applied and the next block renders normally; press Play again | no (one block of audio) |
 
-Two rules bind all nine rows. First, **no error is reported from the audio thread**:
+Two rules bind all eleven rows. First, **no error is reported from the audio thread**:
 every string above is formatted on the app thread from a value the render side
 published into an atomic or returned from an app-thread call (RT-001). Second, **no
 threshold-derived alarm state is specified** — there is no "engine unhealthy" badge
@@ -317,13 +328,42 @@ cannot justify a threshold (decision 16, PROD-003).
 | `crates/spectre-audio/src/null.rs` | implement both new methods | app thread only |
 | `crates/spectre-audio/src/cpal_backend.rs` | implement both new methods; move `error_count`'s body behind the trait method | app thread only |
 
-**`bridge.rs`, `control.rs`, `spsc.rs`, and `midi.rs` are not modified.** Those are
-exactly the four modules `rt_guard.rs:293–298` scans for blocking primitives, and
-leaving them untouched is the structural argument that R4-1 cannot regress RT-001: the
-callback body the app installs is `move |mut block| bridge.render(&mut block)`,
-character-for-character the closure already exercised by
-`crates/spectre-audio/tests/lifecycle_health.rs:269` under real CoreAudio hardware and
-by `crates/spectre-audio/tests/rt_guard.rs`'s null-stream guard test.
+**The RT-001 structural argument, stated against the actual scan.**
+`crates/spectre-audio/tests/rt_guard.rs` — a test file, not a `src` module — declares
+`RT_MODULES` at lines 293–298 with exactly four entries, read verbatim at lines 294–297:
+`src/bridge.rs`, `src/control.rs`, `src/spsc.rs`, `src/null.rs`. **`midi.rs` is not
+scanned; `null.rs` is.** The forbidden set is `FORBIDDEN` at lines 299–307, seven
+needles read verbatim at lines 300–306: `Mutex`, `RwLock`, `Condvar`, `thread::sleep`,
+`println!`, `eprintln!`, `dbg!`. The test asserts by substring that no scanned module's
+text contains any of them (`rt_guard.rs:313–318`).
+
+R4-1 therefore **cannot** argue from an untouched scanned set, because the table above
+modifies one member of it — `crates/spectre-audio/src/null.rs` gains the two new trait
+methods. The argument is made on the content of that edit instead:
+
+- Three of the four scanned modules — `bridge.rs`, `control.rs`, `spsc.rs` — are not
+  modified at all, so their scan result is unchanged by construction.
+- The fourth, `null.rs`, gains exactly two app-thread method bodies, and **both return a
+  constant**: `NullBackend::default_sample_rate` returns `48_000` and
+  `NullStream::stream_errors` returns `0` (§4.3). Neither body allocates, blocks, logs,
+  or names any of the seven forbidden needles, so the scan's result for `null.rs` is
+  unchanged as well. The relaxed atomic load that `stream_errors` exists to expose lives
+  in `cpal_backend.rs:166`, which the scan does not cover and which R4-1 does not add —
+  it is the body of the existing inherent `error_count` (`cpal_backend.rs:163–168`),
+  moved behind the trait method.
+- Because this is no longer an untouched-module argument, it must be re-proved rather
+  than assumed: §5.2 requires `cargo test -p spectre-audio --test rt_guard` to pass
+  **after** the `null.rs` edit, and that pass is the evidence, not this paragraph.
+
+The callback body the app installs is `move |mut block| bridge.render(&mut block)` —
+substantively the closure already exercised by
+`crates/spectre-audio/tests/lifecycle_health.rs:269` under real CoreAudio hardware and by
+`crates/spectre-audio/tests/rt_guard.rs`'s null-stream guard test. (That line reads
+`Box::new(move |mut block: RenderBlock| bridge.render(&mut block)),`; the explicit type
+annotation is the only difference, so "identical closure" is a claim about behavior, not
+about characters.) No new code is placed on a callback-reachable path, and §5.1 test 11
+re-runs the allocation guard over the app's own wiring rather than trusting the argument
+above.
 
 The engine lives in the **library** crate rather than in `main.rs` for one concrete
 reason: `main.rs` is a binary target and its types are unreachable from
@@ -406,11 +446,30 @@ pub struct EngineParts {
     pub sender: spectre_audio::control::ControlSender,
     pub telemetry: std::sync::Arc<spectre_audio::bridge::BridgeTelemetry>,
     pub config: spectre_audio::StreamConfig,
+    // Frames the plan was compiled for. RenderBridge's plan field is private and its public
+    // surface is only new/telemetry/transport/render (bridge.rs:133/152/157/162), so plan
+    // capacity is unreadable through the bridge; this slice adds no accessor to bridge.rs and
+    // carries the value build_engine_parts passed to EditableGraph::compile instead
+    pub plan_max_frames: usize,
 }
 
-// App-thread owner of the live stream; not Send, because AudioStream is not Send
-pub struct LiveEngine {
-    stream: Box<dyn spectre_audio::AudioStream>,
+// Which half of a two-send audition sequence was refused; the caller needs the distinction
+// because a queued transport command cannot be recalled from a wait-free lane
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuditionError {
+    // The transport send was refused, so the render transport will not change and the UI
+    // must not either. Dominant: returned even if the note send was also refused
+    Transport(spectre_audio::control::ControlError),
+    // The transport command was queued; only the note send was refused, so the UI change stands
+    Note(spectre_audio::control::ControlError),
+}
+
+// App-thread owner of the live stream; not Send, because AudioStream is not Send.
+// Generic over the stream with dyn AudioStream as the default: the app holds the erased
+// LiveEngine<dyn AudioStream> that open_default returns, while a test can hold a concrete
+// LiveEngine<NullStream> and still reach NullStream::pump, which is inherent to NullStream
+// (null.rs:104) and absent from the AudioStream trait (spectre-audio/src/lib.rs:181–196)
+pub struct LiveEngine<S: ?Sized = dyn spectre_audio::AudioStream> {
     sender: spectre_audio::control::ControlSender,
     telemetry: std::sync::Arc<spectre_audio::bridge::BridgeTelemetry>,
     backend_name: &'static str,
@@ -420,8 +479,16 @@ pub struct LiveEngine {
     next_sequence: u64,
     // Fixed identity of the single audition voice
     voice_id: u32,
+    // Box<S> is itself Sized even when S is not, so field order is unconstrained here
+    stream: Box<S>,
 }
 ```
+
+`AudioStream` is object-safe — every method takes `&self` or `&mut self`, none is generic,
+none returns `Self` (`crates/spectre-audio/src/lib.rs:181–196`) — so `dyn AudioStream`
+satisfies the `S: AudioStream` bound the `impl` block carries, and
+`Box<NullStream> → Box<dyn AudioStream>` coerces. The generic parameter changes no
+behavior and adds no method to the audio seam; it exists so §5.1 test 9 can compile.
 
 Database migrations: **N/A — R4-1 persists nothing.** The project envelope
 (`spectre-project`) is untouched; CORE-004's filesystem implementation is R4-7.
@@ -476,20 +543,36 @@ pub fn open_default(
     snapshot: &[spectre_dsp::DeviceParameterSnapshot],
 ) -> Result<LiveEngine, EngineUnavailable>;
 
-impl LiveEngine {
+impl<S: spectre_audio::AudioStream + ?Sized> LiveEngine<S> {
+    // Adopt an already-open, already-started stream and the app-thread halves of its parts.
+    // The bridge is not passed: the caller must already have moved it into the render closure
+    // at open, which is what erases it from the app thread. Boxing is the caller's, so a test
+    // may pass Box<NullStream> and keep the concrete type.
+    pub fn from_open_stream(
+        stream: Box<S>,
+        sender: spectre_audio::control::ControlSender,
+        telemetry: std::sync::Arc<spectre_audio::bridge::BridgeTelemetry>,
+        backend_name: &'static str,
+        device_name: String,
+        config: spectre_audio::StreamConfig,
+    ) -> Self;
+    // Borrow the stream for callers that must drive it explicitly. The app never calls this;
+    // it exists so a test holding LiveEngine<NullStream> can pump between state() reads
+    pub fn stream_mut(&mut self) -> &mut S;
     pub fn state(&self) -> EngineState;
     pub fn health(&self) -> EngineHealth;
     pub fn config(&self) -> spectre_audio::StreamConfig;
     // Queue a transport command; Err leaves the caller's UI state unchanged
     pub fn send_transport(&mut self, command: spectre_core::TransportCommand)
         -> Result<(), spectre_audio::control::ControlError>;
-    // Queue one already-ordered note event on the strict-FIFO note lane
+    // Queue one note event, stamped with frame_offset 0 and the next sequence
     pub fn send_note(&mut self, kind: spectre_dsp::NoteEventKind)
         -> Result<(), spectre_audio::control::ControlError>;
-    // Play the audition voice: Play command, then one held note-on
-    pub fn start_audition(&mut self) -> Result<(), spectre_audio::control::ControlError>;
-    // Stop it: all-notes-off, then Stop
-    pub fn stop_audition(&mut self) -> Result<(), spectre_audio::control::ControlError>;
+    // Play the audition voice: Play command, then one held note-on. Transport first, and
+    // the note is not attempted if the transport send is refused
+    pub fn start_audition(&mut self) -> Result<(), AuditionError>;
+    // Stop it: all-notes-off, then Stop. Note first, so the release lands on the same block
+    pub fn stop_audition(&mut self) -> Result<(), AuditionError>;
     // Drop retired render state on the app thread; called once per UI frame
     pub fn reclaim(&mut self) -> usize;
     pub fn close(&mut self) -> Result<(), spectre_audio::BackendError>;
@@ -497,16 +580,48 @@ impl LiveEngine {
 ```
 
 Splitting `build_engine_parts` from `open_default` is what makes the feature testable
-without hardware: the test builds the parts, then opens a concrete `NullStream` via
-`NullBackend::open_null_output` (`null.rs:38`) so it can call `pump()` and
-`last_block()` — the same seam every R3 test uses.
+without hardware: the test builds the parts, destructures them, moves `bridge` into the
+render closure, and opens a concrete `NullStream` via `NullBackend::open_null_output`
+(`null.rs:38`) so it can call `pump()` (`null.rs:104`) and `last_block()`
+(`null.rs:118`) — the same seam every R3 test uses. `from_open_stream` then wraps that
+concrete stream without erasing it, which is what lets §5.1 test 9 read `state()` across
+a pump.
 
-`send_note` takes a `NoteEventKind` and stamps `frame_offset: 0` and a monotonically
-increasing `sequence` internally. That guarantees the plan's ordering contract
-(`(frame_offset, NoteEventKind::rank, sequence)`, `crates/spectre-dsp/src/io.rs:152`)
-without the caller reasoning about it: at a single frame offset, rank puts
-`Off`/`AllNotesOff` before `On` (`io.rs:154`), and `sequence` is unique, so the key is
-a total order. The app never constructs an unsorted batch.
+**Note ordering — what `send_note` does and does not guarantee.**
+
+`send_note` stamps `frame_offset: 0` and a monotonically increasing `sequence` so the
+caller never assembles the ordering key by hand. That is a convenience, **not** an
+ordering guarantee, and iteration 1 of this spec wrongly claimed it was one.
+
+`ProcessContext::new` (`crates/spectre-dsp/src/io.rs:91–101`) requires the key
+`(event.frame_offset, event.kind.rank(), event.sequence)` — the tuple is built at
+`io.rs:96` — to be **strictly increasing** across a batch, rejecting anything else with
+`ProcessError::UnsortedEvents` (`io.rs:97–99`). `rank` returns 0 for `Off`/`AllNotesOff`
+and 1 for `On` (`io.rs:152–157`). With every event stamped at `frame_offset: 0`, emission
+order and key order therefore disagree in exactly one case: **a Play and a Stop that land
+in the same block.** Those events are keyed `(0, 1, N)` then `(0, 0, N+1)` — strictly
+decreasing — and the batch is refused. The reverse pairing (Stop then Play in one block)
+keys `(0, 0, N)` then `(0, 1, N+1)` and is accepted, as is any single event.
+
+What actually happens on the refusal, read out of the shipped code rather than assumed:
+`CompiledPlan::process` wraps the error as `PlanError::Process` and returns before the
+note node's processor runs (`crates/spectre-graph/src/lib.rs:487–492`);
+`RenderBridge::render` fills exact silence and increments `plan_errors`
+(`bridge.rs:192–200`); the next block's `collect_notes` clears the scratch
+(`bridge.rs:258`), so both events are discarded together. Because the discarded pair is
+one note-on and its own release, the instrument's state is unchanged and **no note is
+left stuck** — the audible consequence is that a Play cancelled by a Stop inside one
+block period produces no sound, counted once in `plan_errors`. The transport commands are
+unaffected: `apply_transport` runs before `collect_notes` (`bridge.rs:175–176`), so the
+render transport still receives Play then Stop.
+
+Exposure window: both presses must land inside one block period — 5.33 ms at 256 frames /
+48 kHz. The outcome is fail-closed (exact silence, counted, never stale audio) and it is
+surfaced rather than hidden: §3.6 E10 and the §3.3 item 8 counter cluster. This spec makes
+no claim that the app cannot construct an unsorted batch, because it can. Eliminating the
+case would mean stamping a nonzero `frame_offset` on the second event of a same-block
+pair, which is a behavior change to the send path and is routed to §8 Q9 rather than
+asserted here.
 
 Auth, permissions, pagination, rate limiting: **N/A — this is an in-process desktop
 feature with no network or multi-user surface.**
@@ -527,14 +642,33 @@ it keeps the non-`Send` stream on the UI thread where it was created.
 
 **Two transports now exist** and this is the one genuinely new correctness hazard.
 `AppModel.transport` is authoritative for the UI; `RenderBridge.transport`
-(`bridge.rs:128`) is derived from commands and is unreadable from the app once the
+(`bridge.rs:127`) is derived from commands and is unreadable from the app once the
 bridge moves into the closure. They diverge if a command is refused. The binding rule:
 
-> The app sends first and mutates second. `toggle_play` becomes: build the command,
-> call `LiveEngine::send_transport`, and apply it to `AppModel` **only on `Ok`**. On
-> `Err(TransportLaneFull)` the UI state is unchanged and E7 is surfaced. When no engine
-> exists, `AppModel` mutates exactly as it does today, so the prototype keeps working
-> with no device.
+> The app sends first and mutates second. `toggle_play` becomes: call
+> `LiveEngine::start_audition` / `stop_audition`, and apply the transport change to
+> `AppModel` **only if the transport send was accepted**. Concretely:
+>
+> - `Ok(())` — both sends accepted; the UI flips.
+> - `Err(AuditionError::Transport(..))` — no transport command was queued, so the UI is
+>   unchanged and E7 is surfaced. In `start_audition` the note send is not attempted at
+>   all; in `stop_audition` the release may already have been queued, which is harmless —
+>   a release with no matching attack is a no-op at the instrument
+>   (`crates/spectre-dsp/src/source.rs:194`).
+> - `Err(AuditionError::Note(..))` — the transport command **was** queued and the render
+>   thread will apply it, so the UI flips anyway and E7b is surfaced. Gating the UI on
+>   the note send here would be the worse error: it would leave the UI reading "stopped"
+>   while the render transport is playing, which is the divergence this rule exists to
+>   prevent. A queued command cannot be recalled — `spsc.rs`'s ring has no un-push — so
+>   the honest UI is the one that matches what the render thread will see.
+>
+> `stop_audition` sends the note first and then the Stop command, and it sends Stop even
+> if the note was refused: a refused release plus a stopped transport is recoverable,
+> a running transport the UI thinks is stopped is not. If both of its sends are refused
+> it returns `Transport(..)`, because the unchanged UI is the consequence that matters.
+>
+> When no engine exists, `AppModel` mutates exactly as it does today, so the prototype
+> keeps working with no device.
 
 Local vs. server-synced state: **N/A — Spectre has no server, and cloud services are a
 vision non-goal.**
@@ -586,13 +720,16 @@ anything is written to disk.
   (`crates/spectre-audio/src/lib.rs:22`) and the graph's buses are stereo
   (`crates/spectre-graph/src/lib.rs:12`). A device that cannot present two channels
   fails to open and reports E4/E5. Mono and multichannel devices are out of R4 scope.
-- **Version compatibility:** eframe is pinned at `0.32.3`. One build risk to verify with
-  `cargo check` at implementation: `Box<dyn AudioStream>` is not `Send`
+- **Version compatibility:** eframe is pinned at `0.32.3`, and the non-`Send` question is
+  settled rather than deferred. `Box<dyn AudioStream>` is not `Send`
   (`crates/spectre-audio/src/lib.rs:181` declares the trait with no `Send` bound, and
-  `CpalStream` is documented thread-affine at `cpal_backend.rs:154`). If
-  `eframe::App` imposes a `Send` bound in this version, `LiveEngine` cannot be a field
-  of the app struct and must be held in a UI-thread-local owner instead. This changes
-  no behavior in the spec; it changes where one field lives.
+  `CpalStream` is documented thread-affine at `cpal_backend.rs:154`), so `LiveEngine` is
+  not `Send`. That is fine here: eframe 0.32.3 declares `pub trait App` with no `Send`
+  supertrait (`eframe-0.32.3/src/epi.rs:137`) and `AppCreator<'app>` boxes
+  `Box<dyn 'app + App>` with no `Send` bound (`epi.rs:48–49`), so a non-`Send`
+  `LiveEngine` can be an ordinary field of the `eframe::App` implementor. No fallback
+  owner is needed. (This remains a `cargo check` item only in the ordinary sense that
+  every declared signature is.)
 - **Feature flags / gradual rollout:** the `live-audio` feature is the rollout control.
   Disabling it produces E1 — an app that runs and says why it is silent.
 
@@ -633,7 +770,9 @@ All figures are computed from the source, not estimated from another product.
 
 ## 5. Test Specification
 
-Every command below is real and runs today. The workspace gate is exactly:
+Every command below is real and names a real target. All of them run today except
+`cargo test -p spectre-app --test live_engine`, whose test file this slice creates
+(§7.2); it runs from the moment that file lands. The workspace gate is exactly:
 
 ```sh
 cargo fmt --all -- --check
@@ -657,6 +796,18 @@ cargo test -p spectre-audio --test lifecycle_health -- --ignored --nocapture
 
 New file `crates/spectre-app/tests/live_engine.rs` unless noted.
 
+**Which tests hold a `LiveEngine` and which hold bare parts.** The distinction is load
+bearing, because `NullStream::pump` is inherent to the concrete type (`null.rs:104`) and
+is not on the `AudioStream` trait (`spectre-audio/src/lib.rs:181–196`). Tests 1, 2, 3, and
+6 use `build_engine_parts` output alone and open no stream at all. Tests 4, 5, 10, and 11
+destructure the parts, move `bridge` into the render closure, open a concrete `NullStream`
+via `NullBackend::open_null_output` (`null.rs:38`), and drive it directly, reading counters
+from the `parts.telemetry` handle they kept. Tests 7, 9, and 14 hold a
+`LiveEngine<NullStream>` built with `from_open_stream` over that same concrete stream,
+because each asserts on a `LiveEngine` method; 9 and 14 pump through `stream_mut()`.
+Test 8 needs neither — it only calls `open_default` against a failing backend double. No
+test needs `LiveEngine<dyn AudioStream>`; the app is its only consumer.
+
 1. **`parts_build_from_the_prototype_snapshot_without_touching_a_device`**
    Setup: `AppModel::prototype().device_parameter_snapshot()?`, a validated
    `StreamConfig::stereo(48_000, ENGINE_BUFFER_FRAMES)`. Assert `build_engine_parts`
@@ -670,10 +821,14 @@ New file `crates/spectre-app/tests/live_engine.rs` unless noted.
    offline path already uses is preserved on the live path.
 
 3. **`the_plan_reserves_more_frames_than_the_requested_block`**
-   Assert `parts.bridge`'s plan capacity equals `ENGINE_BUFFER_FRAMES *
-   ENGINE_PLAN_FRAME_MARGIN`, read through `CompiledPlan::max_frames`. Fails if a
-   future edit drops the margin. Edge case: the oversized-block hazard in §4.2's
-   rationale.
+   Assert `parts.plan_max_frames == ENGINE_BUFFER_FRAMES * ENGINE_PLAN_FRAME_MARGIN`.
+   The assertion reads `EngineParts`'s own field (§4.2), **not** the bridge: `RenderBridge`
+   keeps `plan` private and exposes only `new`, `telemetry`, `transport`, and `render`
+   (`bridge.rs:133/152/157/162`), and this slice adds no accessor to `bridge.rs`. The
+   field's value is the `max_frames` argument `build_engine_parts` passed to
+   `EditableGraph::compile` (`spectre-graph/src/lib.rs:196–201`), so the assertion still
+   fails if a future edit drops the margin. Edge case: the oversized-block hazard in
+   §4.2's rationale.
 
 4. **`play_produces_nonzero_output_and_stop_returns_exact_silence`** — the core test.
    Setup: build parts, open a `NullStream` via `NullBackend::open_null_output`, start.
@@ -700,8 +855,11 @@ New file `crates/spectre-app/tests/live_engine.rs` unless noted.
    Edge case: hidden nondeterminism in plan construction from the snapshot.
 
 7. **`a_refused_transport_send_leaves_the_ui_transport_unchanged`**
-   Setup: fill the transport lane past `DEFAULT_TRANSPORT_CAPACITY` without pumping,
-   then attempt Play. Assert `Err(ControlError::TransportLaneFull)` and that
+   Setup: hold a `LiveEngine<NullStream>` and call `send_transport` past
+   `DEFAULT_TRANSPORT_CAPACITY` (64, `control.rs:18`) without pumping, so the lane is
+   full, then call `start_audition()`. Assert
+   `Err(AuditionError::Transport(ControlError::TransportLaneFull))` — the `Transport`
+   variant specifically, since that is what §4.4 makes the UI gate — and that
    `AppModel::is_playing()` is unchanged. Edge case: E7, the two-transport divergence
    hazard.
 
@@ -712,9 +870,15 @@ New file `crates/spectre-app/tests/live_engine.rs` unless noted.
    loop-first rule that an engine event never disturbs selection context.
 
 9. **`opened_but_silent_never_reports_running`**
-   Open a null stream, do not pump, assert `state()` is `EngineState::Opened`; pump
-   once, assert it becomes `Running`. Edge case: the anti-fake-surface rule from
-   §3.2 step 4. This test fails if `state()` is derived from stream state alone.
+   Build the parts, move `bridge` into the render closure, open a concrete `NullStream`
+   via `NullBackend::open_null_output` (`null.rs:38`), `start()` it, and wrap it with
+   `LiveEngine::from_open_stream(Box::new(stream), parts.sender, parts.telemetry, …)`,
+   giving a `LiveEngine<NullStream>`. Before any pump, assert `engine.state()` is
+   `EngineState::Opened`. Then `engine.stream_mut().pump()?` once and assert it is
+   `Running`. Edge case: the anti-fake-surface rule from §3.2 step 4. This test fails if
+   `state()` is derived from `AudioStream::state()` alone — which is exactly why the
+   engine is generic over its stream (§4.2): an erased `Box<dyn AudioStream>` could not be
+   pumped here and the assertion could not be written.
 
 10. **`health_mirrors_the_render_thread_counters`**
     Pump 8 blocks; assert `blocks_rendered == 8`, `xruns == 0`,
@@ -741,14 +905,36 @@ New file `crates/spectre-app/tests/live_engine.rs` unless noted.
     synthetic device and `Err(UnknownDevice)` for any other key. Edge case: silent
     fallback to a default on an unknown device.
 
+14. **`play_then_stop_inside_one_block_is_refused_into_counted_silence`** (back in
+    `live_engine.rs`) — pins §4.3's note-ordering behavior so it cannot drift into either
+    a silent regression or a false guarantee. Hold a `LiveEngine<NullStream>` as test 9
+    does. Call `start_audition()` and then `stop_audition()` **with no pump between
+    them**, so both note events sit in the lane for one block. Pump once and assert three
+    things: the rendered block is exactly zero in every sample; `health().plan_errors == 1`;
+    and `health().blocks_rendered` did **not** advance for that block, because
+    `RenderBridge::render` returns before its increment on the error path
+    (`bridge.rs:192–200` vs `:204–206`). Then pump a second time with no further sends and
+    assert `plan_errors` is still 1 and the block is still exactly zero — the discarded
+    pair left no stuck note. Edge case: this test fails both if the ordering hazard is
+    silently swallowed without counting and if a future change makes the batch succeed
+    while the spec still describes it as refused.
+
 ### 5.2 Integration tests
 
-- **`cargo test -p spectre-app --test live_engine`** — tests 1–11 above are already
+- **`cargo test -p spectre-app --test live_engine`** — tests 1–11 and 14 above are already
   integration-level: they drive the real `CompiledPlan` through a real `AudioStream`
   implementation, not a mock of the render path.
-- **`cargo test -p spectre-audio --test rt_guard`** must continue to pass unchanged.
-  Since R4-1 modifies none of the four scanned RT modules, an unchanged pass is
-  meaningful evidence rather than a formality.
+- **`cargo test -p spectre-audio --test rt_guard`** must continue to pass, and this is a
+  **required gate rather than a formality**, because R4-1 modifies one of the four
+  modules that test scans. `rt_modules_contain_no_blocking_primitives`
+  (`crates/spectre-audio/tests/rt_guard.rs:289–320`) reads `src/bridge.rs`,
+  `src/control.rs`, `src/spsc.rs`, and `src/null.rs` and fails if any contains `Mutex`,
+  `RwLock`, `Condvar`, `thread::sleep`, `println!`, `eprintln!`, or `dbg!`. The two
+  methods R4-1 adds to `null.rs` return constants and name none of the seven, so the
+  test must pass **after** the edit — running it post-edit is the evidence that §4.1's
+  argument holds. `plan_process_is_rt_clean_through_the_null_stream`
+  (`rt_guard.rs:258–287`), which wraps `NullStream::pump` in the allocation guard, must
+  also pass unchanged, since `null.rs` is the module R4-1 touches.
 - **`cargo test -p spectre-audio --test bridge_plan`** must continue to pass unchanged,
   proving the bridge's behavior was not altered to make the app work.
 - **Hardware drill:** `cargo test -p spectre-audio --test lifecycle_health --
@@ -816,7 +1002,10 @@ amplitude envelope and it will click at note edges.
 - [ ] Promises capabilities not yet built — **no.** The spec states in §1.2 and §7.1
   that `./spectre` currently makes no sound, that live parameter edits will still not
   work after this slice (R4-2), that the transport does not gate the render path, that
-  the tempo and position readouts are literals, and that the audition voice clicks.
+  the tempo and position readouts are literals, and that the audition voice clicks. It
+  also states, in §4.3 and §3.6 E10, the one ordering case the send path does **not**
+  make impossible — a Play and a Stop inside one block period, refused into counted
+  silence — rather than claiming a guarantee it does not have.
 - [ ] Uses language restricted by domain regulations — **N/A.** No regulated domain
   (medical, financial, legal) is involved.
 
@@ -862,15 +1051,15 @@ Verified by reading the files at commit `dae16bb`. Each row is checkable in one 
 | Element | Path | Note |
 |---|---|---|
 | `AudioBackend`, `AudioStream`, `StreamConfig`, `RenderBlock`, `RenderCallback`, `BackendError`, `StreamState`, `DeviceInfo`, `DeviceId` | `crates/spectre-audio/src/lib.rs:31–216` | trait seam per decision 19; `OUTPUT_CHANNELS = 2` at line 22; bounds at lines 25–28 |
-| `NullBackend`, `NullStream` with explicit `pump`, `last_block`, `blocks_rendered` | `crates/spectre-audio/src/null.rs:52–176` | deterministic, hardware-free |
+| `NullBackend`, `NullStream` with explicit `pump`, `last_block`, `blocks_rendered` | `crates/spectre-audio/src/null.rs:18–176` (`NullBackend` at :18–19, `open_null_output` at :38, `NullStream` at :80, `pump` at :104, `last_block` at :118) | deterministic, hardware-free |
 | `CpalBackend`, `CpalStream` behind default-on `cpal-backend` | `crates/spectre-audio/src/cpal_backend.rs`; feature in `crates/spectre-audio/Cargo.toml` | only file naming cpal types; `BufferSize::Fixed` at line 129; error callback counts only, lines 139–141 |
 | RT-002 split-lane transport: `control_channel`, `ControlSender`, `ControlReceiver`, latest-wins `ParameterWriter`/`ParameterReader`, strict-FIFO note/transport lanes, reclaim lane | `crates/spectre-audio/src/control.rs` | decision 21; `retire` hands values back rather than dropping them, lines 314–324 |
 | Bounded wait-free SPSC ring | `crates/spectre-audio/src/spsc.rs` | `push` returns the rejected value |
 | `RenderBridge` and `BridgeTelemetry` | `crates/spectre-audio/src/bridge.rs` | drives the existing plan; telemetry at lines 24–116 |
 | Timestamped MIDI ingress | `crates/spectre-audio/src/midi.rs` | reuses `NoteEventKind::rank` rather than restating it |
-| RT-001 allocation guard, positive control, structural lock scan, `Send` assertions | `crates/spectre-audio/tests/rt_guard.rs` | `Send` asserted for `CompiledPlan`, `RenderBridge`, both control halves, lines 30–36; module scan list at lines 293–298 |
+| RT-001 allocation guard, positive control, structural lock scan, `Send` assertions | `crates/spectre-audio/tests/rt_guard.rs` | `Send` asserted for `CompiledPlan`, `RenderBridge`, both control halves, lines 30–36; module scan list `RT_MODULES` at lines 293–298, whose four entries at 294–297 are `src/bridge.rs`, `src/control.rs`, `src/spsc.rs`, `src/null.rs` — **`midi.rs` is not scanned**; forbidden-primitive list `FORBIDDEN` at 299–307 |
 | Bridge↔offline hash equivalence, oversized-block refusal, transport ordering, note deferral | `crates/spectre-audio/tests/bridge_plan.rs` | |
-| Lifecycle drill (deterministic half) and the `#[ignore]`d `hardware_lifecycle_drill` | `crates/spectre-audio/tests/lifecycle_health.rs:245–295` | |
+| Lifecycle drill: the deterministic half (`crates/spectre-audio/tests/lifecycle_health.rs:68–240`, six tests) and the `#[ignore]`d `hardware_lifecycle_drill` (`:245–295`) | `crates/spectre-audio/tests/lifecycle_health.rs` | the hardware drill is `#[cfg(feature = "cpal-backend")]` as well as `#[ignore]`, `:246–247` |
 
 **Implemented — graph and DSP:**
 
@@ -934,9 +1123,9 @@ selection, an in-memory `Transport`, and the validated four-entry
 **New files**
 
 - `crates/spectre-app/src/engine.rs` — engine host, constants, `EngineState`,
-  `EngineHealth`, `EngineUnavailable`, `build_engine_parts`, `open_default`,
-  `LiveEngine`.
-- `crates/spectre-app/tests/live_engine.rs` — tests 1–11 of §5.1, including a
+  `EngineHealth`, `EngineUnavailable`, `AuditionError`, `EngineParts`,
+  `build_engine_parts`, `open_default`, `LiveEngine` with `from_open_stream`.
+- `crates/spectre-app/tests/live_engine.rs` — tests 1–11 and 14 of §5.1, including a
   re-declared guarding global allocator with its positive control.
 
 **Modified files**
@@ -959,6 +1148,12 @@ selection, an in-memory `Transport`, and the validated four-entry
 - `crates/spectre-app/tests/smoke_cli.rs` — assert `engine=not-started`.
 - `crates/spectre-audio/tests/lifecycle_health.rs` — add
   `frame_capacity_rejections` to the drill's printed line and assert it is 0.
+- `docs/01-requirements/requirements-ledger.md` — one rationale row each for
+  `ENGINE_BUFFER_FRAMES` and `ENGINE_PLAN_FRAME_MARGIN`, carrying the §4.2 text.
+  PROD-003 (`requirements-ledger.md:64`) requires every numeric limit's rationale to be
+  recorded **in that ledger**, and decision 16 makes it a standing rule, so §4.2's
+  rationale alone does not discharge it. Iteration 1 omitted this file and would have
+  left both rows unwritten.
 - `docs/status/STATUS.md`, `docs/status/NEXT.md`,
   `docs/06-plans/current-milestone.md` — update the wiring-gap and known-gaps claims
   when the slice lands, per `docs/README.md`'s working rule. Status must move to
@@ -966,8 +1161,17 @@ selection, an in-memory `Transport`, and the validated four-entry
 
 **Deliberately not modified:** `crates/spectre-audio/src/bridge.rs`, `control.rs`,
 `spsc.rs`, `midi.rs`; all of `spectre-graph`, `spectre-dsp`, `spectre-core`,
-`spectre-project`, `spectre-offline`. No second render path is created, no DSP is
-written, and the four RT-scanned modules are untouched.
+`spectre-project`, `spectre-offline`. No second render path is created and no DSP is
+written.
+
+**On the RT-scanned set specifically.** `rt_guard.rs`'s `RT_MODULES` (lines 293–298)
+scans `src/bridge.rs`, `src/control.rs`, `src/spsc.rs`, and `src/null.rs` — not
+`midi.rs`. Three of those four are in the not-modified list above; the fourth,
+`src/null.rs`, **is modified** by this slice, and the modified-files list says so. The
+RT-001 argument therefore rests on the content of that edit and on a post-edit
+`rt_guard` run (§4.1, §5.2), not on the scanned set being untouched. `midi.rs` is left
+alone for a different and weaker reason: nothing in R4-1 feeds `MidiIngress`, so there
+is no cause to touch it.
 
 **Migrations / schema changes:** none. **New third-party dependencies:** none.
 
@@ -975,12 +1179,14 @@ written, and the four RT-scanned modules are untouched.
 
 **M.** Justification: roughly 250–350 new lines in `spectre-app` plus a test file of
 similar size; two small app-thread trait methods with two implementations each; edits to
-three existing test files and three status documents. It is above **S** because it
-crosses three crates, adds a public method to two accepted traits, and changes the
-transport button's mutation order (a correctness change, not a cosmetic one). It is
-below **L** because it writes no DSP, adds no dependency, changes no schema, touches no
-callback-reachable module, and reuses the plan, bridge, transport, and telemetry exactly
-as they were qualified in R3.
+three existing test files, three status/plan documents, and the requirements ledger. It
+is above **S** because it crosses three crates, adds a public method to two accepted
+traits, and changes the transport button's mutation order (a correctness change, not a
+cosmetic one). It is below **L** because it writes no DSP, adds no dependency, changes no
+schema, adds no code to a callback-reachable path — the two `null.rs` methods it does add
+are app-thread-only constant returns, and the render closure itself is unchanged (§4.1) —
+and reuses the plan, bridge, transport, and telemetry exactly as they were qualified in
+R3.
 
 ### 7.4 Blocking dependencies
 
@@ -1043,6 +1249,18 @@ as they were qualified in R3.
   hearing safety would break that equality and would need a separate rationale row.
   There is no output limiter anywhere in the chain, and none is proposed here. — blocks
   §5.4.
+- **Q9 — Should `send_note` make a same-block out-of-order pair impossible?** §4.3
+  documents the one case where the app's emission order disagrees with the plan's
+  ordering key: a Play and a Stop inside one ~5.33 ms block, which
+  `ProcessContext::new` refuses (`io.rs:97–99`) into a counted block of silence. This
+  spec accepts and counts that rather than preventing it. The alternative is for
+  `LiveEngine` to remember the last rank it emitted in the current block and stamp
+  `frame_offset: 1` on any event whose rank would not increase — cheap, but it is a
+  behavior change to the send path, it makes the audition's timing depend on hidden
+  state, and it would need its own rationale row for the frame-offset constant under
+  PROD-003. Deferring it is defensible because the failure is fail-closed, counted,
+  displayed, and leaves no stuck note; accepting it permanently is not obviously right.
+  Jeff's call. — blocks §4.3, §3.6 E10, §5.1 test 14.
 
 ---
 

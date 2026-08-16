@@ -99,6 +99,136 @@ work is preserved under a quarantine banner and cited by nothing. Note the run a
 disclosed that roughly half the guide's chapters remain `unreviewed`, so even the
 favorable path is a partial coverage matrix, not a source-complete dossier.
 
+### D-R3 — An accepted architecture document asserts `Gain` smooths; the shipped `Gain` does not
+
+**Raised:** 2026-08-15, by the R4-2 spec and confirmed independently at blind verification.
+**Blocks:** R4-2's implementation, and it should — R4-2 exists to make a slider drag reach a
+live processor, and this is exactly where a click would come from.
+
+`docs/03-architecture/dsp-device-io.md` states it twice. Line 94: *"Smoothing stays the
+device's concern. **`Gain` already smooths**; devices whose parameters would click MUST
+smooth internally rather than requiring the caller to ramp."* Line 104: *"`Gain`: stereo
+linear gain with **click-resistant smoothing**."*
+
+The shipped type is:
+
+```rust
+// crates/spectre-dsp/src/effect.rs — "Stereo gain with callback-ready target state"
+pub struct Gain {
+    gain: f32,
+}
+```
+
+One field. `set_gain` performs `self.gain = GAIN_PARAMETERS[0].clamp(gain)` — an
+instantaneous assignment (`effect.rs:45–47`). **There is no smoothing state, no target/current
+pair, no ramp, and no coefficient.** The struct's own comment describes "callback-ready target
+state" that does not exist either.
+
+This is an accepted document making a false claim about shipped code, which
+`docs/README.md`'s precedence does not resolve on its own: the architecture contract outranks
+implementation on *direction*, but implementation is what actually runs. Under AF-1 a spec may
+not resolve this by assertion, and R4-2 correctly did not.
+
+**Decision for Jeff — three options:**
+
+1. **The document is aspirational and wrong.** Correct `dsp-device-io.md:94` and `:104` to
+   describe what `Gain` is, and decide separately whether smoothing is owed at R4-2, R4-6, or
+   later. Cheapest, and honest.
+2. **The document is right and `Gain` owes an implementation.** Smoothing lands inside R4-2,
+   which grows the slice and adds per-device state to a processor that currently has none —
+   with an RT-001 consequence, since the ramp runs on the callback.
+3. **Split it.** Correct the document now, and open a scoped follow-on for click-resistance
+   across all four fixture devices, since `Saturator`, `ToneSource`, and `PulseInstrument`
+   have the same exposure the moment their parameters become live.
+
+**Recommendation:** option 1 or 3. Option 2 quietly doubles R4-2's scope, and decision 15's
+deliberate smallness argues against loading it in. Whichever is chosen, the audible
+consequence should be verified by hand — §5.4 of R4-2 is where that check belongs.
+
+### D-MM1 — Lens weighting for the mixing/mastering criteria
+
+**Raised:** 2026-08-15, on authoring `criteria-mixing-mastering.md`.
+**Blocks:** dispatching the MM gauntlet. Blocks nothing in the R4 loop.
+
+Four lenses, weighted Realtime & Signal Correctness 30 %, Mastering Depth & Metering
+Truth 25 %, Product Identity & Scope Discipline 20 %, Truthfulness & Evidence 25 %.
+
+The one deliberate departure from `criteria.md`'s accepted split is **Truthfulness at
+25 % rather than 20 %**, taken out of Realtime's share. The reasoning: this domain's
+characteristic failure is not a bad design, it is a confident false number. The
+benchmark corpus contains **no latency figure, no time constant, and no evidence of
+loudness-standard conformance** for either vendor, so every such number appearing in a
+spec was invented somewhere. Accept, amend, or reject.
+
+### D-MM2 — Does Spectre build a mixing/mastering suite at all?
+
+**Raised:** 2026-08-15. **Blocks:** the entire MM gauntlet, and it should.
+
+`criteria-mixing-mastering.md` and the two dossiers grade and describe a suite that has
+no accepted decision behind it. Nothing in the vision, the requirements ledger, or the
+roadmap commits Spectre to mixing or mastering devices. The criteria file says so in its
+own authority section.
+
+This is a genuine product question, not a formality: a mastering suite is a large,
+long-lived surface with its own metering, analysis, latency, and standards obligations,
+and the roadmap already carries R11's effect catalog without specifying its contents.
+
+**Recommendation:** answering "not yet, and the research stands" is a perfectly good
+outcome. The dossiers, the criteria, and the component tree keep their value under
+deferral; they are what makes the question answerable later without redoing the work.
+
+### D-MM3 — Roadmap placement, since no mastering milestone exists
+
+**Raised:** 2026-08-15. **Blocks:** criterion 3A can't be graded without it.
+
+`rebuild-roadmap.md` runs R0–R12 with no mixing/mastering entry. The tree's Tier 0
+infrastructure (metering, analysis, latency declaration and compensation, oversampling,
+crossover) has a natural home at **R6**, which already owns monitoring, compensation,
+meters, and a latency matrix as its exit gate — `MM-0.3` is arguably already R6 work
+under another name. Tier 1 devices have a natural home at or after **R11**'s effect
+catalog. **Nothing belongs in R4**, which decision 15 keeps deliberately small.
+
+Three options: **distribute** across R6 and R11 (no new milestone, suite never coherent);
+**insert** a milestone that owns it end to end (coherent, renumbers the roadmap); or
+**defer** until R11 arrives. Deferral is the honest default while D-MM2 is open.
+
+### D-MM4 — Which loudness standards, if any, does Spectre implement natively?
+
+**Raised:** 2026-08-15. **Research half discharged the same day.** **Still blocks:** nothing
+mechanically; it is now a product question rather than an evidence gap.
+
+The reading pass ran. ITU-R BS.1770-5 (Annexes 1 and 2), EBU R 128, EBU Tech 3341, and
+EBU Tech 3342 were retrieved and read in full, producing **95 records** in
+`docs/02-reference-research/loudness-standards-observations.md` and four
+`claims-extracted` ledger records. MM-AF-5 was narrowed accordingly: the algorithm,
+K-weighting coefficients, gating rules, true-peak method, and LRA definition are now
+citable facts. Conformance claims and delivery targets remain prohibited.
+
+**What the pass surfaced that Jeff should decide on, because none of it is a research
+question any longer:**
+
+1. **BS.1770-5 supplies K-weighting coefficients for 48 kHz only** (`GAP-LOUDNESS-0001`).
+   It says other rates need values "chosen to provide the same frequency response" and
+   supplies neither the values, a derivation procedure, nor a tolerance. A DAW runs at
+   whatever rate the device is set to. **Any Spectre meter at 44.1 or 96 kHz requires an
+   original engineering decision here** — this is the real implementation blocker, and no
+   amount of further reading removes it.
+2. **Correct Integrated Loudness collides with Spectre's realtime contract**
+   (`OBS-T3341-020`). Tech 3341 §2.3 requires recomputation from stored per-block history
+   on every update — the measurement is not incrementally summarisable, because the
+   relative gate moves and retroactively changes which past blocks count. At the mandated
+   100 ms hop that is 36,000 entries per hour of monotonically growing state, which cannot
+   live on the audio thread under RT-001/RT-002. A bounded approximation is available but
+   is a **declared deviation**, not conformance.
+3. **"EBU Mode" is a claim with a test suite attached, and Spectre cannot currently make
+   it** (`OBS-XSTD-004`, `GAP-LOUDNESS-0008`). Both EBU documents gate compliance on
+   test-signal sets hosted separately that were not retrieved.
+
+**Decision for Jeff:** whether Spectre measures loudness natively at all; if so, whether it
+accepts (1)'s original-engineering burden and (2)'s declared deviation; and whether to
+commission retrieval of the EBU test-signal sets, which is the only path to a conformance
+claim rather than a measurement claim.
+
 ## Resolved
 
 ### D-G1 — Lens weighting for `criteria.md` — **accepted as proposed, 2026-08-14**

@@ -97,11 +97,30 @@ Unevidenced or promotional phrasing about state fails. `docs/status/STATUS.md` n
 this prohibition in its own header, and the standard applies to specs describing that
 same state.
 
-> The three defects in the discarded 2026-08-12 `track-management.md` map to AF-2
-> (invented `AppModel::add_track`, `Track::arm`, `Track::mute`), AF-5 (a ⌘T/⌘U/⌘M
-> shortcut map), and the feasibility rule (a §7.1 describing a track model that does
-> not exist). Any one of them fails the spec on its own. That is the regression this
-> criteria file exists to prevent.
+> **Corrected 2026-08-15 — this passage was itself wrong, and the correction is instructive.**
+> The original text read: *"The three defects in the discarded 2026-08-12
+> `track-management.md` map to AF-2 (invented `AppModel::add_track`, `Track::arm`,
+> `Track::mute`), AF-5 (a ⌘T/⌘U/⌘M shortcut map), and the feasibility rule (a §7.1
+> describing a track model that does not exist)."*
+>
+> Two of those AF-2 examples were **not** invented. `AppModel::add_track` exists at
+> `crates/spectre-app/src/lib.rs:405–422` and has since commit `6c397d9` — before the
+> discarded spec was written and before this file was accepted. A track list sidebar exists
+> at `crates/spectre-app/src/main.rs:115–160`, and two tests cover `add_track` at
+> `crates/spectre-app/tests/app_model.rs:33–49`. Only `Track::arm` and `Track::mute` are
+> genuinely absent.
+>
+> **The corrected statement:** the discarded spec failed on AF-2 for `Track::arm` and
+> `Track::mute`, on AF-5 for the ⌘T/⌘U/⌘M shortcut map, and on corrupted encoding. Any one
+> fails a spec on its own, so its disposition stands — but its §7.1 was wrong in *both*
+> directions, and this file reproduced half of that error for a day.
+>
+> Keep this correction in place rather than silently editing the claim. An accepted document
+> misstating the codebase **inside the rule that forbids exactly that** is the most useful
+> possible illustration of why AF-2 requires a reviewer to open the file instead of trusting
+> a document — including this one. Found by the R4-7 spec author citing `lib.rs:405`
+> accurately, and independently confirmed by the R4-4 author, who was briefed with the wrong
+> claim, checked it anyway, and refused it in writing.
 
 ---
 

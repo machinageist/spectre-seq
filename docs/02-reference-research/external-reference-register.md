@@ -69,6 +69,38 @@ The VCV supported-host list is an observation about VCV Rack Pro, not an endorse
 | Xfer Serum 1 | bounded historical/source-continuity reference | older support articles used in Serum 2 dossier | claims require proof they remain valid in Serum 2 |
 | Max for Live | design anti-reference / excluded compatibility scope | Ableton dossier exclusion | study workflow implications only where relevant; no device/runtime compatibility target |
 
+## Mixing and mastering device references
+
+Classifications in this table are **proposed, not accepted** — they are the open decision carried by `fabfilter.md` and `ozone.md`. See those dossiers for the source matrices and acceptance blockers.
+
+| Product | Proposed classification | Repository context | Required treatment |
+|---|---|---|---|
+| FabFilter Pro-Q 4 | substantive behavioral reference | `fabfilter.md`, `fabfilter-observations.md` (64 records) | deepest EQ reference and the only plug-in with systematic numeric ranges; re-read numerals from the vendor PDF before any promotion |
+| FabFilter Pro-C 3 | bounded subsystem reference | dynamics observations (32 records) | compressor control set, styles, side chain only; no time constants exist in the source |
+| FabFilter Pro-L 2 | bounded subsystem reference | limiting/loudness observations (27 records) | limiting styles, true peak, loudness metering; no latency figure exists in the source |
+| FabFilter Pro-MB | bounded subsystem reference | multiband dynamics observations (26 records) | band model, processing-mode tradeoffs, stereo link |
+| FabFilter Pro-DS | bounded subsystem reference | de-esser observations (14 records) | detection/application split, split-band topology, metering honesty properties |
+| FabFilter Saturn 2 | bounded subsystem reference | saturation observations (20 records) | band split model, slot-owned modulation, explicitly partial linear-phase scope |
+| FabFilter Pro-R 2 | bounded subsystem reference | reverb observations (16 records) | Spectre has no reverb; the value is the parameter-converting import pattern, not reverb behavior |
+| FabFilter plug-in range (suite) | design reference for interaction consistency only | recurring modifier vocabulary across plug-ins | no parity requirement, no UI-composition license; the legal boundary below applies in full |
+| iZotope Ozone 12 (mothership) | substantive behavioral reference | `ozone.md`, `ozone-observations.md` (179 records, 22 areas) | chain/module architecture and channel-processing-mode model; no numeric limit promoted without its own rationale |
+| Ozone Master Assistant | bounded subsystem reference | assistive-workflow observations | pattern only — objective in, editable chain out; **model internals are excluded by mandate**, not merely unresearched |
+| Ozone component plug-ins | bounded subsystem reference | mothership/component split | the split itself is the observation; components add no separate behavioral surface |
+
+## Public standards
+
+A standard is **not** a product reference. It carries no parity question, no originality concern, and no trademark constraint — it is a specification Spectre may choose to implement, and implementing it means reading it. This row class is new and is proposed with the tables above.
+
+| Standard | Classification | Repository context | Required treatment |
+|---|---|---|---|
+| ITU-R BS.1770-5 (11/2023) | public standard — implementable specification | `SRC-ITU-BS1770-5`, **`claims-extracted`**; loudness and true-peak measurement | body read 2026-08-15 from the official ITU PDF. Annex 1 and Annex 2 normative text read in full — K-weighting coefficients, channel weights, gating thresholds, block/overlap structure, LKFS designation, true-peak stages — plus Annex 3/4 and the informative Attachment 1 to Annex 2. Claims live in `loudness-standards-observations.md` as `OBS-BS1770-*`. **Not read:** Attachment 1 to Annex 4; Attachment 1 to Annex 1 §5 onward; all figures (raster, unreadable). Coefficients are **48 kHz only** — `GAP-LOUDNESS-0001` |
+| EBU R 128 (V5, 11/2023) | public standard — implementable specification | `SRC-EBU-R128`, **`claims-extracted`**; loudness normalisation and permitted maximum level | body read 2026-08-15, in full — this is the **only** delivery target now citable from this ledger: −23.0 LUFS with a ±1.0 LU practical tolerance, a separate ±0.2 LU workflow tolerance, and −1 dBTP ±0.3 dB in production. Claims are `OBS-R128-*`. It is a **broadcast** recommendation and must never be cited as a streaming target; R 128 s2 (streaming) was not retrieved — `GAP-LOUDNESS-0003`. URL is unversioned, so `mutable_url: true` |
+| EBU Tech 3341 (V4, 11/2023) | public standard — implementable specification | `SRC-EBU-TECH3341`, **`claims-extracted`**; "EBU Mode" loudness metering | §1–§2.9 read 2026-08-15 — momentary/short-term/integrated window lengths and update rates, the ban on extra ballistics, gating restatement, scales, display obligations, calibration, and the true-peak tolerance. Claims are `OBS-T3341-*`. **Not read:** §2.10, §3, §4, Table 1 cases past 19. It defines the "EBU +9"/"EBU +18" scale names — which is evidence about **this document only** and never about a vendor UI that reuses the label. "EBU Mode" is a testable claim Spectre cannot yet make — `GAP-LOUDNESS-0008` |
+| EBU Tech 3342 (V4, 11/2023) | public standard — implementable specification | `SRC-EBU-TECH3342`, **`claims-extracted`**; Loudness Range (LRA) | §1–§4 read 2026-08-15 — 3 s sliding window, ≥10 Hz sampling, cascaded −70 LUFS absolute and **−20 LU** relative gates, and the 10th-to-95th-percentile definition. Claims are `OBS-T3342-*`. §5's MATLAB reference implementation was **deliberately not extracted**; any Spectre LRA code must derive from the §3.1 text. Its relative gate differs from BS.1770's −10 LU and must not share a code path — `OBS-XSTD-001` |
+| ITU-R BS.1771; Report ITU-R BS.2217 | public standard — **no ledger record yet** | cited by Tech 3341 (Requirement PLD-4, IIR ballistics) and by BS.1770-5 NOTE 2 (compliance test material) | open research need — `GAP-LOUDNESS-0011`. Note that the "BS.1771" name appearing as an Ozone meter-scale label refers to a standard this repository has **never read** |
+
+**The binding rule this table creates.** Vendor documentation is not evidence about a standard, and a standard is not evidence about a vendor. `GAP-OZONE-0001` records that the inspected Ozone 12 pages never name BS.1770 at all, and reading the standards changed nothing about that — the four records above describe what a conforming measurement *is*, and this repository still holds no evidence that any vendor implements any of it. Any Spectre loudness number without a body-level standards record is fabricated, regardless of how many vendor observations surround it; and any Spectre *conformance* claim additionally requires test evidence, which `GAP-LOUDNESS-0008` records does not exist here.
+
 ## Plugin formats and SDKs
 
 | Technology | Classification | Repository context | Required treatment |
@@ -108,12 +140,14 @@ Only VST3 is a compatibility target. Comparable native-device capability is not 
 | VCV Rack | draft research only | observation/inference/requirement/implementation mixed; vendor-derived limits unapproved |
 | Phase Plant | draft research only | “exhaustive” unsupported; public limits promoted directly into Spectre commitments |
 | Serum 2 | draft research only | no complete official guide in source set; extensive declared gaps; older Serum continuity unproved |
+| FabFilter | draft research, `in-review` | 199 records across 7 plug-ins; no point version anywhere; **no latency figure anywhere**; no time constants; most ranges absent outside Pro-Q 4; numerals not spot-verified against the vendor PDFs |
+| iZotope Ozone | draft research, `in-review` | 179 records across 22 areas; no guide revision date; latency almost never quantified; edition scoping unresolved; signal-flow diagrams unreadable; loudness-standard conformance unestablished |
 | FL Studio | not started | no dedicated dossier |
 | REAPER | not started | no dedicated dossier |
 | Logic Pro | not started | no dedicated dossier |
 | Cubase | not started | no dedicated dossier |
 
-No reference dossier is accepted for product planning yet.
+No reference dossier is accepted for product planning yet. FabFilter and Ozone are `in-review` rather than `blocked-source-gap` because, unlike Serum 2, complete official public documentation **is** exposed for both — their limits are vendor disclosure and reading depth, not access.
 
 ## Legal and original-design boundary
 
