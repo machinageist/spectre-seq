@@ -99,6 +99,50 @@ work is preserved under a quarantine banner and cited by nothing. Note the run a
 disclosed that roughly half the guide's chapters remain `unreviewed`, so even the
 favorable path is a partial coverage matrix, not a source-complete dossier.
 
+### D-R4 — What does R4's exit mean while the Linux row cannot close?
+
+**Raised:** 2026-08-21, by the R4-9 spec, which routed it rather than deciding it.
+**Blocks:** R4's exit, and nothing before it. All nine specs pass regardless.
+
+R4's exit evidence is a **ten-row conjunction** (`current-milestone.md`, "Exit evidence"),
+and the milestone's own inherited-debt section says at `:22`: *"R4 carries four obligations
+from earlier milestones. **None is optional** and none should be rediscovered later."*
+
+One row — "Linux device qualification runs, discharging decision 23's debt" — is closable only
+by running `cargo test -p spectre-audio --test lifecycle_health -- --ignored --nocapture` on a
+Linux host with a real ALSA device. **No Linux audio device has ever been opened in this
+project.** Decision 23 (`decision-gates.md:49`) authorizes no Linux support claim until it
+runs, and records itself as "working against decision 1".
+
+R4-9's own Linux column is blocked by a **strict superset** of that requirement: R4-3 needs one
+command on the host; R4-9's manual protocol needs an operator *at* that host with an audio
+interface — listening, unplugging it mid-playback, driving a screen reader.
+
+**Three dispositions. The spec deliberately takes none:**
+
+**(a) Strict conjunction.** R4 stays open until Linux hardware exists. Honest, and it means the
+milestone's completion is gated on a purchase rather than on engineering.
+
+**(b) A second scoped narrowing, in the shape of decision 23 itself.** Exit R4 on macOS
+evidence and defer Linux again. **This would make R4 the second consecutive milestone to defer
+decision 1's co-first-class commitment at the exact point where it could have been
+discharged.** If this is the choice, it should be a decision row that says so in those words —
+a pattern of deferral is a different thing from a one-time exception, and the second instance
+is where it becomes one.
+
+**(c) Split the exit.** Nine rows close; the milestone carries a named
+`R4-exit-pending-Linux` state until the tenth does. Keeps the conjunction honest without
+blocking everything behind hardware.
+
+**Until this is answered**, R4-9 §4.4 rule 7 and §5.6 item 2 hold the only line consistent with
+all three: **per-platform outcomes only, no aggregate word.** No document may say "R4 passed"
+unqualified.
+
+**Recommendation:** (c) if the hardware is genuinely coming, (a) if it is not, and (b) only with
+the second-deferral consequence written into the row. What should not happen is (b) by
+default — deferring twice without naming it is how a co-first-class commitment quietly becomes
+a single-platform product.
+
 ### D-R3 — An accepted architecture document asserts `Gain` smooths; the shipped `Gain` does not
 
 **Raised:** 2026-08-15, by the R4-2 spec and confirmed independently at blind verification.

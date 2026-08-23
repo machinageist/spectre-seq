@@ -18,51 +18,40 @@ Notes: Every agent updates this before stopping, including after failures
 - **Open decisions:** D-R1, D-R2, D-MM1–D-MM4 in `decisions-needed.md`
 - **Known gaps:** four specs are written and **none of the four has been verified**; that is the whole of the next action
 
-**Current state:** three spec-passes — R4-1 **2.950**, R4-2 **3.000**, R4-7 **3.000**.
-R4-3 and R4-4 are **spec-review, iteration 1, awaiting a verifier**. R4-5, R4-6, R4-8, R4-9
-unstarted.
+**Current state:** **Phase 1 is complete. All nine R4 features have passed their spec gate.**
+R4-1 (2.950), R4-2 (3.000), R4-3 (2.967), R4-4 (2.810), R4-5 (2.798), R4-6 (2.864), R4-7
+(3.000), R4-8 (2.848), R4-9 (2.845). Mean 2.898. **Zero escalated.** Full report in
+`summary.md`.
 
-> **Blocked on a usage cap until 23:10 America/Los_Angeles on 2026-08-15.** The cap has
-> fired three times today. Re-dispatch after the reset.
+**No implementation exists.** Every score grades a proposal. `./spectre` still produces no
+sound, and the state machine's implementation stages are untouched for all nine features.
 
 **Exact next action, in order:**
 
-1. **Dispatch two blind verifiers — R4-3 and R4-4 — at concurrency 2.** Both must be
-   **fresh agents**, and the reason is a conflict of interest that must not be papered over:
-   - **R4-3** — the session that would otherwise grade it *read the author's full findings
-     report* before the author was killed. That is knowledge of the author's reasoning, which
-     the blind-review rule exists to exclude.
-   - **R4-4** — the same session **briefed that author with a factually false claim** (that
-     `AppModel::add_track` does not exist; see below). The spec's most notable feature is
-     that it refused that claim in writing and was right. Grading a spec whose headline
-     virtue is catching your own error is not a blind review, and the bias runs toward
-     leniency.
+1. **Jeff answers D-R4** — and this is genuinely first, because it decides what finishing R4
+   even means. R4's exit is a ten-row conjunction whose own text at `current-milestone.md:22`
+   says "None is optional", and the Linux row is closable only on hardware that has never
+   existed here. The three dispositions are laid out in `decisions-needed.md`; the one to avoid
+   by default is (b), exiting on macOS evidence again, which would make R4 the **second
+   consecutive milestone** to defer decision 1's co-first-class commitment at the point it could
+   have been discharged.
+2. **Jeff answers D-R3** (blocks R4-2's implementation) **and R4-7's Q2** (blocks R4-7's
+   landing). Both are conflicts between accepted documents and shipped code; neither can be
+   resolved by an agent without asserting Jeff's decision for him.
+3. **Then implement, in dependency order, starting with R4-1** — it is what makes every later
+   slice observable. Each spec's must-fix-before-implementation items are tabulated in
+   `summary.md` §"What every passing spec still owes"; work them into the slice rather than
+   after it.
+4. **D-R2 still gates the Serum 2 corpus.** Nine specs respected the quarantine without being
+   asked to; R4-8 found the one convenient record and refused it.
+5. **D-MM1–D-MM4 gate the mixing/mastering loop**, which has not started and is blocked by
+   design on D-MM2 and D-MM3.
 
-   Each verifier gets: the spec, `criteria.md`, `templates/SCORECARD-TEMPLATE.md`, and the
-   repository. **No verifier may receive any part of its author's reasoning or report.**
-   - `specs/R4-3-linux-device-qualification.md` → `spec-scorecards/R4-3-linux-device-qualification-scorecard.md`
-   - `specs/R4-4-track-model.md` → `spec-scorecards/R4-4-track-model-scorecard.md`
-2. **Optionally re-verify R4-2 and R4-7's sampled sections.** Both passed at 3.000 on
-   exhaustive evidence-integrity checking plus **sampled** quality grading; each scorecard
-   marks which criteria rest on a sample and says a fuller read may correct it. Not a gate.
-3. **Remediate whatever fails**, max 3 rounds each, then escalate to `gap-reports/`. A fresh
-   verifier each round — never the author, never the previous verifier.
-4. **Then batch 3** — R4-5 (midi-clips), R4-6 (first-devices), R4-8 (offline-bounce) at
-   concurrency 3. **Then R4-9 last**, which depends on every other leaf.
-5. **D-R2, D-MM2, D-MM3 still need Jeff**; **D-R3 blocks R4-2's implementation**; **R4-7's
-   Q2 must be answered before R4-7 lands.**
-
-> **An accepted document was found wrong, and the finding matters more than the specs.**
-> `criteria.md`'s AF-2 illustration and `manifest.md`'s 2026-08-12 entry both stated that
-> `AppModel::add_track()` and a track list sidebar were invented by the discarded spec and
-> that "none exist." **Both exist**, and have since commit `6c397d9` — `add_track` at
-> `crates/spectre-app/src/lib.rs:405–422`, the sidebar at
-> `crates/spectre-app/src/main.rs:115–160`, with two covering tests at
-> `crates/spectre-app/tests/app_model.rs:33–49`. Only `Track::arm`/`Track::mute` were
-> genuinely invented, so the discarded spec's disposition stands on AF-5 and corrupted
-> encoding regardless. Both documents now carry the correction **in place**, deliberately
-> unedited-away, because an accepted document misstating the codebase inside the rule that
-> forbids exactly that is the best available argument for why AF-2 requires opening the file.
+**If a spec is remediated from here**, the standing rules learned the hard way: **edit body
+first, header last** (the reverse order once left a spec asserting a fix it had not applied),
+and **instruct every agent to write its artifact to disk before polishing** (this single
+instruction is the difference between a dispatch that loses everything to a usage cap and one
+that loses nothing).
 
 **The verifier's central obligation, restated because it is what this loop is for:** open
 every source path the spec cites and check the claim against the file. R4-1 failed its
