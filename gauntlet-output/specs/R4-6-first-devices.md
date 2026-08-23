@@ -47,7 +47,7 @@ Notes: The scope guard is the feature. Decision 15 makes these devices deliberat
 - **Downstream dependents:** R4-4 (track model — a track hosts these devices), R4-5 (MIDI clips — the clip drives `Filament`), R4-7 (save/reload — these descriptors are what a project persists), R4-8 (offline bounce — live/offline equivalence is asserted over a chain containing these devices), R4-9 (e2e fixture and manual QA protocol)
 - **Supersedes:** none. It does **not** supersede `ToneSource`, `PulseInstrument`, `Gain`, or `Saturator`; all four stay exactly as they are, because they are the fixture the existing hash, containment, and RT-001 evidence is built on
 - **Superseded by:** none
-- **Open decisions:** §8 Q1–Q9. Q1 routes the shared click-on-parameter-change question to Jeff and is logged against the already-open **D-R3** in `gauntlet-output/decisions-needed.md:102`; this spec states how `Filament` and `Gloam` behave and does **not** resolve D-R3 for `Gain` by assertion. Q3 (a new `DEV` requirements-ledger family) is a proposed change to an accepted document and is routed, not asserted
+- **Open decisions:** §8 Q1–Q9. Q1 routes the shared click-on-parameter-change question to Jeff and is logged against the already-open **D-R3** in `gauntlet-output/decisions-needed.md`, entry **D-R3**; this spec states how `Filament` and `Gloam` behave and does **not** resolve D-R3 for `Gain` by assertion. Q3 (a new `DEV` requirements-ledger family) is a proposed change to an accepted document and is routed, not asserted
 - **Known gaps:** (a) the corpus has no citable record about how any benchmark implements a small first-party device internally — `serum-2.md` is `blocked-source-gap` with exactly two behavioral records, and `logic-pro.md` is `draft` / `inventory-only` (`docs/02-reference-research/logic-pro.md:10–11`) with zero, so no Logic Pro claim appears anywhere below; (b) neither device is band-limited, and the corpus contains no anti-aliasing record for any benchmark, so §4.7 states the limitation rather than a target; (c) no listening evidence exists for either device because neither exists, so §1.3's success signal is deliberately a measurable one and not a taste claim
 
 This spec is subordinate to the conflict precedence in `docs/README.md:23–35`. Where it would
@@ -720,7 +720,7 @@ smoothing is owned by the device when discontinuities can click or destabilize p
 `:94` says *"Smoothing stays the device's concern. `Gain` already smooths."* **The shipped `Gain`
 does not smooth** — it is a single `f32` field (`crates/spectre-dsp/src/effect.rs:29–31`)
 multiplied directly per sample (`:62–71`), with no target, no coefficient, and no ramp. That
-contradiction is logged as **D-R3** (`gauntlet-output/decisions-needed.md:102`), it is open, and
+contradiction is logged as **D-R3** in `gauntlet-output/decisions-needed.md`, it is open, and
 **R4-6 does not resolve it.** What R4-6 states about its own two devices:
 
 - `Filament` has no per-parameter smoothing. Its **amplitude** contour is a user-controlled ramp
@@ -981,7 +981,7 @@ platform libm. R4-6 does not add one, for a reason that is structural rather tha
 test that links `spectre-offline` as an external consumer, so it cannot reach a private item.
 Making the helper `pub` solely so a test could call it would be a public API change this slice
 does not otherwise need. R4-8 already makes that fold public and declares exactly this vector and
-constant for it (`gauntlet-output/specs/R4-8-offline-bounce.md:953–966`); the pin belongs there,
+constant for it (`gauntlet-output/specs/R4-8-offline-bounce.md`, test `the_shared_fold_matches_its_checked_in_golden_vector`); the pin belongs there,
 with the public surface, and duplicating it here would create the second definition of one value
 that DEV-006 and DEV-012 exist to avoid.
 
@@ -1208,7 +1208,7 @@ gated on R4-2; Linux qualification is gated on R4-3 and decision 23.
 `docs/03-architecture/dsp-device-io.md:94` states *"`Gain` already smooths"* and `:104` describes
 `Gain` as *"stereo linear gain with click-resistant smoothing."* The shipped `Gain` has no
 smoothing state (`crates/spectre-dsp/src/effect.rs:29–31`). This is **D-R3**
-(`gauntlet-output/decisions-needed.md:102`), raised by R4-2 and confirmed at blind verification.
+(`gauntlet-output/decisions-needed.md`, entry **D-R3**), raised by R4-2 and confirmed at blind verification.
 It is open. R4-6 does not resolve it, does not add smoothing to `Gain`, and does not restate the
 document's claim as though it were true; §4.3 states what the two **new** devices do, and §8 Q1
 routes the shared question.
@@ -1279,7 +1279,7 @@ new error type, no allocation, no asset, and no UI beyond two list entries.
 |---|---|---|
 | **R4-2 runtime parameter seam** | Both devices must implement `AudioProcessor::set_parameter`, and that method does not exist. Without it both devices compile but every control is dead, which would be a fake surface (4F). **Hard blocker for the setters; not for the DSP.** | spec passed at 3.000; **zero lines implemented** |
 | **R4-1 live audio wiring** | Nothing in §3.2's primary flow or §5.4 is observable without it, because `./spectre` produces no sound. **Blocks audibility and the manual protocol; blocks none of §5.1–§5.3**, which run offline. | spec passed at 2.950; **zero lines implemented** |
-| D-R3 (`decisions-needed.md:102`) | Does not block. §4.3 states both devices' behavior without resolving it; §8 Q1 routes it. | open |
+| D-R3 (`decisions-needed.md`) | Does not block. §4.3 states both devices' behavior without resolving it; §8 Q1 routes it. | open |
 | §8 Q3 (the `DEV` ledger family) | Blocks the *record*, not the code. The bounds are defensible as written; where they live is Jeff's call. | proposed |
 | R4-4 track model, R4-5 MIDI clips | Do **not** block. Both devices are exercised through the existing plan and the existing note path; a track is where they will eventually live, not what makes them work. | downstream |
 
