@@ -166,6 +166,45 @@ this phase. Both left honest partial states — bodies edited, terminators intac
 reading the prior iteration — and both resumed cleanly. The rule was written after one incident
 where the reverse order left a spec asserting an unapplied fix; it has now paid for itself twice.
 
+## Re-verification phase — completed 2026-08-23
+
+**Every remediated spec was re-verified.** This closed a gap in the run's own method: an earlier
+report claimed "nine passed, mean 2.898" while four of the six remediated specs had never been
+graded after remediation.
+
+| Spec | Iter 1 | After re-verification |
+|---|---|---|
+| R4-4 | 2.810 | **2.964** |
+| R4-6 | 2.864 | **2.931** |
+| R4-5 | 2.798 | **2.914** |
+| R4-8 | 2.848 | **2.883 FAIL** → **2.967** |
+
+**R4-8's failure is the finding.** Its iteration 3 acquired two new defects while fixing three:
+a false absence census in §7.1 (the FNV constants exist at four sites in three files, not two),
+and an import list marking `AudioProcessor` as staying used when its only uses sit inside the
+function the slice deletes — so the scheduled edit would not compile under `-D warnings`, the
+gate the spec itself names. Remediation 3 fixed both, found two further instances of the same
+defect class unaided, and passed at 2.967.
+
+**The rule: a remediation is new content, and new content is ungraded content.** Treating
+remediation as strictly corrective is what allowed a failing state to be reported as passing.
+
+**A second pattern closed in this phase: do not cite a moving document by line.** Three specs
+arrived at it independently — R4-4 dropped every `manifest.md` line citation after finding one
+that quoted text appearing at no commit; R4-8 dropped a line-pinned superlative; R4-6 dropped
+five, four of which had come to point at the **wrong decision entirely** after D-R4 was inserted
+above D-R3 in `decisions-needed.md`. That insertion was made by this run, so a passing spec was
+invalidated by an edit to an accepted document elsewhere. Only the source tree is stable enough
+to pin by line.
+
+**And the failure mode recurred in the opposite direction, which is worth recording honestly.**
+Briefs in this phase told every agent that reviewers are fallible and that a finding believed
+wrong must be reported, not applied — advice five remediations acted on correctly. R4-8's third
+round then **inherited a false quantifier verbatim from its scorecard's prose** ("the same lane
+widths every existing test uses" — five of six; `bridge_plan.rs:169` deliberately differs) in
+the same round it caught two defects unaided. Checking a reviewer in some places and trusting it
+in others is how a false claim survives a process designed to catch exactly that.
+
 ## Recommended next steps
 
 1. **Answer D-R4 before anything else.** R4's exit is a ten-row conjunction whose own text says

@@ -46,25 +46,25 @@ an author never verifies its own artifact.
 | R4-3 | linux-device-qualification | **spec-pass** · **hardware-blocked** | `specs/R4-3-linux-device-qualification.md` | iter 1: `…-scorecard.md` (2.633 FAIL) · iter 2: `…-scorecard-iter2.md` (**2.967 PASS**) | **2.967** | 2 | 0 | passed on remediation 1; execution still needs a Linux box |
 | R4-4 | track-model | **spec-pass** (iter 2, re-verified) | `specs/R4-4-track-model.md` (1,817 lines) | iter 1: `…-scorecard.md` (2.810) · iter 2: `…-scorecard-iter2.md` (**2.964 PASS**) | **2.964** | 2 | 0 | remediation verified; 2.810 → 2.964 |
 | R4-5 | midi-clips | **spec-pass** (iter 2, re-verified) | `specs/R4-5-midi-clips.md` (1,599 lines) | iter 1: `…-scorecard.md` (2.798) · iter 2: `…-scorecard-iter2.md` (**2.914 PASS**) | **2.914** | 2 | 0 | remediation verified; 2.798 → 2.914 |
-| R4-6 | first-devices | spec-pass (iter 1) · **iter 2 unverified** | `specs/R4-6-first-devices.md` (1,396 lines) | `spec-scorecards/R4-6-first-devices-scorecard.md` (iter 1: 2.864) | **2.864** | 2 | 0 | remediation applied but **never re-verified** — verifier died before starting it |
+| R4-6 | first-devices | **spec-pass** (iter 2, re-verified) | `specs/R4-6-first-devices.md` | iter 1: `…-scorecard.md` (2.864) · iter 2: `…-scorecard-iter2.md` (**2.931 PASS**) | **2.931** | 2 | 0 | remediation verified; 2.864 → 2.931 |
 | R4-7 | project-persistence | **spec-pass** | `specs/R4-7-project-persistence.md` (1,452 lines) | `spec-scorecards/R4-7-project-persistence-scorecard.md` | **3.000** | 1 | 0 | passed at iteration 1; **Q2 (CORE-003's verified status) needs Jeff before it lands** |
-| R4-8 | offline-bounce | **spec-remediation-2** (iter 3 **FAILED**) | `specs/R4-8-offline-bounce.md` (2,200 lines) | iter 1: `…-scorecard.md` (2.848 PASS) · iter 3: `…-scorecard-iter3.md` (**2.883 FAIL, feasibility rule**) | **2.883 FAIL** | 3→4 | 0 | remediation 3 owed: false FNV census, uncompilable import list |
+| R4-8 | offline-bounce | **spec-pass** (iter 4, re-verified) | `specs/R4-8-offline-bounce.md` (2,436 lines) | iter 1: 2.848 · iter 3: **2.883 FAIL** · iter 4: `…-scorecard-iter4.md` (**2.967 PASS**) | **2.967** | 4 | 0 | recovered from the run's only remediation-induced failure |
 | R4-9 | e2e-and-qa | **spec-pass** | `specs/R4-9-e2e-and-qa.md` (1,404 lines) | `spec-scorecards/R4-9-e2e-and-qa-scorecard.md` | **2.845** | 1 | 0 | passed at iteration 1; raised **D-R4** on R4's exit conjunction |
 
-**Eight of nine hold a passing verdict at their current iteration.** R4-1 (2.950), R4-2
-(3.000), R4-3 (2.967), R4-4 (**2.964**, re-verified), R4-5 (**2.914**, re-verified), R4-6
-(2.864 at iter 1 — **iter 2 never verified**), R4-7 (3.000), R4-9 (2.845).
+**All nine features hold a verified passing verdict at their current iteration.** R4-2 and R4-7
+(3.000), R4-3 and R4-8 (2.967), R4-4 (2.964), R4-1 (2.950), R4-6 (2.931), R4-5 (2.914), R4-9
+(2.845). Mean **2.947**. Zero escalated.
 
-**R4-8 does not.** Its iteration 3 was re-verified and **FAILED at 2.883** on the feasibility
-rule; remediation 3 is owed. Zero escalated.
+**That mean is not the result; the path to it is.** Six of the nine needed at least one
+remediation round, and **every remediated spec was re-verified** — which is what the earlier
+"nine passed at 2.898" claim had skipped. Re-verification moved four scores up (R4-4 2.810 →
+2.964, R4-6 2.864 → 2.931, R4-5 2.798 → 2.914, R4-8 2.848 → 2.967 via a failure) and turned one
+pass into a **FAIL**: R4-8's iteration 3 had acquired two new defects while fixing three,
+including an import list that would not compile under the gate the spec itself names.
 
-**Re-verifying remediated specs was owed and it changed the picture.** Three of the four
-remediated specs were re-verified: R4-4 rose 2.810 → 2.964, R4-5 rose 2.798 → 2.914, and R4-8
-turned out to have acquired two new defects during remediation — a false absence census in §7.1
-and an import list that would not compile under the gate the spec itself names. **A remediation
-is new content, and new content is ungraded content.** R4-6's iteration 2 remains unverified
-because the verifier was killed before reaching it; the manifest says so rather than inheriting
-its iteration-1 pass.
+**The rule this run establishes: a remediation is new content, and new content is ungraded
+content.** Treating remediation as strictly corrective is what let a failing state be reported
+as a passing one.
 
 Mean composite across the eight: **2.892**. Every one of the eight carries at least one
 must-fix-before-implementation item, so a spec pass here means "the proposal is sound and
