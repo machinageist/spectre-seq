@@ -197,7 +197,7 @@ Notes: The load-bearing finding is that RT-003 containment silences a whole rend
   hash.rs extraction, which is what lets "bit-exact" rest on evidence rather than inspection.
   (m) Scorecard P2 and P3 items, all six applied. P2-1: Sec 7.1's heading says lib.rs is 334
   lines, not 335 (wc -l = 334). P2-2: Sec 5.2 test 15 uses control_channel(&[], 64, 8), the
-  width every existing test in bridge_plan.rs uses, with the reason stated — fixture_events
+  width five of the six existing tests in bridge_plan.rs use (`:169` deliberately widens the note lane to 256 to overrun a scratch of 4), with the reason stated — fixture_events
   returns [NoteEvent; 2] (lib.rs:178), so at most one event crosses the lane before any one
   block and the 1024 was an unexplained 16x widening. P3-1: Sec 7.2's exhaustiveness
   paragraph now names FNV_OFFSET_BASIS/FNV_PRIME (moved algorithm constants) and GOLDEN_HASH
@@ -1663,7 +1663,7 @@ files agreeing. The events are the same `fixture_events` both sides already use
 
 15. **`a_multi_block_bounce_matches_the_live_path_block_for_block`** — the core test.
     Setup: `fixture::compile_fixture_plan(256)` for the live side; `control_channel(&[], 64, 8)`,
-    the same lane widths every existing test in `bridge_plan.rs` uses — `fixture_events`
+    the same lane widths five of the six existing tests in `bridge_plan.rs` use — `:169` is the deliberate exception, widening the note lane to 256 to overrun a scratch of 4 — — `fixture_events`
     returns exactly two events — its return type is `[NoteEvent; 2]`
     (`crates/spectre-offline/src/lib.rs:178`) — so at most one
     crosses the note lane before any one block, and a wider lane would be an unexplained
