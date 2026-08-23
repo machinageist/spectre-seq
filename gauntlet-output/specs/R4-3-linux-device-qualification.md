@@ -6,6 +6,18 @@ Notes: Execution is hardware-blocked; authoring is not. This spec changes no Rus
   counts as a pass, what is an observation rather than a threshold, what a refusal or a failure
   records, and what claim a PASS does and does not authorize. No Linux support claim is asserted
   anywhere in this document. As of 2026-08-15 no Linux audio device has ever been opened.
+  Iteration 2 (remediation 1) corrects three defects found in blind review, each re-verified
+  against source: (1) the six deterministic tests do not all run against `NullBackend` — four do,
+  and the two at `lifecycle_health.rs:207` and `:226` construct no backend and drive
+  `RenderBridge::render` directly; §7.1 and §5.3 said otherwise. (2) `QUAL-002`'s constant was
+  90 while its own derivation yields ⌊93.75⌋ − 4 = 89; corrected to 89 in all four places so the
+  constant and the generalized formula agree. (3) The compiled plan's 256-frame capacity was
+  unaccounted for: `RenderBridge::render` refuses any block wider than `plan.max_frames()` into
+  silence without incrementing `blocks_rendered` (`bridge.rs:166–173`), so a granted buffer above
+  256 frames — the same ALSA risk §4.6 already flags — produces `blocks=0` on a live driver.
+  §4.2, §4.6, §3.6 (new E-9), §5.1 T-7, §5.6, and §8 Q1/Q2 now carry that path. Iteration 2 also
+  corrects the drill's assertion count (§4.3), the note-scratch figure (§4.7), §7.2 item 6's
+  premise, and adds the unmeasured `denormals_flushed` limitation to §5.6. No claim was widened.
 -->
 
 # Spec: Linux Device Qualification
@@ -14,7 +26,7 @@ Notes: Execution is hardware-blocked; authoring is not. This spec changes no Rus
 **Parent feature:** `R4` Credible Alpha (root)
 **Spec author agent:** gauntlet spec agent, R4-3 leaf
 **Date:** 2026-08-15
-**Iteration:** 1
+**Iteration:** 2 (remediation 1)
 
 - **Status:** proposed
 - **Last verified:** 2026-08-15 (every source path below opened at branch `rename/geist-to-spectre`, commit `2e005e5`)
@@ -25,7 +37,7 @@ Notes: Execution is hardware-blocked; authoring is not. This spec changes no Rus
 - **Supersedes:** none
 - **Superseded by:** none
 - **Open decisions:** §8 Q1–Q10
-- **Known gaps:** (a) **execution is hardware-blocked** — no Linux host with a real ALSA device is available to this spec, so the protocol is authorable and reviewable but not runnable, see §7.4; (b) the accepted research corpus contains **no citable observation** about how any benchmark product qualifies an audio device, states its own driver-conformance criteria, or records a device test result — recorded as a research need in §Appendix A and §8 Q8, not filled in from recollection; (c) the existing macOS row's block count is arithmetically inconsistent with the geometry the drill requests and the record cannot resolve why (§4.6, §8 Q1).
+- **Known gaps:** (a) **execution is hardware-blocked** — no Linux host with a real ALSA device is available to this spec, so the protocol is authorable and reviewable but not runnable, see §7.4; (b) the accepted research corpus contains **no citable observation** about how any benchmark product qualifies an audio device, states its own driver-conformance criteria, or records a device test result — recorded as a research need in §Appendix A and §8 Q8, not filled in from recollection; (c) the existing macOS row's block count is arithmetically inconsistent with the geometry the drill requests and the record cannot resolve why (§4.6, §8 Q1); (d) **`blocks=0` is ambiguous in the record** — a granted buffer wider than the plan's 256-frame capacity is refused into silence without incrementing `blocks_rendered` (`crates/spectre-audio/src/bridge.rs:166–173`), and the counter that would distinguish that from a dead driver, `frame_capacity_rejections` (`bridge.rs:73`), is not printed by the drill, so this protocol can record the ambiguity but cannot resolve it (§3.6 E-9, §5.1 T-7, §5.6 item 10, §8 Q2)
 
 This spec is subordinate to the conflict precedence in `docs/README.md`. It proposes a
 protocol and a record format. It does not amend an accepted requirement, decision row, or
@@ -189,6 +201,14 @@ branch is easy to miss.
 **Branch D — the run completes and every pass condition is met.** Outcome word `PASS`, and
 only then does §5.5's authorization clause take effect.
 
+**Branch E — the stream opens and runs cleanly but `blocks=0`.** libtest fails at
+`lifecycle_health.rs:289–292` with "the driver must have called back", and that message is
+only half the story: the same result is produced when every callback arrived and every one
+was refused for exceeding the plan's 256-frame capacity (`bridge.rs:166–173`). Outcome word
+`INCONCLUSIVE`, **not** `FAIL`, because the record cannot say which happened (§3.6 E-9,
+§5.1 T-7, §5.5). Branch E is listed separately from Branch C precisely because a failing
+libtest verdict is not automatically a `FAIL` row.
+
 **Cues.** N/A — there is no haptic, sound, or animation surface. The drill is deliberately
 **not** an audibility test (§4.4); the operator must not treat hearing nothing as a
 failure, or hearing something as a pass.
@@ -277,6 +297,7 @@ animation here would be inventing a surface.
 | E-6 | Run completes, `plan_errors > 0` or `contaminated_nodes > 0` | libtest failure from `lifecycle_health.rs:293` / `:294` | Record as `FAIL`. Under RT-003 this would mean non-finite output reached containment on this platform, which is a defect, not an environment quirk | None |
 | E-7 | Run completes, libtest `ok`, but `xruns > 0` or blocks below the §4.5 floor | **No automated signal at all** — these are printed, not asserted (§4.3) | The operator applies §5.5. Record `FAIL` for xruns, `INCONCLUSIVE` for a short run | **This is the highest-risk error state in the feature**, because the tooling reports success |
 | E-8 | Driver signalled stream errors during the run | **Not observable.** cpal's error callback increments an atomic (`cpal_backend.rs:138–141`) exposed only as `CpalStream::error_count` (`cpal_backend.rs:163–168`), which is inherent to the concrete type and absent from the `AudioStream` trait (`lib.rs:181–196`); the drill holds `Box<dyn AudioStream>` (`lib.rs:210–215`), so the counter is structurally unreachable from it | None available today. Recorded as a named limitation in §4.4 and routed to §8 Q3 | None, but the record must state that stream errors were **not** checked |
+| E-9 | The driver granted a buffer wider than the plan's 256-frame capacity, so every callback was refused | **Indistinguishable from a dead driver.** `RenderBridge::render` fills silence, increments `frame_capacity_rejections`, and returns without incrementing `blocks_rendered` (`bridge.rs:166–173`), so the transcript prints `blocks=0` and the T-7 assertion at `lifecycle_health.rs:289–292` fails with "the driver must have called back" — which is not what happened. The disambiguating counter `frame_capacity_rejections` (`bridge.rs:73`) exists but **is not printed by the drill** (`:281–288` prints five counters and not this one) | Do not record `blocks=0` as a bare driver failure. Record `INCONCLUSIVE`, and state in E10 that the transcript cannot separate the two causes. Because the granted geometry is also unrecorded (§4.2, field E8), no in-repository evidence can settle it today; any host-side corroboration the operator can obtain about the device's actual period size is recorded in E8 with the exact command used, and is explicitly labelled as host evidence rather than drill evidence. §8 Q2 and Q3 are the changes that would close this properly, by printing `frame_capacity_rejections` or the granted geometry | None — but the record must **not** claim the driver never called back (§5.1 T-7, §5.6 item 10) |
 
 ### 3.7 Accessibility
 
@@ -358,6 +379,28 @@ them:
   `cpal_backend.rs:147`. Field E8 records "granted: not recorded by the drill" because
   that is the truth (§8 Q2).
 
+**The compiled plan's frame capacity, and why the record has to care.** The drill compiles
+its plan at `FRAMES = 256` (`lifecycle_health.rs:23`, passed to `fixture(FRAMES)` at `:259`
+and through to `graph.compile(saturator, frames, …)` at `:54–55`), which fixes
+`CompiledPlan::max_frames` (`crates/spectre-graph/src/lib.rs:441`) at 256 for the whole run.
+`RenderBridge::render` refuses any block outside that capacity **before doing any work**: if
+`frames == 0 || frames > self.plan.max_frames()` it fills the block with silence, increments
+`frame_capacity_rejections`, and returns — **without incrementing `blocks_rendered` and
+without publishing headroom** (`crates/spectre-audio/src/bridge.rs:166–173`). This is
+correct, deliberate, fail-closed behavior; `traceability.md:50` records it as tested
+("oversized blocks refused into exact silence") and `:51` records the RT-001 guard covering
+that exact refusal path. Its consequence for **this** protocol is that a driver granting a
+buffer wider than 256 frames produces `blocks=0` on a perfectly healthy device — the same
+observable a dead driver produces. §4.6 ties this to the granted-geometry risk, §3.6 E-9
+gives it an error state, and §5.6 records that the drill cannot currently tell the two
+apart. GRAPH-001 is not affected: no per-block recompilation is proposed, and the plan stays
+immutable.
+
+**RT-002 disposition.** No new control↔render traffic is introduced. The drill builds its
+control channel at `lifecycle_health.rs:260` and never sends through it (§4.4 rule 3), so no
+lane, no overflow policy, and no reclamation path changes; this spec adds nothing that
+crosses the boundary in either direction.
+
 No migrations. No schema versioning: the milestone table is prose-owned, and the durable
 protocol document carries the metadata block `docs/README.md:64–66` requires.
 
@@ -368,19 +411,26 @@ contract** between what the tooling asserts and what qualification requires — 
 not the same set. This is the most important table in the spec.
 
 `hardware_lifecycle_drill` (`crates/spectre-audio/tests/lifecycle_health.rs:245–295`)
-contains exactly five assertions and two `println!`s:
+fails on ten conditions in total — **four `assert*!` macros** (`:253`, `:289`, `:293`,
+`:294`) and **six `.expect` panics** (`:252`, `:256`, `:271`, `:275`, `:277`, `:279`) — and
+emits **two `println!`s** (`:257`, `:281`). The `.expect` calls are pass conditions as
+surely as the macros are; the distinction that matters for qualification is not macro versus
+panic but **checked versus merely printed**, which is what the table's third column records:
 
 | Printed / asserted value | Source line | Asserted by the drill? | Role in qualification |
 |---|---|---|---|
 | `devices` non-empty | `lifecycle_health.rs:253` | **Yes** — `assert!(!devices.is_empty(), …)` | Precondition. Failure ⇒ `INCONCLUSIVE` |
+| enumeration and default-device lookup succeed | `lifecycle_health.rs:252`, `:256` via `.expect` | **Yes** | Precondition ⇒ `INCONCLUSIVE` (§3.6 E-2, E-3) |
 | `backend=` / `device=` | `lifecycle_health.rs:257` (print) | No | **Recorded**, fields E6 and table column 3 |
-| `blocks=` (`blocks_rendered`) | printed `:283`; asserted `> 0` at `:289–292` | **Yes, but only `> 0`** | Threshold, and the drill's threshold is far too weak — §4.5 raises it in the protocol |
+| `open_output` succeeds at the requested geometry | `lifecycle_health.rs:265–271` via `.expect("opening the default device must succeed")` | **Yes** | Threshold — this is T-3, and its failure is the `REFUSED` branch (§3.2 B, §3.6 E-4) |
+| `blocks=` (`blocks_rendered`) | printed `:283`; asserted `> 0` at `:289–292` | **Yes, but only `> 0`** | Threshold, and the drill's threshold is far too weak — §4.5 raises it in the protocol. It is also **ambiguous when it fails**: `blocks=0` means either a silent driver or a granted buffer wider than the plan's capacity (§3.6 E-9, §5.1 T-7) |
 | `xruns=` | printed `:284` | **No** | **Threshold in the protocol, unasserted in the drill.** §4.5 |
 | `worst_headroom=` | printed `:285` | **No** | **Observation only. No threshold.** §4.5 |
 | `plan_errors=` | printed `:286`; asserted `== 0` at `:293` | **Yes** | Threshold, already enforced |
 | `contaminated=` | printed `:287`; asserted `== 0` at `:294` | **Yes** | Threshold, already enforced (RT-003) |
 | `start()` / `stop()` / `close()` succeed | `lifecycle_health.rs:275`, `:277`, `:279` via `.expect` | **Yes** | Threshold — this is the lifecycle claim itself |
 | cpal stream-error count | not printed, not reachable (§3.6 E-8) | No | **Not measured.** Must be stated as unmeasured in E10 |
+| `frame_capacity_rejections` | measured but **not printed** — accessor at `bridge.rs:73`, incremented at `bridge.rs:169–171`, absent from the drill's `println!` at `:281–288` | No | **Measured and discarded.** This is the counter that would disambiguate a `blocks=0` result (§3.6 E-9); unlike the stream-error count it is fully reachable, so §8 Q2 proposes printing it |
 
 **The consequence, stated plainly:** a Linux run can print `xruns=41` and libtest will
 report `ok`. `cargo test` exiting 0 is a **necessary but not sufficient** condition for
@@ -401,7 +451,7 @@ Recorded in field E4 if relevant.
 **Who owns the state.** The qualification record is owned by
 `docs/06-plans/current-milestone.md`, whose decision authority is Jeff. No runtime state
 container is introduced: `BridgeTelemetry` already owns the counters
-(`bridge.rs:24–38`, constructed at `:46–54`) and the drill already holds the
+(`bridge.rs:24–38`, constructed at `:45–57`, all eleven fields) and the drill already holds the
 `Arc<BridgeTelemetry>` handle it obtains at `lifecycle_health.rs:261–262` via
 `RenderBridge::telemetry()` (`bridge.rs:152`).
 
@@ -435,7 +485,7 @@ the environment record rather than kept only in scrollback.
    (`source.rs:202–206`). The headroom the drill reports therefore describes a chain
    rendering silence, not a chain rendering a voice. The macOS row's 0.990 carries the same
    caveat and the record does not currently say so. The Linux environment record must say
-   so (§4.6 "What the run does not prove", item 5).
+   so (§5.6 "What a PASS authorizes, and what it does not", item 5).
 
 ### 4.5 Dependencies
 
@@ -461,16 +511,18 @@ row 16, standing rule; PROD-003 at `requirements-ledger.md:64`). These are propo
 ledger rows in a new `QUAL` family and are scheduled in §7.2. The family name itself is
 routed to §8 Q6.
 
-- **`QUAL-002` — a qualifying run MUST deliver at least 90 driver callbacks.**
+- **`QUAL-002` — a qualifying run MUST deliver at least 89 driver callbacks.**
   *Rationale, derived entirely from Spectre's own constants.* The drill runs two
   start/sleep/stop cycles of 250 ms each (`lifecycle_health.rs:274–278`), so 500 ms of
   nominal running time. The requested geometry is 48 000 Hz and 256 frames
   (`lifecycle_health.rs:22–23`, `:264`), giving a block period of
-  256 / 48 000 = 5.333 ms and predicting 500 / 5.333 ≈ 93.75 callbacks. The drill's
+  256 / 48 000 = 5.333 ms and predicting 500 / 5.333 ≈ 93.75 callbacks. Only whole callbacks
+  are counted, so the prediction floors to 93 — the 94th block does not fit inside the
+  window. The drill's
   structure admits exactly four transition points at which a partial block can be lost —
-  two `start()` and two `stop()` calls — so the floor is the prediction less four blocks:
-  ⌊93.75⌋ − 4 = **90**. Nothing here is borrowed from a reference product; it is arithmetic
-  over this repository's own values.
+  two `start()` and two `stop()` calls — so the floor is the floored prediction less four
+  blocks: ⌊93.75⌋ − 4 = 93 − 4 = **89**. Nothing here is borrowed from a reference product;
+  it is arithmetic over this repository's own values.
   *Why the drill's own `> 0` is insufficient:* one callback satisfies `blocks_rendered > 0`
   (`lifecycle_health.rs:289–292`), and "0 xruns over 1 callback" is not a claim about
   anything. The only honest content of "0 xruns over N callbacks" is "no xrun was observed
@@ -478,8 +530,25 @@ routed to §8 Q6.
   and must be large enough that the observation is not trivially satisfiable.
   *If the granted geometry differs from the requested geometry,* the floor is recomputed as
   ⌊0.5 s × granted_rate ÷ granted_frames⌋ − 4 and both the recomputation and its inputs are
-  written into E8. A run below the floor is `INCONCLUSIVE`, not `FAIL`: a short run failed
-  to gather evidence rather than gathering adverse evidence.
+  written into E8. The generalized form and the constant agree at the requested geometry:
+  ⌊0.5 × 48 000 ÷ 256⌋ − 4 = ⌊93.75⌋ − 4 = 89. A run below the floor is `INCONCLUSIVE`, not
+  `FAIL`: a short run failed to gather evidence rather than gathering adverse evidence.
+  *What the four-block allowance does and does not model.* It models partial-block truncation
+  at the four transitions and nothing else. **Stream start latency is not bounded by the
+  drill's structure** — the drill sleeps 250 ms from the moment `start()` returns
+  (`lifecycle_health.rs:275–276`), not from the moment the driver issues its first callback,
+  and how long ALSA takes to fill and hand over the first period is a property of the host,
+  not of this repository. A healthy run can therefore land a few blocks under 89 for a reason
+  that is not a defect. This spec does **not** widen the margin to absorb that, because any
+  wider number would be a guess rather than arithmetic over Spectre's own constants and
+  PROD-003 (`requirements-ledger.md:64`) forbids an unrationalized bound. Instead the rule is
+  procedural and belongs in the `QUAL-002` row: **a run that falls short of the floor is
+  re-run once, unmodified, before the row is written**, and if the second run also falls
+  short both attempts are recorded (§4.4 rule 2) and the outcome is `INCONCLUSIVE`. No
+  numeric tolerance band is invented for this, because inventing one would be the exact
+  unrationalized bound PROD-003 prohibits; a repeat is cheap (~1 s, §4.7) and is evidence
+  rather than a guess. `blocks = 0` is a different finding entirely and is handled by §3.6
+  E-9, not by this re-run rule.
 
 - **`QUAL-003` — a qualifying run MUST report `xruns == 0`.**
   *Rationale.* An xrun is not a tunable tolerance in Spectre; it is a definition. The
@@ -556,6 +625,24 @@ a blocked run:
   at `lifecycle_health.rs:271`. Outcome `REFUSED`, E10 verbatim. **That is a genuine
   finding about cpal-on-ALSA and is worth more than a green row**, because it would tell
   R4-1 that the seam needs a fallback before the alpha can produce sound on Linux.
+  **The quieter half of this risk is the one to watch for.** A hard refusal is loud and
+  self-documenting. The dangerous case is a driver or sound server that *accepts*
+  `BufferSize::Fixed(256)` and then delivers callbacks at some other, wider period — cpal's
+  `BufferSize::Fixed` is a request to the host API, and nothing in `cpal_backend.rs`
+  re-reads what was granted (`AudioStream::config()` returns the stored request,
+  `cpal_backend.rs:147`; §4.2). Every such callback is then wider than the plan's 256-frame
+  capacity and `RenderBridge::render` refuses it into silence without counting it
+  (`bridge.rs:166–173`), so the run opens cleanly, starts and stops cleanly, closes cleanly,
+  and prints `blocks=0 xruns=0 worst_headroom=inf plan_errors=0 contaminated=0` —
+  `worst_headroom` reads `inf` because that is the value `BridgeTelemetry::default` starts it
+  at (`bridge.rs:55–56`) and `publish_headroom` was never reached. **`worst_headroom=inf`
+  is the tell that no block was ever rendered** — it does not by itself distinguish this
+  cause from a dead driver, but it does mark the three surrounding zeroes as untouched
+  defaults rather than measurements, which is the reading error this transcript invites. The
+  run must be recorded
+  `INCONCLUSIVE` per §3.6 E-9 and §5.1 T-7, never `FAIL` and never `PASS`. This is the
+  concrete case that makes field E8 load-bearing rather than bureaucratic, and it is the
+  strongest argument in this spec for §8 Q2.
 - **The device may default to 44 100 Hz.** The drill requests 48 000 explicitly
   (`lifecycle_health.rs:264`), which `StreamConfig::stereo` validates against
   `MIN_SAMPLE_RATE`/`MAX_SAMPLE_RATE` = 8 000 / 768 000 (`lib.rs:25–26`, `:76–87`) and then
@@ -567,12 +654,22 @@ a blocked run:
 protocol has to handle it.** The macOS row records 173 blocks
 (`docs/06-plans/current-milestone.md:113`) for the same drill, whose running window is
 500 ms (`lifecycle_health.rs:274–278`) at a requested 256 frames / 48 000 Hz
-(`:22–23`, `:264`). 500 ms at 256 frames predicts ≈ 94 callbacks; 173 is ≈ 1.85× that, and
+(`:22–23`, `:264`). 500 ms at 256 frames predicts 93.75 callbacks, i.e. 93 whole ones; 173
+is ≈ 1.85× that, and
 is closer to what a 128-frame granted buffer would predict (≈ 188). The record contains no
 field that can resolve this, because nothing in the seam reports the granted geometry
-(§4.2). This spec does **not** assert an explanation. It draws two consequences: (a) field
+(§4.2). This spec does **not** assert an explanation. It draws three consequences: (a) field
 E8 exists and must be filled as completely as the host allows; (b) `QUAL-002`'s floor is
-defined as recomputable from granted geometry rather than fixed at 90. Routed to §8 Q1.
+defined as recomputable from granted geometry rather than fixed at 89; (c) **granted-geometry
+drift is not symmetric, and the protocol has to treat the two directions differently.**
+`RenderBridge::render` refuses only blocks *wider* than the plan's 256-frame capacity
+(`bridge.rs:166–173`); a *narrower* granted buffer passes the check and renders normally,
+just more often. So a grant below 256 frames inflates the block count and is otherwise
+invisible — which is exactly the shape of the unexplained macOS row — while a grant above
+256 frames drives the count to zero and produces §3.6 E-9. A block count meaningfully **above**
+the prediction is therefore evidence about the granted geometry, not a bonus, and E8 must
+record it as such rather than letting a comfortably-over-floor number pass unremarked.
+Routed to §8 Q1.
 
 **CI.** `.github/workflows/ci.yml` runs a single `ubuntu-latest` job (`:23`) whose own
 header comment already states it is "a deliberate minimum, not a platform coverage claim"
@@ -596,12 +693,30 @@ only flag in play is `cpal-backend`, covered in §4.5.
 ### 4.7 Performance budget
 
 - **Memory:** no change. This spec adds no code and no allocation. The drill's own
-  footprint is unchanged and is dominated by the plan's channel pool and the bridge's
-  256-event note scratch (`bridge.rs:19`), neither of which this spec touches.
+  footprint is unchanged and is dominated by the plan's channel pool, compiled at
+  `FRAMES = 256` (§4.2), and by the bridge's note scratch — which for this drill is **64
+  events, not the 256-event default**: the drill passes `64` as `RenderBridge::new`'s
+  `note_scratch` argument (`lifecycle_health.rs:261`, against the signature at
+  `bridge.rs:133–139`), so `DEFAULT_NOTE_SCRATCH = 256` (`bridge.rs:20`) is never reached
+  here. The scratch is allocated once at `bridge.rs:144` and never grows. Neither figure is
+  touched by this spec.
 - **CPU / render time:** no change to the render path. The measurement the drill takes is
   already implemented: `publish_headroom` computes `1.0 − spent/budget` and stores it in an
   atomic (`bridge.rs:211–231`), using `Instant::now` which the milestone record documents
   as callback-safe via the vDSO/commpage (`docs/06-plans/current-milestone.md:67`).
+- **RT-001 coverage of the path the drill exercises.** The callback path this drill drives is
+  already guarded, and this spec adds nothing to it. RT-001's evidence row names `rt_guard.rs`
+  as the RT-section allocator guard "attributing violations to the exact call, with a positive
+  control proving the guard fires; zero violations across bridge render, frame-capacity and
+  empty-block refusals, control drain, retire, and the plan driven through a real backend
+  callback" (`docs/01-requirements/traceability.md:51`). Note that the guard already covers the
+  frame-capacity refusal branch §4.2 and §3.6 E-9 describe, so that branch is realtime-safe as
+  well as fail-closed — the problem this spec raises about it is one of *legibility in the
+  record*, not of callback discipline. The same row's state is "implemented for the
+  offline-driven callback path; a live driver is still unqualified" — and this spec does
+  **not** close that: `rt_guard.rs` is a separate test that the hardware drill does not run,
+  so no drill result on any platform is evidence about the guard under a live driver (§7.2
+  item 6).
 - **Operator wall-clock cost:** roughly 1 s of drill run time (two 250 ms sleeps plus
   enumeration and open), plus the workspace gate (§5.2), plus the environment record. The
   gate dominates.
@@ -655,7 +770,7 @@ listed with the exact line that would fail:
 | T-4 | `start()` succeeds, twice | `:275` | the lifecycle claim fails ⇒ `FAIL` |
 | T-5 | `stop()` succeeds, twice | `:277` | the lifecycle claim fails ⇒ `FAIL` |
 | T-6 | `close()` succeeds | `:279` | device release fails ⇒ `FAIL` |
-| T-7 | `blocks_rendered > 0` | `:289–292` | the driver never called back ⇒ `FAIL` |
+| T-7 | `blocks_rendered > 0` | `:289–292` | **Two causes, and the transcript cannot separate them.** Either the driver never called back, **or** every callback arrived and every one was refused for frame capacity — `RenderBridge::render` refuses a block wider than the plan's 256 frames into silence and returns without incrementing `blocks_rendered` (`bridge.rs:166–173`, §3.6 E-9). The assertion's own message ("the driver must have called back") states only the first. ⇒ `INCONCLUSIVE`, not `FAIL`, until the two are separated; §4.6 gives the geometry reason the second is the more likely of the two on ALSA |
 | T-8 | `plan_errors == 0` | `:293` | a block failed to render ⇒ `FAIL` |
 | T-9 | `contaminated_nodes == 0` | `:294` | non-finite output was contained on this platform ⇒ `FAIL` (RT-003) |
 
@@ -665,7 +780,7 @@ protocol makes, and each would be invisible to `cargo test`:
 | # | Condition | Source of the value | Outcome if unmet |
 |---|---|---|---|
 | T-10 | `xruns == 0` (`QUAL-003`) | printed at `:284` | `FAIL` |
-| T-11 | `blocks ≥ 90`, or ≥ the geometry-adjusted floor (`QUAL-002`) | printed at `:283` | `INCONCLUSIVE` |
+| T-11 | `blocks ≥ 89`, or ≥ the geometry-adjusted floor (`QUAL-002`) | printed at `:283` | `INCONCLUSIVE`, after the one unmodified re-run §4.5 requires |
 | T-12 | environment fields E1–E10 all populated (`QUAL-001`) | host commands, §3.3 | `INCONCLUSIVE` — an unreproducible run is not evidence |
 | T-13 | the transcript reports exactly `1 passed` for the ignored filter, not `0 passed` | libtest summary line | `INCONCLUSIVE` — the feature was off (§4.5) |
 
@@ -700,10 +815,17 @@ the same Linux host, immediately before the drill:
 cargo test -p spectre-audio --test lifecycle_health
 ```
 
-This runs the six non-ignored tests (`lifecycle_health.rs:68`, `:108`, `:133`, `:165`,
-`:207`, `:226`) against `NullBackend`, proving the lifecycle state machine, sample-rate
-reopen, device-loss reporting, off-thread headroom publication, xrun counting, and
-containment telemetry on this host with no hardware involved. Recording both results
+This runs the six non-ignored tests in two harness shapes, neither of which touches
+hardware. **Four run against `NullBackend`** — `lifecycle_health.rs:68`, `:108`, `:133`,
+`:165` each construct one at their first body line (`:70`, `:110`, `:135`, `:167`) — proving the
+lifecycle state machine, sample-rate reopen, device-loss reporting, and off-thread headroom
+publication. **Two construct no backend at all** — `an_overrunning_block_is_counted_as_an_xrun`
+(`:207`) and `containment_counters_reach_the_app_thread_through_telemetry` (`:226`) build
+`fixture(FRAMES)`, a `control_channel`, and a `RenderBridge`, then call
+`bridge.render(&mut RenderBlock::new(&mut interleaved, CHANNELS))` directly (`:216–217`,
+`:233–234`) — proving xrun counting and containment telemetry against the bridge itself
+with no backend in the path. The six behaviors are unchanged by this distinction, and so is
+the conclusion below; only the harness differs. Recording both results
 separates "the state machine is sound on this host" from "the driver behaves" — which is
 precisely the distinction the file's own header comment draws
 (`lifecycle_health.rs:4–7`). This command runs today on any host, Linux included.
@@ -722,7 +844,11 @@ precisely the distinction the file's own header comment draws
   2. The libtest summary reports `1 passed`, not `0 passed` (T-13).
   3. Every numeric cell in the row appears verbatim in the transcript.
   4. The row's outcome word matches §5.5's evaluation, independently of libtest's verdict.
-  5. **Do not** use audibility as a check — the drill renders silence by construction
+  5. If `blocks=0`, check whether `worst_headroom` reads `inf`. That is the telemetry's
+     initial value (`bridge.rs:55–56`) and means no block was ever rendered, so the three
+     accompanying zeroes are untouched defaults rather than measurements. Apply §3.6 E-9 and
+     record `INCONCLUSIVE`; do not record a `FAIL` against the driver (§3.2 branch E).
+  6. **Do not** use audibility as a check — the drill renders silence by construction
      (§4.4 rule 3).
 
 ### 5.5 Outcome evaluation rules
@@ -733,9 +859,20 @@ deliverable and the outcome vocabulary has nowhere else to live.)*
 | Outcome | Definition | Effect on decision 23 |
 |---|---|---|
 | `PASS` | T-1…T-9 pass **and** T-10…T-13 hold | Decision 23's debt is discharged for the recorded configuration only, subject to §5.6 |
-| `FAIL` | T-4…T-9 or T-10 not met | Debt **not** discharged. The row is written and kept; the finding is a defect to route |
+| `FAIL` | T-4, T-5, T-6, T-8, T-9, or T-10 not met | Debt **not** discharged. The row is written and kept; the finding is a defect to route |
 | `REFUSED` | T-3 not met — the driver declined the requested geometry | Debt **not** discharged. The row is written and kept; this is a finding about the seam, not about the host (§4.6) |
-| `INCONCLUSIVE` | T-1, T-2, T-11, T-12, or T-13 not met | Debt **not** discharged. Nothing adverse was learned about the backend either |
+| `INCONCLUSIVE` | T-1, T-2, T-7, T-11, T-12, or T-13 not met | Debt **not** discharged. Nothing adverse was learned about the backend either |
+
+**T-7 is the one row whose outcome word moved in iteration 2**, and the reason is worth
+stating: `blocks_rendered == 0` was previously read as `FAIL` on the assertion's own wording
+("the driver must have called back"). It has two causes — a silent driver, or a granted
+buffer wider than the plan's 256-frame capacity refusing every block (`bridge.rs:166–173`,
+§3.6 E-9) — and the drill prints nothing that separates them. `FAIL` would assert the first
+cause on evidence that supports either, which is the exact shape of claim this protocol
+exists to prevent. `INCONCLUSIVE` is the honest word until §8 Q2 or Q3 makes the two
+distinguishable. Note that this outcome word is reached **despite** libtest reporting a
+failure, which is the mirror image of the §4.3 trap: the tooling's verdict is not the
+protocol's verdict in either direction.
 
 ### 5.6 What a PASS authorizes, and what it does not
 
@@ -771,6 +908,23 @@ A `PASS` authorizes exactly one sentence, of this shape and no broader:
 9. **Anything about `./spectre`.** The drill runs from a test binary. `./spectre` does not
    use `spectre-audio` (`docs/status/STATUS.md` repository state) and R4-1 is the slice that
    changes that.
+10. **That the driver's callbacks fit the plan's frame capacity — nor, if they did not, that
+    this would be visible.** The plan is compiled at 256 frames (§4.2) and
+    `RenderBridge::render` refuses a wider block into silence without counting it as a
+    rendered block (`bridge.rs:166–173`). A `PASS` with `blocks ≥ 89` does establish that at
+    least that many blocks were *within* capacity, so a `PASS` is not in doubt here. What the
+    record cannot do is interpret the failing case: `blocks=0` is produced identically by a
+    dead driver and by a driver whose every callback was too wide, because
+    `frame_capacity_rejections` (`bridge.rs:73`) is not among the five counters the drill
+    prints (`lifecycle_health.rs:281–288`). §3.6 E-9 and §5.1 T-7 carry this; §8 Q2 and Q3
+    would close it.
+11. **Anything about denormal flushing on the platform.** RT-003 has two halves and the drill
+    exercises only one: it asserts `contaminated_nodes == 0` (`lifecycle_health.rs:294`) but
+    never reads `denormals_flushed` (`bridge.rs:93`), which is not printed either. The
+    deterministic half checks it against the bridge on the same host
+    (`lifecycle_health.rs:238`), so the state machine's behavior is covered — but the
+    hardware row establishes nothing about denormal handling under a live driver, and the
+    fixture renders silence in any case (§4.4 rule 3), so no denormal is generated to flush.
 
 ---
 
@@ -848,8 +1002,11 @@ Every statement below was checked by opening the file.
 
 **Implemented.**
 
-- `crates/spectre-audio/tests/lifecycle_health.rs` exists, 295 lines. Six deterministic
-  tests run against `NullBackend` at `:68`, `:108`, `:133`, `:165`, `:207`, `:226`. Its
+- `crates/spectre-audio/tests/lifecycle_health.rs` exists, 295 lines. It holds six
+  deterministic tests at `:68`, `:108`, `:133`, `:165`, `:207`, `:226`, in **two** harness
+  shapes: the first four construct a `NullBackend` (`:70`, `:110`, `:135`, `:167`) and drive
+  it; the last two construct **no backend at all** and call `RenderBridge::render` directly
+  on a stack `RenderBlock` (`:216–217`, `:233–234`). Its
   header comment (`:1–7`) states the drill "must be run explicitly on macOS and on Linux;
   until it has, the exit row stays open and is documented as open."
 - `hardware_lifecycle_drill` exists at `:248`, guarded by three attributes at `:245–247`:
@@ -931,9 +1088,11 @@ Every statement below was checked by opening the file.
      *Acceptance evidence:* a complete row plus environment record in the milestone
      qualification table. *Rationale:* an unreproducible run is an anecdote; decision 1's
      co-first-class commitment requires evidence a second person could re-derive.
-   - `QUAL-002` — a qualifying run MUST deliver at least **90** driver callbacks at the
+   - `QUAL-002` — a qualifying run MUST deliver at least **89** driver callbacks at the
      drill's requested geometry, or at least ⌊0.5 s × granted_rate ÷ granted_frames⌋ − 4 if
-     the granted geometry differs. *Rationale as derived in §4.5*, from
+     the granted geometry differs; the two agree at the requested geometry
+     (⌊93.75⌋ − 4 = 89). A run short of the floor is re-run once, unmodified, before the row
+     is written. *Rationale as derived in §4.5*, from
      `lifecycle_health.rs:22–23`, `:264`, `:274–278` — this repository's own constants, not
      a vendor figure.
    - `QUAL-003` — a qualifying run MUST report `xruns == 0`. *Rationale as derived in §4.5*,
@@ -953,10 +1112,19 @@ Every statement below was checked by opening the file.
    On a non-`PASS` outcome the gap line stays and gains the new finding.
 5. **`docs/status/NEXT.md`** — slice 3 (`:25`) closes on `PASS`, or gains its outcome and a
    restated next action otherwise. The `Open decisions` line at `:18` is updated in step.
-6. **`docs/01-requirements/traceability.md`** — RT-001/RT-002/RT-003 evidence gains the
-   platform qualifier, so that "guards hold under a real driver" reads as "under a real
-   CoreAudio driver, and under a real ALSA driver as of {date}" rather than as an unqualified
-   claim.
+6. **`docs/01-requirements/traceability.md`** — a narrower edit than iteration 1 described.
+   The document **already** carries the platform qualifier in both places: `:19` reads
+   "RT-001..003 hold under a live macOS driver as of 2026-08-09. Linux device qualification
+   has never run and is decision-23 debt carried to R4; no Linux support is claimed", and the
+   "Device lifecycle drill" row at `:44` already ends "Linux device qualification has not
+   run." Nothing here is unqualified and nothing needs correcting. The edit is **additive**:
+   record the ALSA result alongside the CoreAudio one in the `:44` evidence cell, update that
+   row's state (`partial — macOS qualified, Linux device outstanding`) to match the outcome,
+   and amend the `:19` known-gaps line only if the run was a `PASS`. On any non-`PASS`
+   outcome `:19` stays as written and gains the finding. **RT-001's row at `:51` is not
+   edited by this spec**: its state ("implemented for the offline-driven callback path; a
+   live driver is still unqualified") is about `rt_guard.rs`, which the hardware drill does
+   not run, so a Linux drill result is not evidence about it in either direction.
 
 **Migrations / schema changes:** none.
 
@@ -1020,18 +1188,35 @@ backend than after.
 ## 8. Open Questions
 
 - **Q1 — Why does the macOS row record 173 blocks?** §4.6 shows 500 ms of running at the
-  requested 256 frames / 48 000 Hz predicts ≈ 94, and 173 is closer to a 128-frame granted
+  requested 256 frames / 48 000 Hz predicts 93.75, and 173 is closer to a 128-frame granted
   buffer (≈ 188). The record cannot resolve it. Options: (a) accept the discrepancy and let
   `QUAL-002`'s geometry-adjusted floor absorb it; (b) re-run macOS with a drill that prints
   the granted geometry, which then also requires the Linux run to use that drill. Does Jeff
   want this resolved before the Linux row is written, or after? — blocks §4.5's floor
   interpretation, §4.6, field E8.
+  **One structural fact narrows the answer** (§4.6, consequence (c)): a granted buffer
+  *narrower* than 256 frames renders normally and merely raises the count, while one *wider*
+  than 256 is refused into silence by `bridge.rs:166–173` and drives the count to zero. 173
+  blocks is therefore consistent with a narrower CoreAudio grant and is **not** evidence of a
+  defect — but the same unrecorded quantity, drifting the other way on ALSA, is §3.6 E-9. The
+  cost of leaving Q1 unresolved is not the macOS row; it is that the Linux row inherits an
+  ambiguity that can look like a dead driver.
 - **Q2 — Should the drill print the granted geometry?** Nothing in the seam exposes it:
   `AudioStream::config()` (`lib.rs:194–195`) returns the requested `StreamConfig` that
   `CpalStream` stored at `cpal_backend.rs:147`. Reporting the granted values would need a
   new seam method and a cpal query, which is a real change to an accepted trait — a decision
   row, not a spec assertion. It would also invalidate macOS/Linux comparability until macOS
-  is re-run (§4.1). — blocks §4.2, §5.6 item 3.
+  is re-run (§4.1). **Iteration 2 raises the stakes on this question.** The granted geometry
+  is not merely a descriptive field: because the plan is compiled at 256 frames and
+  `RenderBridge::render` refuses anything wider (`bridge.rs:166–173`, §4.2), the granted
+  buffer size determines whether the run produces data at all, and its absence is what makes
+  §3.6 E-9 indistinguishable from a dead driver. A cheaper partial answer exists and may be
+  worth taking first: **print `frame_capacity_rejections` (`bridge.rs:73`) alongside the five
+  counters already printed at `lifecycle_health.rs:281–288`.** That needs no seam change and
+  no cpal query — the accessor is public and the telemetry handle is already in hand at
+  `:262` — and it separates the two causes of `blocks=0` completely, though it still does not
+  report the granted numbers. It is still a drill modification, so §4.1's macOS re-run
+  constraint still applies to it. — blocks §4.2, §3.6 E-9, §5.1 T-7, §5.6 items 3 and 10.
 - **Q3 — Should the drill assert `xruns == 0` and read the cpal error counter?** Both are
   currently operator-evaluated or invisible (§4.3, §3.6 E-8). Making them assertions would
   convert T-10 and the error-count blind spot into automated gates, at the cost of modifying
@@ -1111,9 +1296,10 @@ backend than after.
   — it is internal engineering practice, not user-facing documented behavior, and the
   corpus is built from manuals and support articles. Recorded as a research need (§8 Q8),
   not filled in from recollection.
-- **Logic Pro.** Its dossier is `inventory-only` with **zero** behavioral records
-  (`gauntlet-output/criteria.md` evidence inventory). No Logic Pro claim appears anywhere in
-  this spec, on this surface or any other.
+- **Logic Pro.** Its dossier is `draft` / `inventory-only` with **zero** behavioral records,
+  sourced to the primary document itself
+  (`docs/02-reference-research/logic-pro.md:10–11`) rather than to the grading document's
+  inventory. No Logic Pro claim appears anywhere in this spec, on this surface or any other.
 - **ALSA/PipeWire behavior under cpal.** This is not a benchmark-corpus question at all; it
   is exactly what the run would establish, and §4.6 states both risks as unknown rather than
   predicted.

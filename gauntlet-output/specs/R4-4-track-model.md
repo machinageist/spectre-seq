@@ -8,6 +8,47 @@ Notes: The feature is unstarted. What exists today is a UI-only TrackView whose 
   genuinely new architectural fact is that today's graph refuses two connections into one input bus,
   so a track-to-master path is impossible without an explicit summing device. ./spectre makes no
   sound today and R4-1 is spec'd but not implemented.
+
+  Iteration 2 (remediation 1) against the blind scorecard, all changes re-verified against source.
+  P1-1: the `grep -rn track crates` transcript in §1.2 and §7.1 did not reproduce — it returns five
+  files, not four. Transcript corrected to name crates/spectre-project/src/lib.rs:162,170 and to
+  explain them (the fictitious JSON key future_track_kind in the serde unknown-field test at :157).
+  The conclusion is unchanged and unhedged: no track concept exists outside crates/spectre-app/.
+  The fifth file confirms it.
+  P1-2: the R4-2/R4-7 status line rested on manifest.md:45,50 and on "neither has a spec file".
+  Rewritten to rest on the durable fact — neither has an implementation — evidenced from the
+  codebase (bridge.rs:181-186 still discards drained parameters; ProjectDoc at lib.rs:29-38 carries
+  no track). Manifest line citations dropped, with the reason stated: that file is rewritten
+  whenever any sibling advances, so a line pin into it survives nothing.
+  Found and fixed unflagged, same class: the R4-1 bullet quoted manifest.md:19 and cited :44 for a
+  2.950 pass. Neither reproduces — at commit 2e005e5 that row read FAIL (AF-2) at 2.750 — and the
+  quoted known-gaps sentence matches no version. Rewritten onto engine.rs's absence and
+  spectre-app's missing spectre-audio dependency; pins dropped. No manifest.md line citation
+  remains anywhere in the spec.
+  P2: solo republication made binding in §3.2, §4.3, §4.4 and asserted in §5.1 test 16 — a solo
+  edit publishes one value per track in the list, not a single value, because effective_gain reads
+  any_soloed(). The RT-002 lane is one preallocated slot per target (control.rs:205-213) so N
+  publications cannot
+  overflow, and the one-block partial-apply window is stated rather than glossed. §3.2 step 4 now
+  states transport position and state survive the engine rebuild, normatively, from
+  transport.rs:86,87,96.
+  P3 applied: CommandKind/ProjectCommand/Transaction lose their Eq derives (command.rs:30,36,71);
+  §5.1 test 12 uses containment.rs's own clean PoisonSource so ToneSource is not imported into a
+  file that lacks it; PROD-002 non-foreclosure named on the track fader; the differentiation claim
+  stated in §1.2 against Appendix A's matching gap.
+  P3 line-citation fixes, each re-opened: MAX_FLAT_INPUTS :16 -> :15 (two sites; FLAT_OUTPUTS is
+  :16 and was already right); PULSE_PARAMETERS source.rs:38-45 -> 39-46; devices.rs 12-15 -> 12-14,
+  186-210 -> 186-209, 251-272 -> 251-271; plan_alloc.rs 22-39 -> 22-37; OBS-AB12-MIX-003 §18.3 ->
+  §18.1 (§18.3 is MIX-004); the cratests/ typo in §7.2.
+  Two scorecard pointers were themselves wrong and were not copied: Transaction's Eq derive is
+  command.rs:71, not :70 (:70 is the comment above it), and PROD-001's non-foreclosure sentence
+  lives in Appendix A, not §4.4, so the new PROD-002 sentence cites Appendix A. Separately, a wrong
+  internal cross-reference in §4.1 was fixed: the plan_alloc extension is §5.1 test 14, not 12.
+  §7.1's paragraph refusing criteria.md's false add_track claim is preserved verbatim, byte for
+  byte, and confirmed so by diff against HEAD. The correction that both criteria.md and manifest.md
+  have since absorbed is recorded in a separate appended note rather than by editing the refusal.
+  No numeric bound added, no default binding, device list, gesture budget, or workflow archetype
+  introduced.
 -->
 
 # Spec: Track Model
@@ -16,10 +57,10 @@ Notes: The feature is unstarted. What exists today is a UI-only TrackView whose 
 **Parent feature:** `R4` Credible Alpha (root)
 **Spec author agent:** gauntlet spec agent, R4-4 leaf
 **Date:** 2026-08-15
-**Iteration:** 1
+**Iteration:** 2 (remediation 1)
 
 - **Status:** proposed
-- **Last verified:** 2026-08-15 (source read at commit `2e005e5`, branch `rename/geist-to-spectre`)
+- **Last verified:** 2026-08-15 (source read at commit `2e005e5`, branch `rename/geist-to-spectre`); every citation touched or added at iteration 2 was re-opened against the working tree on 2026-08-23, and all five `grep` transcripts the spec presents as evidence were re-executed and reproduce as written
 - **Scope:** an ordered track model with stable identity, and a compiled signal path from every track through an explicit summing bus into a master output — model, routing, compilation, and the app surfaces that read them
 - **Decision authority:** Jeff
 - **Upstream sources:** `docs/00-product/vision.md`, `docs/01-requirements/requirements-ledger.md` (CORE-001, CORE-002, GRAPH-001, GRAPH-002, RT-001/002/003, PROD-001, PROD-003), `docs/01-requirements/decision-gates.md` (rows 1, 4, 6, 8, 13, 15, 16, 17, 21, 22, 23), `docs/03-architecture/dsp-device-io.md`, `docs/06-plans/current-milestone.md`, `docs/06-plans/rebuild-roadmap.md`, `docs/status/NEXT.md` slice 4
@@ -52,8 +93,15 @@ compiles precisely three nodes — `PulseInstrument → Gain → Saturator` — 
 chain is the only thing the compiled plan has ever executed. There is no place to put a
 second instrument, no bus that two sources can reach, and no concept anywhere in
 `spectre-core`, `spectre-dsp`, `spectre-graph`, `spectre-project`, `spectre-audio`, or
-`spectre-offline` called a track (verified: `grep -rn track crates --include='*.rs'`
-returns hits only in `crates/spectre-app/`).
+`spectre-offline` called a track. Verified: `grep -rn track crates --include='*.rs'`
+returns hits in **five** files — `crates/spectre-app/`'s `src/lib.rs`, `src/main.rs`,
+`tests/app_model.rs`, and `tests/smoke_cli.rs`, plus `crates/spectre-project/src/lib.rs:162`
+and `:170`. Those last two are the same fictitious JSON key, `future_track_kind`, injected
+by the in-file serde test `unknown_fields_survive_rewrite`
+(`crates/spectre-project/src/lib.rs:157`) to prove that unknown fields survive a rewrite —
+a name chosen precisely because the schema does not define it. **No track concept exists
+outside `crates/spectre-app/`**, and the fifth file confirms that rather than qualifying
+it: the only place `spectre-project` says "track" is in a string it treats as unknown.
 
 What exists in the app is a **presentation row**. `TrackView`
 (`crates/spectre-app/src/lib.rs:37–45`) carries `muted`, `solo`, `armed`, and `level`
@@ -72,7 +120,20 @@ The architectural obstacle is concrete and is the reason this slice is not trivi
 `compile` rejects any included input bus that is *not* fed with `GraphError::MissingInput`
 (`lib.rs:227–240`). Two tracks therefore cannot both reach one destination today, at any
 price. A track-to-master path requires an explicit summing node, and that node needs more
-stereo input buses than `MAX_FLAT_INPUTS = 4` (`lib.rs:16`) permits — two.
+stereo input buses than `MAX_FLAT_INPUTS = 4` (`lib.rs:15`) permits — two.
+
+**What this makes Spectre do differently.** One rule falls out of the slice, and it is a
+rule the accepted research corpus records for no product in the benchmark set: **mixer
+state travels; structure does not** (§4.4). A level, mute, or solo edit reaches the plan
+the engine is running; a change to the *set* or *order* of tracks does not, and for as
+long as the model and the running plan disagree the transport bar states it and the app
+declines to imply the edit is audible (§3.6 E5, §6.3, and the state-word rule that a
+silenced track must name its actual cause). Appendix A records the matching gap: no
+benchmark record in the corpus describes what a DAW does when a structural edit lands
+while audio is running. So this is not a pattern being copied and it is not a parity
+claim — it is a choice, and the choice is that a control never implies an audible result
+the engine has not produced. That is the alpha bar's "honest telemetry, no fake surfaces"
+(`docs/00-product/vision.md:48`) applied to the mixer rather than to a label.
 
 ### 1.3 Success signal
 
@@ -156,12 +217,32 @@ compensation, meters").
 4. The user activates `Rebuild engine`. The app rebuilds the editable graph from the
    model, compiles it, stops the stream, installs the new bridge, and restarts. There is
    an audible gap across the restart, and the copy says so.
+   **Transport position and transport state are preserved across the rebuild, and that is
+   normative rather than incidental.** The playhead is app-side model state — `Transport`
+   on `AppModel` (`crates/spectre-app/src/lib.rs:206`) — and nothing in a rebuild writes
+   it: `TransportCommand::Stop` sets `state` only and leaves `position` untouched
+   (`crates/spectre-core/src/transport.rs:86`), and `position` moves only on `Seek` (`:87`)
+   or `advance` (`:96`). The rebuild must therefore leave `position` where it was and leave
+   `state` as it found it, resuming playback on the new stream if the transport was
+   playing. Selection and lens are untouched for the same reason: neither is engine state.
+   The **only** discontinuity a rebuild is permitted to cause is the gap in the audio
+   itself. An implementation that returns the playhead to zero, or that leaves the
+   transport stopped after rebuilding while playing, is a defect against this sentence and
+   not a permitted variation — it would break §2's audition story, which asks for exactly
+   this: mute or audition "without losing my selection, my lens, or the transport
+   position".
 5. On the next block the new track's instrument is in the plan, summed with the others
    into the master.
 
 **Flow — mute, solo, level.** These are **not** structural. Setting a track's level,
-mute, or solo publishes the track's effective linear gain (§4.3) on the RT-002
-latest-wins parameter lane; the plan is not rebuilt and the stream is not touched. Until
+mute, or solo publishes effective linear gain (§4.3) on the RT-002 latest-wins parameter
+lane; the plan is not rebuilt and the stream is not touched. **A level or mute edit
+publishes one target; a solo edit publishes one per track.** `effective_gain` folds the
+whole solo set into every track's gain, so any change to solo — setting it, clearing it,
+or adding or removing a soloed track — changes the effective gain of *every other* track,
+and all of them must be republished as part of that one edit. An implementation that
+publishes only the edited track ships a solo that silences nothing. §4.3 states the
+return contract that makes this checkable, and §5.1 test 16 asserts the count. Until
 R4-2 lands decision 22's runtime parameter seam, the bridge counts the change as
 `parameters_pending` (`crates/spectre-audio/src/bridge.rs:181–186`) and it takes effect at
 the next engine build. **This spec does not claim mute is audible in R4-4.** The UI
@@ -169,7 +250,8 @@ therefore shows the same "applies at next rebuild" reason R4-1 specified for Sha
 and the reason disappears when R4-2 ships.
 
 **Flow — solo.** Solo is additive: any number of tracks may be soloed at once. While at
-least one track is soloed, every non-soloed track's effective gain is zero. The sidebar
+least one track is soloed, every non-soloed track's effective gain is zero — which is
+exactly why one solo toggle republishes N gains and not one (above). The sidebar
 shows soloed tracks as `SOLO` and silenced-by-solo tracks as `silenced by solo` — a
 distinct state from `muted`, because conflating them is the confusion story in §2.
 
@@ -231,6 +313,25 @@ driven by `Track::level()` normalized through `GAIN_PARAMETERS[0].to_normalized`
 `"Master route"` literal at `main.rs:474` is replaced by the destination read from the
 model. **No meters.** Peak/RMS metering is `OBS-AB12-MIX-001` behavior and is R6; a bar
 driven by a fader position is a fader position and is labeled as one.
+
+**The fader and PROD-002.** R4-4 introduces the first parameter surface a track owns, so
+it carries PROD-002's non-foreclosure obligation the same way Appendix A carries
+PROD-001's.
+PROD-002 reads: "Automated parameters MUST expose distinct visible states for automated /
+manually-overridden, with an explicit restore action"
+(`docs/01-requirements/requirements-ledger.md:63`, acceptance evidence "UI-model tests at
+R9"), and `gauntlet-output/criteria.md` 2C states the same obligation as keeping base value,
+automation, and modulation contribution distinct.
+R4-4 ships **none** of that and claims none of it: there is no automation until R9
+(`docs/06-plans/rebuild-roadmap.md:34`) and no modulation source exists to contribute, so
+the level a track reports is its base value and nothing else — which is why the slider is a
+plain descriptor-ranged slider and not a composite display. The obligation this slice does
+carry is negative and is met by construction: `Track::level()` is a single stored base
+value that no other subsystem writes, and `effective_gain` composes mute and solo *outside*
+it (§4.3) rather than folding them back into the stored number, so a later automation or
+modulation layer can be added as further composition without redefining what `level()`
+means or migrating the persisted value. No restore action is specified here, because
+there is nothing yet to restore to.
 
 ### 3.4 Input & gestures
 
@@ -353,10 +454,10 @@ may allocate, and none of it is reachable from `RenderBridge::render`
 
 `SumBus::process` is covered by the RT-001 guard that already exists:
 `crates/spectre-graph/tests/plan_alloc.rs` installs a counting global allocator
-(`plan_alloc.rs:22–39`) and asserts `CompiledPlan::process` allocates nothing
+(`plan_alloc.rs:22–37`) and asserts `CompiledPlan::process` allocates nothing
 (`plan_alloc.rs:45`); because a `SumBus` node is an ordinary plan step, extending that
 test's fixture to include one puts the new device under the existing guard rather than a
-new one (§5.1 test 12). `crates/spectre-audio/tests/rt_guard.rs` covers the same plan
+new one (§5.1 test 14). `crates/spectre-audio/tests/rt_guard.rs` covers the same plan
 through a real backend callback. Note the structural lock scan in that file reads
 `src/bridge.rs`, `src/control.rs`, `src/spsc.rs`, and `src/null.rs` — **it does not scan
 `spectre-dsp` or `spectre-graph` at all**, so it says nothing about `SumBus` and this spec
@@ -414,7 +515,7 @@ impl Track {
     pub fn id(&self) -> ObjectId;
     pub fn name(&self) -> &str;
     pub fn instrument(&self) -> TrackInstrument;
-    // Instrument level, clamped by PULSE_PARAMETERS[0] (crates/spectre-dsp/src/source.rs:38-45)
+    // Instrument level, clamped by PULSE_PARAMETERS[0] (crates/spectre-dsp/src/source.rs:39-46)
     pub fn instrument_level(&self) -> f32;
     // Track fader position, clamped by GAIN_PARAMETERS[0] (crates/spectre-dsp/src/effect.rs:19-20)
     pub fn level(&self) -> f32;
@@ -680,6 +781,43 @@ descriptor's default. Note the consequence for the existing UI: the inspector sl
 current `0.0..=1.0` hard-coding (`crates/spectre-app/src/main.rs:181`) is replaced by the
 descriptor's range, so the slider stops contradicting the DSP (`dsp-device-io.md:60`).
 
+**The publication set is part of the contract, not an implementation detail.** Read the
+formula again: `effective_gain` depends on `any_soloed()` as well as on the track's own
+fields, so **one solo edit changes the value for every track in the list.** The app-side
+mix setters therefore return the set they invalidated, and the caller publishes one
+latest-wins parameter message per returned id:
+
+- `AppModel::set_track_level(id, level)` and `set_track_muted(id, muted)` return exactly
+  one `ObjectId` — the edited track's.
+- `AppModel::set_track_soloed(id, soloed)` returns **one id per track in `TrackList`, in
+  list order**, whether or not any other track is soloed. Both directions matter: turning
+  a solo on silences every other track, and clearing the last solo restores every other
+  track. Returning only the edited id in either direction produces a solo that silences
+  nothing; §5.1 test 16 is the assertion that catches it.
+- `AppModel::set_master_level(level)` returns an empty track set; it publishes the master
+  gain's own target instead.
+
+Publishing N values at once cannot overflow anything, and that is a property of the
+accepted transport rather than an assumption: the RT-002 parameter lane is **not** a
+queue. `control_channel` allocates exactly one `ParameterSlot` per target — an
+`AtomicU32` value plus an `AtomicU32` version — at construction
+(`crates/spectre-audio/src/control.rs:205–213`), so N publications are N atomic stores
+into N distinct preallocated slots, with no capacity to exhaust. Latest-wins also makes
+the cost of over-publishing zero: a republished unchanged value is harmless, while a
+skipped publication is not. When in doubt, republish.
+
+One consequence is stated rather than glossed, because it is real and small: the N stores
+are not atomic *as a set*. `ParameterReader::drain` walks the slots and applies each one
+whose version changed since the last drain (`crates/spectre-audio/src/control.rs:125–139`),
+so a drain landing part-way through a solo publication applies some tracks' new gains this
+block and the rest on the next. Nothing is lost — the reader loads version before bits
+specifically so a racing write is delivered on the following drain rather than dropped
+(`control.rs:128`) — so the worst case is one block, on the order of a few milliseconds, in
+which a solo is partly applied. R4-4 accepts that rather than adding a fifth lane or a
+generation counter to avoid it, and claims no better. It is the same audible surface as the
+un-smoothed `Gain` step already routed to §8 Q6, and it becomes reachable at all only when
+R4-2 makes the lane apply values.
+
 **New — `crates/spectre-offline/src/lib.rs`, deterministic track rendering.**
 
 ```rust
@@ -757,7 +895,8 @@ They diverge the instant a structural edit lands, and the rule that keeps that h
 
 > **Mixer state travels; structure does not.** A change to a track's level, mute, solo, or
 > the master level publishes `effective_gain` on the parameter lane and never rebuilds the
-> plan. A change to the *set* or *order* of tracks, or to a track's instrument, advances
+> plan. A level or mute edit publishes one target; **a solo edit publishes every track's
+> `effective_gain`**, because solo is defined across the whole list (§4.3). A change to the *set* or *order* of tracks, or to a track's instrument, advances
 > `structure_revision`, and the app compares that revision against the one the engine was
 > built from on every frame. While they differ, the transport bar states it (§3.6 E5) and
 > **the app does not pretend the edit is audible**. A rebuild is an explicit user action.
@@ -990,8 +1129,8 @@ and §4.3.
 
 10. **`sum_bus_adds_its_buses_and_contains_non_finite_input`**
     Modeled on the existing `saturator_contains_non_finite_input_and_bounds_output`
-    (`devices.rs:251–272`). Setup: `SumBus::new(3)?`; three stereo input pairs built with
-    the file's existing `output(frames)` helper (`devices.rs:12–15`); one bus carrying
+    (`devices.rs:251–271`). Setup: `SumBus::new(3)?`; three stereo input pairs built with
+    the file's existing `output(frames)` helper (`devices.rs:12–14`); one bus carrying
     `f32::NAN`, one carrying `f32::INFINITY`, one carrying finite values. Assert every
     output sample equals the finite bus's value exactly (the poisoned buses contributed
     `0.0`) and that every output sample `is_finite()`. Then assert `SumBus::new(0)?`
@@ -999,7 +1138,7 @@ and §4.3.
     boundary containment on the new device, plus the bus-count bound.
 
 11. **`sum_bus_layout_matches_the_declared_bus_count`**
-    Extend the existing `device_layouts_match_the_v1_contract` (`devices.rs:186–210`):
+    Extend the existing `device_layouts_match_the_v1_contract` (`devices.rs:186–209`):
     for `buses` in `[0, 1, 2, MAX_SUM_BUSES]`, assert
     `SumBus::new(buses)?.io() == DeviceIo { class: DeviceClass::Effect, audio_inputs: buses * 2, audio_outputs: 2, accepts_notes: false }`.
     Edge case: an `io()` that disagrees with the constructor would be caught at compile by
@@ -1010,8 +1149,16 @@ and §4.3.
 
 12. **`a_contaminated_track_is_silenced_before_it_reaches_the_sum`**
     Reuses the file's existing test-only `PoisonSource` (`containment.rs:44`) and its
-    `Poison` helper (`containment.rs:31`). Build a two-bus graph: `PoisonSource` → bus 0,
-    a clean `ToneSource` → bus 1, both into a `SumBus::new(2)`, into a master `Gain`.
+    `Poison` helper (`containment.rs:31`) for **both** sources, which avoids adding an
+    import the file does not have. Build a two-bus graph:
+    `PoisonSource { poison: Poison::Nan }` → bus 0, and a clean
+    `PoisonSource { poison: Poison::Clean }` → bus 1, which writes a constant `0.5`
+    (`containment.rs:38`); both into a `SumBus::new(2)`, into a master `Gain`. Note the
+    reason for the clean-`PoisonSource` variant rather than a `ToneSource`:
+    `containment.rs`'s `use spectre_dsp::{…}` list is `AudioProcessor, DeviceClass,
+    DeviceIo, Gain, NoteEvent, ProcessContext, ProcessError, PulseInstrument, Waveform`
+    (`containment.rs:9–12`) and does **not** include `ToneSource`, so written this way the
+    test adds exactly one name to that list — `SumBus` — and nothing else.
     Render one quantum. Assert the master output equals the clean source's contribution
     exactly, that `plan.containment().contaminated_nodes` is `1`, and that
     `plan.containment().last_contaminated` names the poison node
@@ -1033,7 +1180,7 @@ and §4.3.
 
 14. **`plan_process_is_allocation_free`** (existing test, `plan_alloc.rs:45`) — its fixture
     is extended to a two-track graph ending in a `SumBus` and a master `Gain`, so the new
-    device runs inside the existing counting-allocator guard (`plan_alloc.rs:22–39`)
+    device runs inside the existing counting-allocator guard (`plan_alloc.rs:22–37`)
     rather than beside it. Assert allocation and deallocation counts are both zero across
     the steady-state quanta the test already drives. Edge case: RT-001 for `SumBus`. This
     test fails if `SumBus::process` ever grows a temporary `Vec`, which is the single most
@@ -1057,6 +1204,13 @@ and §4.3.
     and strictly increases after `add_track`, `reorder_track`, and `remove_track`. Edge
     case: the app-level projection of test 5 — this is what the transport bar's rebuild
     notice reads, so a wrong answer here is a visible lie.
+    **Second assertion, on the publication set (§4.3).** With three tracks in the list:
+    `set_track_level` and `set_track_muted` each return exactly one `ObjectId`, and it is
+    the edited track's; a single `set_track_soloed(id, true)` returns **three** ids in list
+    order; and the subsequent `set_track_soloed(id, false)` that clears the last solo also
+    returns three. Edge case: the singular-publication bug — an implementation that
+    republishes only the edited track passes every other test in this spec and ships a solo
+    that silences nothing. This assertion is the one that fails on it, in both directions.
 
 ### 5.2 Integration tests
 
@@ -1213,6 +1367,18 @@ genuinely absent is the thing the phrase "track model" means: any connection bet
 rows and the audio path. The partition below states each claim at the precision the source
 supports.
 
+**Added at iteration 2 — the two documents that carried that claim have since been
+corrected, and the paragraph above is left exactly as written rather than tidied.** The
+manifest's 2026-08-12 run-history entry now carries a dated `Corrected 2026-08-15` block
+naming `AppModel::add_track` and the sidebar as real and reducing the AF-2 finding to
+`Track::arm`/`Track::mute` alone; `gauntlet-output/criteria.md` carries the same correction
+inside its own AF-2 illustration, which had reproduced the error. Both corrections postdate
+this spec's pinned commit `2e005e5` and were made because the claim was checked against
+source instead of inherited. The refusal above therefore describes what was true when this
+spec was written and remains true now — only the documents around it changed. It is cited
+here by dated entry rather than by line number on purpose: both files are rewritten as the
+run advances, so a line citation into either would not survive its next edit.
+
 **Implemented — the app's track *presentation*, wired to nothing:**
 
 | Element | Path | What it actually is |
@@ -1245,7 +1411,7 @@ a progress bar (`main.rs:469–473`). None of them reaches `spectre-dsp`, `spect
 - **The three graph rules that make a summing device mandatory:** exactly one connection per
   input bus, `GraphError::InputBusOccupied` (`lib.rs:171–180`); every included input bus must
   be fed, `GraphError::MissingInput` (`lib.rs:227–240`); at most `MAX_FLAT_INPUTS = 4`
-  flattened input channels — two stereo buses — per node (`lib.rs:16, 138–143`).
+  flattened input channels — two stereo buses — per node (`lib.rs:15, 138–143`).
 - Four native devices: `ToneSource` and `PulseInstrument`
   (`crates/spectre-dsp/src/source.rs:14–25` for their layouts), `Gain` and `Saturator`
   (`crates/spectre-dsp/src/effect.rs:12–17`). `AudioProcessor: Send` at
@@ -1261,15 +1427,40 @@ a progress bar (`main.rs:469–473`). None of them reaches `spectre-dsp`, `spect
 
 **Planned — spec'd, not implemented:**
 
-- **R4-1 `live-audio-wiring`.** `gauntlet-output/specs/R4-1-live-audio-wiring.md` passed
-  blind review at 2.950 (`gauntlet-output/manifest.md:44`), and the manifest's own
-  known-gaps line records "R4-1 has passed its spec gate but **no implementation exists**"
-  (`manifest.md:19`). `crates/spectre-app/src/engine.rs` does not exist; the crate is two
-  files, `lib.rs` and `main.rs`. **`./spectre` produces no sound of any kind today**:
+- **R4-1 `live-audio-wiring`.** `gauntlet-output/specs/R4-1-live-audio-wiring.md` exists and
+  has passed blind review at 2.950 as of this remediation (2026-08-23); **no
+  implementation exists.** As with
+  R4-2 and R4-7 below, the implementation half is the operative fact and it is stated from
+  the codebase rather than from a manifest row: `crates/spectre-app/src/engine.rs` does not
+  exist — the crate is exactly two files, `lib.rs` and `main.rs` — and `crates/spectre-app`
+  declares no `spectre-audio` dependency, so nothing in the binary can open a device.
+  *(Corrected at iteration 2. Iteration 1 quoted `manifest.md:19` and cited `manifest.md:44`
+  for this. Neither citation reproduces: at this spec's pinned commit `2e005e5` that row
+  recorded R4-1 as **FAIL (AF-2)** at 2.750 awaiting remediation, and the known-gaps line
+  read something else again in both versions. The score above is true today and the absence
+  claims are true at every commit; the manifest pins are dropped rather than repaired,
+  because that file is rewritten whenever any sibling advances.)*
+  **`./spectre` produces no sound of any kind today**:
   `AppModel::toggle_play` (`lib.rs:268–275`) mutates an in-memory `Transport` and returns,
   and the transport bar prints the hard-coded string `ENGINE OFFLINE` (`main.rs:79`).
-- **R4-2 `runtime-parameter-seam`** and **R4-7 `project-persistence`** are in
-  `spec-in-progress` (`manifest.md:45, 50`); neither has a spec file or an implementation.
+- **R4-2 `runtime-parameter-seam`** and **R4-7 `project-persistence`** have **no
+  implementation**, and that — not their spec status — is the fact everything downstream in
+  this spec rests on. It is checkable in the codebase rather than in a status document: no
+  runtime parameter application exists, because the bridge still drains the parameter lane
+  into a closure that discards the value and counts it (`crates/spectre-audio/src/bridge.rs:181–186`);
+  and no track or persistence surface exists on `ProjectDoc`, which carries `id`, `name`,
+  `tempo_map`, `transport`, and a flattened `unknown` map and nothing else
+  (`crates/spectre-project/src/lib.rs:29–38`). **Their spec status is deliberately not cited
+  by line number here.** `gauntlet-output/manifest.md` is rewritten every time any sibling
+  advances, so a line citation into it cannot be pinned to this spec's commit in either
+  direction — at commit `2e005e5` the manifest recorded both features as `pending`, and as
+  of this remediation both spec files exist
+  (`gauntlet-output/specs/R4-2-runtime-parameter-seam.md`,
+  `gauntlet-output/specs/R4-7-project-persistence.md`) and both passed blind review at 3.000.
+  Neither reading changes anything in §7.4: R4-2 still gates audibility and R4-7 still gates
+  persistence, because a passed spec is not an implementation — `docs/README.md:59` defines
+  `implemented` as "code exists but its full evidence gate may remain open", and neither
+  feature has reached even that.
 
 **Gated — accepted, deliberately not implemented:**
 
@@ -1296,8 +1487,15 @@ a progress bar (`main.rs:469–473`). None of them reaches `spectre-dsp`, `spect
   workspace.** `grep -rn "struct Track\b\|fn arm\|fn mute" crates` returns nothing.
   `TrackView`'s booleans are plain public fields mutated directly by egui toggles.
 - **No track concept outside `crates/spectre-app/`.** `grep -rn track crates --include='*.rs'`
-  hits only `spectre-app`'s `src/lib.rs`, `src/main.rs`, `tests/app_model.rs`, and
-  `tests/smoke_cli.rs`.
+  returns hits in **five** files: `spectre-app`'s `src/lib.rs`, `src/main.rs`,
+  `tests/app_model.rs`, and `tests/smoke_cli.rs` — plus
+  `crates/spectre-project/src/lib.rs:162` and `:170`, which are both the fictitious JSON key
+  `future_track_kind` inside the in-file test `unknown_fields_survive_rewrite`
+  (`crates/spectre-project/src/lib.rs:157`), a name invented for that test precisely because
+  the schema does not define it. **The fifth file supports the claim rather than
+  contradicting it:** the only time `spectre-project` says "track" is inside a string it is
+  asserting it does not understand and must preserve untouched. No type, field, function,
+  parameter, or module outside `crates/spectre-app/` names a track.
 - **No track in the project document.** `ProjectDoc` carries `id`, `name`, `tempo_map`,
   `transport`, and a flattened `unknown` map — nothing else
   (`crates/spectre-project/src/lib.rs:29–38`).
@@ -1334,7 +1532,15 @@ a progress bar (`main.rs:469–473`). None of them reaches `spectre-dsp`, `spect
 - `crates/spectre-project/src/lib.rs` — `pub mod track; pub mod routing;` and re-exports.
   `ProjectDoc` is **not** changed; the schema is R4-7's.
 - `crates/spectre-project/src/command.rs` — five new `CommandKind` variants and their
-  inverses.
+  inverses. **One unavoidable consequence, stated because it is a public-API change and not
+  a detail:** `CommandKind` (`command.rs:30`), `ProjectCommand` (`:36`), and `Transaction`
+  (`:71`) all derive `Eq` today, and a variant carrying a `Track` — or any f32 mix value —
+  cannot, because `f32` is not `Eq`. All three derives drop to `PartialEq` alone. `Track`
+  is already specified as `PartialEq` without `Eq` in §4.2, so nothing changes there.
+  Nothing in `command.rs` requires `Eq`: `Transaction::execute`'s rollback and `EditHistory`'s
+  undo/redo compare nothing (`command.rs:92–109`, `:113–182`). The alternative — keeping
+  `Eq` by storing the mix value as bits or a fixed-point integer — invents a numeric
+  representation to preserve a derive nothing uses, and is refused.
 - `crates/spectre-project/Cargo.toml` — add `spectre-dsp` and `spectre-graph` path deps.
 - `crates/spectre-dsp/src/lib.rs` — `mod mix;` and `pub use mix::{SumBus, MAX_SUM_BUSES};`.
 - `crates/spectre-graph/src/lib.rs` — `MAX_FLAT_INPUTS` 4 → 32, with the comment naming the
@@ -1353,9 +1559,10 @@ a progress bar (`main.rs:469–473`). None of them reaches `spectre-dsp`, `spect
 - `crates/spectre-app/src/engine.rs` — **R4-1's file**; add `build_track_engine_parts`, the
   `EngineUnavailable::Routing` variant, and `EngineParts::parameter_targets`.
 - `crates/spectre-dsp/tests/devices.rs` — §5.1 tests 10–11, including extending
-  `device_layouts_match_the_v1_contract` (`:186–210`) to cover the new layout.
-- `cratests/spectre-graph/tests/containment.rs` — §5.1 test 12, reusing the file's existing
-  `PoisonSource` (`:44`).
+  `device_layouts_match_the_v1_contract` (`:186–209`) to cover the new layout.
+- `crates/spectre-graph/tests/containment.rs` — §5.1 test 12, reusing the file's existing
+  `PoisonSource` (`:44`) for both the poisoned and the clean source, so the only import
+  added is `SumBus`.
 - `crates/spectre-graph/tests/graph_plan.rs` — §5.1 test 13.
 - `crates/spectre-graph/tests/plan_alloc.rs` — §5.1 test 14, extending the existing fixture.
 - `crates/spectre-app/tests/app_model.rs` — §5.1 tests 15–16.
@@ -1528,7 +1735,7 @@ Cited, from the accepted corpus in `docs/02-reference-research/`:
   between tracks without clipping, and clipping matters only at physical outputs. Spectre
   **converges**: `SumBus` applies no limiter, no clip, and no normalization, and §5.4 warns
   about it rather than hiding it behind an invisible guard.
-- **`OBS-AB12-MIX-003`** (Live 12, §18.3): solo and arm are exclusive by default with
+- **`OBS-AB12-MIX-003`** (Live 12, §18.1): solo and arm are exclusive by default with
   modifier and preference overrides. Spectre **diverges** in R4-4 — solo is additive — and
   §8 Q10 puts the choice in front of Jeff rather than settling it here. Arm is absent
   entirely, because recording is R7.
