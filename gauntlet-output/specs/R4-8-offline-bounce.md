@@ -131,6 +131,94 @@ Notes: The load-bearing finding is that RT-003 containment silences a whole rend
   corrected arithmetic was recomputed rather than trusted and holds at every site:
   86,400 x 48,000 = 4,147,200,000 frames; / 256 = 16,200,000 blocks; x 8 B = 129.6 MB;
   180 x 48,000 / 256 = 33,750 blocks with 4,185 of them exactly 12.4%.
+  REMEDIATION 3 APPLIED 2026-08-23. Body first, header last, again. Iteration 3 FAILED blind
+  re-verification at 2.883 on the feasibility rule (pass condition 4). The reviewer confirmed
+  that rounds 1 and 2 both did what they claimed — the 48x arithmetic recomputes, the golden
+  vector reproduces from its own literal array, BOUNCE_FALLBACK_SAMPLE_RATE is the
+  best-evidenced of the three constants, Sec 7.2 really does schedule three ledger rows, and
+  Sec 4.4(1) and Sec 7.2 agree — and that the two blocking defects were introduced BY the
+  remediations. Both were re-confirmed against source before this round edited anything.
+  Sources re-read at commit 767b88a; `git diff b5af060..767b88a -- crates/
+  docs/01-requirements/ docs/06-plans/` is empty, so every line number rounds 1 and 2
+  verified is still exact.
+  (j) THE BLOCKING FIX: Sec 7.1's FNV census was false in the claimed-absent direction. It
+  said the constants exist in exactly two files and that bridge_plan.rs:80-92 is the only
+  independently written FNV walk. A grep of crates/ for both literals returns EIGHT lines at
+  FOUR sites in THREE files: spectre-offline/src/lib.rs:271/:276,
+  spectre-audio/tests/bridge_plan.rs:81/:87, spectre-offline/tests/harness.rs:98/:103 (inline
+  in plan_render_matches_hand_wired_chain, :58) and harness.rs:156/:161 (inline in
+  hand_wired_report, :112, called from :198, :225, :461). Both harness folds are complete
+  hand-written channel-major-planar walks (traversals at :99 and :157, matching lib.rs:272).
+  Corrected at every site that carried the claim: Sec 7.1's Absent block now carries the
+  four-row census and names which two the slice de-duplicates; Sec 7.1's harness.rs table row
+  names the two folds; Sec 4.3's duplicated-constants paragraph is now a four-row table with
+  each fold's traversal; Sec 4.1's hash.rs row and Sec 4.2's SampleHasher comment say "the
+  single SHARED implementation" rather than "the only" one.
+  THE CORRECTION STRENGTHENS THE ARGUMENT AND IS WRITTEN THAT WAY, not hedged. The accurate
+  superlative is that hash_interleaved is the only independently written INTERLEAVED walk —
+  the other three all traverse channel-major planar, the order hash.rs would supply them
+  anyway — and the only walk of any kind sitting on the LIVE/OFFLINE SEAM, which is the
+  independence test 17 actually depends on. That is a better reason to keep it than the count
+  was: if the walk that de-interleaves the live buffer were hash.rs's, test 17 would compare
+  hash.rs with itself over a now-shared specimen and nothing in that file would still prove
+  the two render paths agree. The rule is restated accordingly in Sec 4.3 and Sec 7.2 —
+  "de-duplicate the specimen, never an independent instrument that stands between two paths
+  under comparison" — with an explicit note that it is NOT "never the last copy", because
+  count was never what made hash_interleaved worth keeping.
+  Round 1's item (d) above is left standing rather than edited, and this is deliberate. Its
+  DECISION (keep the de-interleaving walk, swap only the two literals) is correct and
+  unchanged; its stated REASON ("the workspace's only independent implementation of the FNV
+  walk") is false and is corrected here. Preserving the wrong claim beside its correction is
+  the pattern criteria.md uses on its own AF-2 passage, and for the same reason.
+  (k) THE SECOND BLOCKING FIX: the scheduled bridge_plan.rs edit would not have compiled.
+  Sec 4.3 and Sec 7.2 both listed AudioProcessor (:223) among imports "verified to stay
+  used". :223 is a COMMENT ("// processor needs an AudioProcessor parameter seam that the
+  accepted contract lacks."). AudioProcessor's only real uses are the three .io() calls at
+  :45, :48, :52, all inside the fixture_plan body Sec 7.2 deletes, and io() is a trait method
+  of spectre_dsp::AudioProcessor (spectre-dsp/src/io.rs:163-164), so the trait must be in
+  scope for them to resolve. The import at :14 cannot survive the delegation and would fail
+  `cargo clippy --locked --workspace --all-targets -- -D warnings` — the gate Sec 5.1 test 17
+  declares REQUIRED — before any assertion in the file ran. Corrected to SEVEN now-unused
+  imports at all three sites that carry the list (Sec 4.3, Sec 7.2, Sec 5.1 test 17) plus
+  Sec 4.1's table row: AudioProcessor, Gain, PulseInstrument, Saturator, Waveform from :14;
+  EditableGraph, Connection from :16. Each stay-used entry was re-located in the file rather
+  than carried over: IdGen at :207 (IdGen::new(0x0050_4152_414d), outside fixture_plan),
+  NoteEvent :178, NoteEventKind :181, CompiledPlan and NodeId :33 via the kept signature.
+  (l) Sec 7.2's harness.rs entry stated its rule more broadly than it applied it: it
+  justified only the device values at :65-67 and said nothing about the file's two FNV folds.
+  It now schedules nothing and says so for BOTH, on the same ground — they are the
+  independent instrument pinning the shared specimen, and delegating them would make
+  plan_render_matches_hand_wired_chain, every_app_parameter_maps_exactly_to_the_compiled_plan
+  (:173) and app_defaults_match_backend_authoritative_default_render (:221) compare hash.rs
+  with itself. Stated plainly: the FNV constants remain duplicated at two sites after this
+  slice, by decision rather than oversight. The favourable consequence the reviewer
+  identified is recorded in Sec 4.3, Sec 7.2 and Sec 5.2 test 19: because those folds stay,
+  test 19 remains a genuine TWO-IMPLEMENTATION cross-check over real rendered audio after the
+  hash.rs extraction, which is what lets "bit-exact" rest on evidence rather than inspection.
+  (m) Scorecard P2 and P3 items, all six applied. P2-1: Sec 7.1's heading says lib.rs is 334
+  lines, not 335 (wc -l = 334). P2-2: Sec 5.2 test 15 uses control_channel(&[], 64, 8), the
+  width every existing test in bridge_plan.rs uses, with the reason stated — fixture_events
+  returns [NoteEvent; 2] (lib.rs:178), so at most one event crosses the lane before any one
+  block and the 1024 was an unexplained 16x widening. P3-1: Sec 7.2's exhaustiveness
+  paragraph now names FNV_OFFSET_BASIS/FNV_PRIME (moved algorithm constants) and GOLDEN_HASH
+  (a checked-in test vector), so the claim is true as written; neither owes a PROD-003 row,
+  which governs limits. P3-2: Sec 4.3 names NodeId's thin survival — after the refactor it
+  occurs once, in fixture_plan's return type at :33, so simplifying that signature would
+  silently reintroduce this same -D warnings failure. P3-3: Sec 7.1 says the bridge test's
+  block is driven at :106-108; :109 is blank.
+  (n) One item found in this round rather than in the scorecard, same defect class: Sec 4.3's
+  fixture.rs header comment claimed harness.rs:65-67 is "the one hand-written copy left in
+  the workspace". hand_wired_report (harness.rs:112-125) hand-wires the same topology a
+  second time, at caller-supplied values. Narrowed to the four device VALUES, which is the
+  claim that survives — grepping harness.rs for 0.3 / 0.7 / 2.5 / 0.35 returns :65-67 and
+  nothing else. Sec 7.1's matching sentence was narrowed the same way.
+  (o) Deliberately untouched and re-verified as untouched: the 129.6 MB chain and every
+  replacement figure from round 1; the golden vector 0xa49a_cc9c_e735_9a37;
+  BOUNCE_FALLBACK_SAMPLE_RATE and its rationale; Sec 7.2's THREE scheduled ledger rows (the
+  count is unchanged — this round introduces no numeric bound); the Sec 4.4(1)/Sec 7.2
+  agreement; Sec 4.4(3)'s containment-versus-block-geometry analysis; Sec 4.4(4)'s per-device
+  block-invariance claims; test 15's block-count claim; and the loudness handling in Sec 6.3
+  and Appendix A, which gains no claim.
 -->
 
 # Spec: Offline Bounce
@@ -139,10 +227,10 @@ Notes: The load-bearing finding is that RT-003 containment silences a whole rend
 **Parent feature:** `R4` Credible Alpha (root)
 **Spec author agent:** gauntlet spec agent, R4-8 leaf
 **Date:** 2026-08-15
-**Iteration:** 3 (remediation 2)
+**Iteration:** 4 (remediation 3)
 
 - **Status:** proposed
-- **Last verified:** 2026-08-23 (source re-read at commit `b5af060`, branch `rename/geist-to-spectre`; `crates/`, `docs/01-requirements/`, and `docs/06-plans/` are byte-identical to commit `2e005e5`, so iteration 1's and iteration 2's line references are unchanged)
+- **Last verified:** 2026-08-23 (source re-read at commit `767b88a`, branch `rename/geist-to-spectre`; `git diff b5af060..767b88a -- crates/ docs/01-requirements/ docs/06-plans/` is empty and those trees are byte-identical to commit `2e005e5`, so every line reference iterations 1–3 verified is unchanged. Iteration 4 re-derived the FNV census and the `bridge_plan.rs` import census from `grep` over `crates/` rather than carrying either forward)
 - **Scope:** a deterministic multi-quantum offline render in `crates/spectre-offline`, one uncompressed output file, and the evidence that its computation equals the live callback path's
 - **Decision authority:** Jeff
 - **Upstream sources:** `docs/00-product/vision.md`; `docs/01-requirements/requirements-ledger.md` (RT-001 :28, RT-002 :29, RT-003 :30, TIME-003 :38, GRAPH-001 :55, PROD-003 :64); `docs/01-requirements/decision-gates.md` (rows 1, 6, 15, 16, 17, 22, 23); `docs/03-architecture/dsp-device-io.md`; `docs/06-plans/current-milestone.md` §"Exit evidence" line 86; `docs/status/NEXT.md` slice 8 (line 30); `gauntlet-output/specs/R4-1-live-audio-wiring.md`; `gauntlet-output/specs/R4-7-project-persistence.md`
@@ -438,13 +526,13 @@ E7**, whose whole purpose is to preserve evidence, and which says so in the mess
 
 | Path | Change | Thread |
 |---|---|---|
-| `crates/spectre-offline/src/hash.rs` | **new** — the single FNV-1a implementation and its two named traversals | any; pure |
+| `crates/spectre-offline/src/hash.rs` | **new** — the single *shared* FNV-1a implementation and its two named traversals. Three hand-written folds stay outside it on purpose: `bridge_plan.rs:80-92`, `harness.rs:98-105`, `harness.rs:156-163` (§4.3, §7.2) | any; pure |
 | `crates/spectre-offline/src/fixture.rs` | **new** — the single definition of the fixture chain: its four device values, its ID seed, and one builder that compiles it | any; allocates |
 | `crates/spectre-offline/src/bounce.rs` | **new** — `BounceConfig`, `BounceReport`, `bounce_report`, `bounce_into`, block loop, per-block hash log; builds nothing itself, calls `fixture::compile_fixture_plan_with` | app or worker thread; allocates freely |
 | `crates/spectre-offline/src/wav.rs` | **new** — minimal 32-bit float WAV writer over `std::io::Write` | worker thread; does I/O |
 | `crates/spectre-offline/src/lib.rs` | modified — `pub mod bounce; pub mod fixture; pub mod hash; pub mod wav;`; `render_plan`'s chain construction (`:210-258`) moves to `fixture.rs` and its inline hash loop (`:271-278`) becomes `hash::hash_planar_quantum` | app thread |
 | `crates/spectre-offline/src/main.rs` | modified — `--bounce` mode | process |
-| `crates/spectre-audio/tests/bridge_plan.rs` | modified — `fixture_plan` (`:33-77`) delegates to `fixture::compile_fixture_plan`; `hash_interleaved` (`:80-92`) imports `FNV_OFFSET_BASIS`/`FNV_PRIME` from `spectre_offline::hash` and **keeps its own de-interleaving walk**. Shared specimen, independent instrument (§4.3, §7.2) | test |
+| `crates/spectre-audio/tests/bridge_plan.rs` | modified — `fixture_plan` (`:33-77`) delegates to `fixture::compile_fixture_plan`, taking five consts (`:24-27`, `:30`) and **seven** imports with it; `hash_interleaved` (`:80-92`) imports `FNV_OFFSET_BASIS`/`FNV_PRIME` from `spectre_offline::hash` and **keeps its own de-interleaving walk**. Shared specimen, independent instrument (§4.3, §7.2) | test |
 | `crates/spectre-audio/tests/bounce_equivalence.rs` | **new** — the live/offline proof; builds its live side from `fixture::compile_fixture_plan`, not from a copy | test |
 | `crates/spectre-graph/tests/containment.rs` | modified — the block-geometry sensitivity test | test |
 | `crates/spectre-app/src/bounce_panel.rs` | **new** — app-thread panel state and worker handle | app thread |
@@ -501,13 +589,18 @@ All in `crates/spectre-offline`. **None of these exist today.**
 //   workspace, moved rather than restated, so every existing hash assertion still passes
 
 // FNV-1a 64-bit offset basis. Moved verbatim from crates/spectre-offline/src/lib.rs:271 and
-// crates/spectre-audio/tests/bridge_plan.rs:81, which currently hold identical copies
+// crates/spectre-audio/tests/bridge_plan.rs:81, the two sites this refactor rewrites.
+// crates/spectre-offline/tests/harness.rs:98 and :156 hold two more copies that stay
+// hand-written on purpose (Sec 4.3, Sec 7.2)
 pub const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 
-// FNV-1a 64-bit prime. Moved verbatim from lib.rs:276 and bridge_plan.rs:87
+// FNV-1a 64-bit prime. Moved verbatim from lib.rs:276 and bridge_plan.rs:87; harness.rs:103
+// and :161 hold the other two copies, kept
 pub const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
-// Incremental FNV-1a fold over f32 sample bits; the only hash implementation in the workspace
+// Incremental FNV-1a fold over f32 sample bits; the only *shared* hash implementation in the
+// workspace. Three hand-written folds remain by design: bridge_plan.rs:80-92 and
+// harness.rs:98-105 and :156-163 (Sec 4.3)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SampleHasher {
     state: u64,
@@ -709,29 +802,48 @@ turns on it:
 > unchanged.
 
 **On the duplicated constants, and on what must survive the de-duplication.** The
-constants are currently duplicated verbatim in two files:
-`crates/spectre-offline/src/lib.rs:271` and `:276`, and
-`crates/spectre-audio/tests/bridge_plan.rs:81` and `:87`. R4-8 does not add a third copy.
-It **moves** them into `hash.rs` — but the two sites are then treated **differently, and
-the asymmetry is the point**:
+constants are currently duplicated verbatim at **four sites in three files**, counted by
+grepping `crates/` for both literals:
+
+| Site | Fold | Traversal |
+|---|---|---|
+| `crates/spectre-offline/src/lib.rs:271`, `:276` | `render_plan`'s inline loop | channel-major planar (`output[0].iter().chain(output[1].iter())`, `:272`) |
+| `crates/spectre-audio/tests/bridge_plan.rs:81`, `:87` | `hash_interleaved` (`:80-92`) | de-interleaving, `samples[frame * channels + channel]` (`:82-84`) |
+| `crates/spectre-offline/tests/harness.rs:98`, `:103` | inline in `plan_render_matches_hand_wired_chain` (`:58`) | channel-major planar (`wired[0].iter().chain(wired[1].iter())`, `:99`) |
+| `crates/spectre-offline/tests/harness.rs:156`, `:161` | inline in `hand_wired_report` (`:112`) | channel-major planar (`:157`) |
+
+Both `harness.rs` folds are complete hand-written FNV-1a walks, not references to one; each
+is the tail of a chain rendered outside the graph, and `hand_wired_report` is called from
+three tests (`harness.rs:198`, `:225`, `:461`). R4-8 does not add a fifth copy.
+It **moves** the constants into `hash.rs` — but the sites are then treated **differently,
+and the asymmetry is the point**:
 
 - `render_plan`'s inline loop (`lib.rs:271-278`) is replaced outright by a call to
   `hash::hash_planar_quantum`. It is the same traversal in the same crate; keeping a
   hand-written copy beside the function it is identical to buys nothing.
+- The two `harness.rs` folds (`:98-105`, `:156-163`) stay hand-written and are **not** in
+  scope for this refactor, for the same reason `hash_interleaved` is not — see below.
 - `hash_interleaved` (`bridge_plan.rs:80-92`) **keeps its own de-interleaving traversal**
   (`:82-84`) and swaps **only** the two constant literals at `:81` and `:87` for
   `spectre_offline::hash::FNV_OFFSET_BASIS` and `FNV_PRIME`. It is the workspace's only
-  independently written implementation of the FNV walk, and the agreement of two separately
-  written walks over the same audio is what makes
-  `bridge_output_matches_the_offline_render_of_identical_input` a cross-check rather than a
-  restatement. Collapsing it into `hash.rs` would remove duplicated constants at the price
-  of removing independent verification — a strictly worse trade, since the duplication being
-  fixed is *two magic numbers*, not two algorithms.
+  independently written **interleaved** walk — the other three all traverse channel-major
+  planar, which is the order `hash.rs` would supply them anyway — and it is the only walk of
+  any kind that sits on the **live/offline seam**, which is the independence
+  `bridge_output_matches_the_offline_render_of_identical_input` actually depends on. That
+  test compares a live interleaved buffer against `RenderReport::hash`; if the walk that
+  de-interleaves it were `hash.rs`'s, the comparison would be `hash.rs` against `hash.rs`
+  over one specimen, and the only thing left proving the two *render paths* agree would be
+  the specimen itself. Collapsing it would remove duplicated constants at the price of
+  removing the one piece of independent verification the equivalence claim rests on — a
+  strictly worse trade, since the duplication being fixed is *two magic numbers*, not two
+  algorithms.
 
-So the refactor's rule is: **de-duplicate the constants, never the last independent walk.**
-Together with §5.1 test 1's checked-in golden vector — a value fixed outside every
-implementation — the workspace ends up with one shared fold, one independent fold, and one
-external constant, instead of one fold compared against itself.
+So the refactor's rule is: **de-duplicate the constants, never an independent walk that
+stands between two paths under comparison.** Together with §5.1 test 1's checked-in golden
+vector — a value fixed outside every implementation — the workspace ends up with one shared
+fold, three hand-written folds that pin it (one interleaved on the live/offline seam, two
+planar in `harness.rs`), and one external constant, instead of one fold compared against
+itself.
 
 `crates/spectre-audio/Cargo.toml`'s `[dev-dependencies]` already contains
 `spectre-offline = { path = "../spectre-offline" }`, so `bridge_plan.rs` can import
@@ -746,8 +858,10 @@ caller renders.
 // Date: 2026-08-22
 // Description: The single definition of Spectre's built-in fixture chain, PulseInstrument -> Gain -> Saturator
 // Notes: A definition, not an algorithm. Every caller that needs this chain names this module.
-//   The one hand-written copy left in the workspace is harness.rs:65-67, kept on purpose as the
-//   independent check on what this module builds
+//   The one hand-written copy of these four values left in the workspace is harness.rs:65-67,
+//   kept on purpose as the independent check on what this module builds. harness.rs:112-125
+//   hand-wires the same topology a second time, but at caller-supplied values, so it pins the
+//   chain's shape rather than these constants
 
 // Canonical fixture device values. Moved verbatim from crates/spectre-offline/src/lib.rs:297-300
 // and lib.rs:328-331, which hold identical copies today, and from
@@ -793,8 +907,9 @@ one. `bounce.rs` needs the chain, and so does `crates/spectre-audio/tests/bounce
 cannot reach `bridge_plan.rs`'s private `fixture_plan` and would have to write its own. Four
 hand-maintained copies of one definition.
 
-The rule §4.3 states above — *de-duplicate the constants, never the last independent walk* —
-generalizes, and generalizing it is what decides this case:
+The rule §4.3 states above — *de-duplicate the constants, never an independent walk that
+stands between two paths under comparison* — generalizes, and generalizing it is what decides
+this case:
 
 - The FNV walk is the **instrument**. Two independently written instruments agreeing over the
   same audio is verification, which is why `hash_interleaved` keeps its own traversal.
@@ -806,20 +921,49 @@ generalizes, and generalizing it is what decides this case:
   report block 0, and the reader would be told "live and offline disagree" when the truth is
   "two copies of the fixture disagree."
 
-So the refactor's full rule is: **de-duplicate the specimen, never the last independent
-instrument.** The two halves land in the same file on disjoint line ranges — `fixture_plan`
+So the refactor's full rule is: **de-duplicate the specimen, never an independent instrument
+that stands between two paths under comparison.** Note what the rule does *not* say. It is
+not "never the last copy" — `harness.rs` holds two more FNV folds, so `hash_interleaved` was
+never the last one, and the count was never what made it worth keeping. What makes an
+instrument worth keeping is its position: `hash_interleaved` is the only walk on the
+live/offline seam, and `harness.rs:65-67` is the only statement of the fixture's values that
+does not come from the builder. Both are kept on that ground, and §7.2 applies the rule to
+every site it reaches rather than to the two this slice happens to edit.
+
+The two halves land in the same file on disjoint line ranges — `fixture_plan`
 (`bridge_plan.rs:33-77`) is replaced by a call; `hash_interleaved` (`:80-92`) keeps its walk
 and swaps only the two literals at `:81` and `:87`.
 
-**What is deliberately not de-duplicated.** `crates/spectre-offline/tests/harness.rs:65-67`
-hand-wires `PulseInstrument::new(Waveform::Saw, 0.3)` → `Gain::new(0.7)` →
-`Saturator::new(2.5, 0.35)` with its own literals, runs them through `AudioProcessor::process`
-**outside the graph entirely**, and asserts the resulting hash equals `render_vertical_slice`'s
-(`plan_render_matches_hand_wired_chain`, `harness.rs:58`). That is the independent check on the
-specimen, and it shares no code with the builder. **R4-8 does not touch it**; its literals stay
-literals. So the workspace ends up with one shared chain definition and one independent
-hand-wired chain that pins it — the same shape §4.3 gives the hash: one shared fold, one
-independent fold, one external constant.
+**What is deliberately not de-duplicated.** `crates/spectre-offline/tests/harness.rs` is
+untouched by R4-8, and it holds **two** things this refactor would otherwise absorb.
+
+1. *The specimen.* `harness.rs:65-67` hand-wires
+   `PulseInstrument::new(Waveform::Saw, 0.3)` → `Gain::new(0.7)` → `Saturator::new(2.5, 0.35)`
+   with its own literals, runs them through `AudioProcessor::process` **outside the graph
+   entirely**, and asserts the resulting hash equals `render_vertical_slice`'s
+   (`plan_render_matches_hand_wired_chain`, `harness.rs:58`). That is the independent check on
+   the specimen, and it shares no code with the builder. Its literals stay literals.
+2. *Two folds.* The tails of that test (`:98-105`) and of `hand_wired_report` (`:156-163`)
+   are complete hand-written FNV-1a walks holding their own copies of both constants. They
+   stay hand-written for the same reason `hash_interleaved` does: they are the independent
+   instrument pinning the shared specimen. Once `render_plan`'s fold becomes a call to
+   `hash::hash_planar_quantum`, these are what a `harness.rs` hash assertion is compared
+   *against*; delegating them would make all four tests that reach a hand-wired hash —
+   `plan_render_matches_hand_wired_chain` (`:58`),
+   `every_app_parameter_maps_exactly_to_the_compiled_plan` (`:173`),
+   `app_defaults_match_backend_authoritative_default_render` (`:221`), and
+   `model_snapshot_contains_nonfinite_edit_before_render` (`:451`) — compare `hash.rs`
+   with itself.
+
+**The favourable consequence, recorded rather than left implicit.** Because those two folds
+exist and stay, §5.2 test 19 — `cargo test -p spectre-offline --test harness` passing
+unchanged — remains a genuine **two-implementation cross-check** after the `hash.rs`
+extraction, not a self-comparison. That is a stronger position than iterations 1–3 of this
+spec claimed for themselves, and it is the reason the extraction can be called bit-exact on
+evidence rather than on inspection.
+
+So the workspace ends up with one shared chain definition and `harness.rs`'s hand-wired
+chain pinning it, and one shared fold with three hand-written folds pinning it.
 
 **Crate boundaries, checked rather than assumed.**
 
@@ -856,14 +1000,36 @@ independent fold, one external constant.
 | `harness.rs:65-67` | hand-wired literals | **unchanged, on purpose** |
 
 **The knock-on inside `bridge_plan.rs`, stated so it is not a surprise at implementation.**
-Once `fixture_plan` delegates, five constants (`:24-27` and `:30`) and six imported names
-become unused, and `-D warnings` fails on unused items, so they must go in the same commit:
-`Gain`, `PulseInstrument`, `Saturator`, `Waveform` drop from the `spectre_dsp` import at `:14`,
-and `EditableGraph`, `Connection` drop from the `spectre_graph` import at `:16`. Everything
-else the file imports stays used and stays: `AudioProcessor` at `:223`, `IdGen` at `:207`,
-`NodeId` and `CompiledPlan` in `fixture_plan`'s own signature at `:33`, `NoteEvent` at `:178`,
-`NoteEventKind` at `:181`. The four device values remain readable from that file as
-`spectre_offline::fixture::FIXTURE_*` rather than disappearing.
+Once `fixture_plan` delegates, five constants (`:24-27` and `:30`) and **seven** imported
+names become unused, and `-D warnings` fails on unused items, so they must go in the same
+commit: `AudioProcessor`, `Gain`, `PulseInstrument`, `Saturator`, and `Waveform` drop from the
+`spectre_dsp` import at `:14`, and `EditableGraph` and `Connection` drop from the
+`spectre_graph` import at `:16`.
+
+**`AudioProcessor` is on that list and it is the one that is easy to get wrong.** The name
+appears twice in the file after the import: at `:223`, inside a comment
+(`// processor needs an AudioProcessor parameter seam that the accepted contract lacks.`),
+and nowhere else as a path. Its only real uses are the three `.io()` calls at `:45`, `:48`,
+and `:52`, and `io()` is a **trait method** — `pub trait AudioProcessor: Send { fn io(&self)
+-> DeviceIo; … }` at `crates/spectre-dsp/src/io.rs:163-164` — so the trait must be in scope
+for those calls to resolve. All three sit inside `fixture_plan`'s body (`:33-77`), which
+edit (i) deletes. A comment does not keep an import alive, so leaving `AudioProcessor` at
+`:14` fails `cargo clippy --locked --workspace --all-targets -- -D warnings`, which is both
+the workspace gate (§5.3) and the gate §5.1 test 17 declares required.
+
+Everything else the file imports stays used and stays, each re-verified by locating the use:
+`IdGen` at `:207` (`IdGen::new(0x0050_4152_414d)`, outside `fixture_plan`), `NoteEvent` at
+`:178`, `NoteEventKind` at `:181`, and `CompiledPlan` and `NodeId` at `:33`. The four device
+values remain readable from that file as `spectre_offline::fixture::FIXTURE_*` rather than
+disappearing.
+
+**`NodeId`'s survival is thinner than that list makes it look, and the dependency is worth
+naming.** After the refactor `NodeId` occurs at exactly one place in `bridge_plan.rs`:
+`fixture_plan`'s return type `-> (CompiledPlan, NodeId)` at `:33`. Its three other uses today
+(`:35`, `:36`, `:37`) go with the body. That is sufficient, and §7.2 commits to keeping the
+signature — but a later simplification of that signature would silently take the import with
+it and reintroduce this same `-D warnings` failure. Recorded so it is a known dependency
+rather than a rediscovery.
 
 **How the refactor is proven bit-exact**, which it must be or every hash assertion in the
 workspace moves. Two tests that exist today gate it and both must pass **unchanged**:
@@ -1496,7 +1662,12 @@ files agreeing. The events are the same `fixture_events` both sides already use
 (`crates/spectre-offline/src/lib.rs:178-201`).
 
 15. **`a_multi_block_bounce_matches_the_live_path_block_for_block`** — the core test.
-    Setup: `fixture::compile_fixture_plan(256)` for the live side; `control_channel(&[], 1024, 8)`;
+    Setup: `fixture::compile_fixture_plan(256)` for the live side; `control_channel(&[], 64, 8)`,
+    the same lane widths every existing test in `bridge_plan.rs` uses — `fixture_events`
+    returns exactly two events — its return type is `[NoteEvent; 2]`
+    (`crates/spectre-offline/src/lib.rs:178`) — so at most one
+    crosses the note lane before any one block, and a wider lane would be an unexplained
+    number in a spec that refuses those;
     `RenderBridge::new(plan, receiver, note_node, 48_000.0, DEFAULT_NOTE_SCRATCH)`
     (`crates/spectre-audio/src/bridge.rs:133`). Render 4,096 frames as sixteen 256-frame
     `RenderBlock`s, feeding each block's re-based events through `sender.send_note` before
@@ -1531,7 +1702,10 @@ files agreeing. The events are the same `fixture_events` both sides already use
     after R4-8's two disjoint edits to that file (§4.3, §7.2):
     (i) `fixture_plan` (`bridge_plan.rs:33-77`) delegates to
     `spectre_offline::fixture::compile_fixture_plan`, and the five now-unused constants
-    (`:24-27`, `:30`) and six now-unused imports go with it; and
+    (`:24-27`, `:30`) and seven now-unused imports go with it — `AudioProcessor`, `Gain`,
+    `PulseInstrument`, `Saturator`, `Waveform` (`:14`), `EditableGraph`, `Connection`
+    (`:16`) — because this gate runs under `-D warnings` and an unused import fails it
+    before any assertion in the file executes; and
     (ii) `hash_interleaved` (`:80-92`) swaps its two inline constant literals (`:81`, `:87`)
     for `spectre_offline::hash::FNV_OFFSET_BASIS` and `FNV_PRIME` while **keeping its own
     de-interleaving loop** (`:82-84`) exactly as it stands.
@@ -1553,6 +1727,17 @@ files agreeing. The events are the same `fixture_events` both sides already use
 19. **`cargo test -p spectre-offline --test harness`** must continue to pass unchanged; its
     21 existing tests include the hash and determinism gates
     (`harness.rs:38`, `:212`, `:221`) that the `hash.rs` refactor could break.
+    **This stays a two-implementation cross-check after the refactor, and that is not an
+    accident.** `harness.rs` is not modified by R4-8 (§7.2), so its two hand-written FNV-1a
+    folds (`:98-105` in `plan_render_matches_hand_wired_chain`, `:156-163` in
+    `hand_wired_report`) survive with their own copies of both constants. `render_plan`'s
+    fold becomes a call to `hash::hash_planar_quantum`; the values it is asserted against in
+    this file are still produced by walks `hash.rs` never touches. If the extraction perturbs
+    one byte of the fold or of the channel-major traversal, this gate fails — which it could
+    not do if both sides delegated. §5.1 test 1's golden vector pins the fold against a
+    constant fixed outside the workspace; test 19 pins it against the workspace's own
+    independent folds over real rendered audio; §5.1 test 21 pins node identity. Those three
+    together are what make "bit-exact" a claim with evidence behind it.
 
 20. **CLI round trip:** `cargo run -p spectre-offline -- --bounce --frames 4096 --rate
     48000 --block 256` exits 0 and prints a JSON `BounceReport` whose `hash` equals test
@@ -1701,7 +1886,7 @@ Confirmation against `gauntlet-output/criteria.md` Lens 3:
 
 Verified by reading the files at commit `2e005e5`. Each row is checkable in one `Read`.
 
-**Implemented — `spectre-offline` (`crates/spectre-offline/src/lib.rs`, 335 lines):**
+**Implemented — `spectre-offline` (`crates/spectre-offline/src/lib.rs`, 334 lines):**
 
 | Element | Path | Note |
 |---|---|---|
@@ -1717,15 +1902,16 @@ Verified by reading the files at commit `2e005e5`. Each row is checkable in one 
 | Channel-major traversal `output[0].iter().chain(output[1].iter())` | `lib.rs:272` | all of channel 0, then all of channel 1 |
 | `render_vertical_slice`, `render_app_snapshot`, `render_silence` | `lib.rs:288`, `:306`, `:319` | all three guard `frames < 2` (`:289`, `:307`, `:320`) and all three call `render_plan` |
 | CLI: `--self-test` or one project path, `inspect_project` only | `crates/spectre-offline/src/main.rs:10-22` | **no render or bounce mode exists**; the only filesystem access is `fs::read` at `:16` |
-| 21 harness tests incl. determinism, silence, hand-wired equivalence, snapshot rejection | `crates/spectre-offline/tests/harness.rs` | `native_device_chain_renders_deterministically` `:38`, `identical_app_snapshots_render_identically` `:212` |
+| 21 harness tests incl. determinism, silence, hand-wired equivalence, snapshot rejection | `crates/spectre-offline/tests/harness.rs` | `native_device_chain_renders_deterministically` `:38`, `identical_app_snapshots_render_identically` `:212`; holds **two** hand-written FNV-1a folds of its own, `:98-105` and `:156-163`, both with the same two constants |
 
 **Implemented — the existing equivalence evidence:**
 
 - `crates/spectre-audio/tests/bridge_plan.rs:94-121`,
   `bridge_output_matches_the_offline_render_of_identical_input`. It rebuilds the fixture
   with the same seed (`:30`), drives **one** 512-frame block through `RenderBridge`
-  (`:106-109`), hashes it with a **verbatim duplicate** of the offline walk — offset basis
-  at `:81`, prime at `:87`, de-interleaving to channel-major at `:83-84` — and asserts
+  (`:106-108`; `:109` is blank), hashes it with a hand-written walk carrying **verbatim
+  duplicates** of the offline constants — offset basis at `:81`, prime at `:87`,
+  de-interleaving to channel-major at `:83-84` — and asserts
   equality against `render_vertical_slice(48_000.0, 512).hash` (`:110-116`), plus
   `offline.peak > 0.0` (`:120`).
 - `repeated_blocks_stay_deterministic` (`bridge_plan.rs:227-245`) hashes three independent
@@ -1780,11 +1966,24 @@ Verified by reading the files at commit `2e005e5`. Each row is checkable in one 
 
 - **No bounce of any kind exists.** No `bounce` module, no `BounceReport`, no
   multi-quantum render loop, no block-size parameter anywhere in `spectre-offline`.
-- **No streaming or incremental hasher exists.** The only hash is the inline loop at
-  `crates/spectre-offline/src/lib.rs:271-278` and its verbatim duplicate at
-  `crates/spectre-audio/tests/bridge_plan.rs:80-92`. Neither composes across blocks.
+- **No streaming or incremental hasher exists.** Every hash in the workspace is a
+  hand-written inline FNV-1a fold, and **none of the four composes across blocks.** The
+  census, by grepping `crates/` for both constants — corrected in iteration 4, because
+  iterations 1–3 stated it as two folds in two files and it is four folds in three:
+  `crates/spectre-offline/src/lib.rs:271-278` (`render_plan`, channel-major planar at
+  `:272`); `crates/spectre-audio/tests/bridge_plan.rs:80-92` (`hash_interleaved`,
+  de-interleaving at `:82-84`); `crates/spectre-offline/tests/harness.rs:98-105` (inline in
+  `plan_render_matches_hand_wired_chain`, `:58`, channel-major planar at `:99`); and
+  `crates/spectre-offline/tests/harness.rs:156-163` (inline in `hand_wired_report`, `:112`,
+  channel-major planar at `:157`). The two `harness.rs` folds are complete hand-written
+  walks, not calls into one, and `hand_wired_report` is used by three tests (`:198`, `:225`,
+  `:461`).
 - **No shared hash module exists**, and the FNV constants are duplicated verbatim across
-  those two files.
+  **all four of those sites** — offset basis at `lib.rs:271`, `bridge_plan.rs:81`,
+  `harness.rs:98`, `harness.rs:156`; prime at `lib.rs:276`, `bridge_plan.rs:87`,
+  `harness.rs:103`, `harness.rs:161`. §4.3 moves the constants out of the first two and
+  leaves the `harness.rs` pair alone, on purpose and for a stated reason; §7.2 schedules
+  exactly that.
 - **No shared definition of the fixture chain exists either.** Its *topology* has two homes:
   `crates/spectre-offline/src/lib.rs:210-258` (seed, three `NodeId`s, three `add_node`, two
   `connect`, `compile(saturator, …)` and its factory closure) and
@@ -1794,8 +1993,11 @@ Verified by reading the files at commit `2e005e5`. Each row is checkable in one 
   values copy sits at `crates/spectre-offline/tests/harness.rs:65-67`, and that one is
   **deliberate** — `plan_render_matches_hand_wired_chain` (`harness.rs:58`) renders it
   outside the graph and asserts the hash matches `render_vertical_slice`'s, which is the
-  workspace's only independent statement of what the fixture is. §4.3 turns this into a
-  single definition and keeps `harness.rs`'s copy untouched.
+  workspace's only independent statement of what the fixture's *device values* are. (The
+  topology is hand-wired outside the graph a second time in `hand_wired_report`
+  (`harness.rs:112-125`), but at caller-supplied values, not these four literals — grepping
+  `harness.rs` for `0.3` / `0.7` / `2.5` / `0.35` returns `:65-67` and nothing else.) §4.3
+  turns this into a single definition and keeps `harness.rs`'s copy untouched.
 - **No audio-file writer exists anywhere in the workspace.** The only filesystem write in
   `crates/` outside a test is none: `crates/spectre-offline/src/main.rs:16` reads, and
   `crates/spectre-audio/tests/rt_guard.rs:311` reads. Nothing writes.
@@ -1895,12 +2097,16 @@ implementation does not silently redefine accepted contracts.
   `spectre_offline::fixture::compile_fixture_plan(frames).unwrap()`, keeping its
   `-> (CompiledPlan, NodeId)` signature and all six of its call sites (`:96`, `:125`, `:145`,
   `:168`, `:212`, `:231`) untouched. The five now-unused constants at `:24-27` and `:30` go
-  with it, and so do six now-unused imports, or `-D warnings` fails on them: `Gain`,
-  `PulseInstrument`, `Saturator`, and `Waveform` drop from the `spectre_dsp` import at `:14`,
-  and `EditableGraph` and `Connection` drop from the `spectre_graph` import at `:16`.
-  Verified to stay used and stay: `AudioProcessor` (`:223`), `IdGen` (`:207`), `CompiledPlan`
-  and `NodeId` (`:33`), `NoteEvent` (`:178`), `NoteEventKind` (`:181`). The four device
-  values remain readable from this file as `spectre_offline::fixture::FIXTURE_*`.
+  with it, and so do **seven** now-unused imports, or `-D warnings` fails on them:
+  `AudioProcessor`, `Gain`, `PulseInstrument`, `Saturator`, and `Waveform` drop from the
+  `spectre_dsp` import at `:14`, and `EditableGraph` and `Connection` drop from the
+  `spectre_graph` import at `:16`. **`AudioProcessor` is on the drop list, not the stay
+  list:** `:223` is a *comment*, and its only real uses are the three `.io()` trait-method
+  calls at `:45`, `:48`, `:52`, all inside the body edit (i) deletes (§4.3). Verified to stay
+  used and stay, each located rather than assumed: `IdGen` (`:207`), `CompiledPlan` and
+  `NodeId` (`:33`, kept only by keeping the signature — §4.3), `NoteEvent` (`:178`),
+  `NoteEventKind` (`:181`). The four device values remain readable from this file as
+  `spectre_offline::fixture::FIXTURE_*`.
   (ii) `hash_interleaved` (`:80-92`) replaces **only** the two duplicated constant literals
   at `:81` and `:87` with `spectre_offline::hash::FNV_OFFSET_BASIS` and `FNV_PRIME`. Its
   de-interleaving traversal at `:82-84` — `for channel { for frame { samples[frame * channels
@@ -1911,17 +2117,42 @@ implementation does not silently redefine accepted contracts.
   verification, and drift between them fires this file's live/offline mismatch — the exact
   alarm the whole feature exists to raise — for a reason that has nothing to do with the
   engine. Two independently written instruments agreeing over one specimen *is* verification,
-  and `hash_interleaved` is the workspace's only independently written FNV walk; deleting it
-  would leave tests 1, 17, and 19 routing through a single implementation compared against
-  itself. So: de-duplicate the specimen, never the last independent instrument.
+  and `hash_interleaved` is the workspace's only independently written **interleaved** walk —
+  the other three hand-written folds (`lib.rs:271-278`, `harness.rs:98-105`, `:156-163`) all
+  traverse channel-major planar — and the only walk of any kind on the **live/offline seam**,
+  which is the independence test 17 depends on. Deleting it would leave test 17 comparing
+  `hash.rs` against `hash.rs` over a now-shared specimen, with nothing left in that file
+  proving the two *render paths* agree. So: de-duplicate the specimen, never an independent
+  instrument that stands between two paths under comparison.
   **No assertion in this file changes**, which is what test 17 checks — and which is also
   what proves the `fixture.rs` extraction is bit-exact.
 - `crates/spectre-offline/tests/harness.rs` — **not modified, and the absence is the
-  claim.** Its hand-wired chain at `:65-67` keeps its own `0.3` / `0.7` / `2.5` / `0.35`
-  literals and its own out-of-graph render, so `plan_render_matches_hand_wired_chain`
-  (`:58`) stays the independent check on what `fixture.rs` builds. That is the specimen's
-  analogue of `hash_interleaved`, and it is why the de-duplication above does not cost the
-  workspace its last independent statement of what the fixture is.
+  claim.** It holds two things this slice could have absorbed and deliberately does not, and
+  both are stated so §7.2's rule is applied as broadly as it is stated:
+  (i) **The device values.** Its hand-wired chain at `:65-67` keeps its own `0.3` / `0.7` /
+  `2.5` / `0.35` literals and its own out-of-graph render, so
+  `plan_render_matches_hand_wired_chain` (`:58`) stays the independent check on what
+  `fixture.rs` builds. That is the specimen's analogue of `hash_interleaved`, and it is why
+  the de-duplication above does not cost the workspace its last independent statement of
+  what the fixture's device values are.
+  (ii) **Both FNV folds.** `:98-105` (in `plan_render_matches_hand_wired_chain`) and
+  `:156-163` (in `hand_wired_report`, `:112`) are complete hand-written FNV-1a walks holding
+  their own copies of `FNV_OFFSET_BASIS` (`:98`, `:156`) and `FNV_PRIME` (`:103`, `:161`).
+  **They are not in scope for the `hash.rs` extraction, for the same reason
+  `hash_interleaved` is not:** they are the independent instrument pinning the shared
+  specimen. `render_plan`'s fold becomes a `hash::hash_planar_quantum` call, and these are
+  what its output is asserted against in this file; delegating them would make all four
+  tests that reach a hand-wired hash — `plan_render_matches_hand_wired_chain` (`:58`),
+  `every_app_parameter_maps_exactly_to_the_compiled_plan` (`:173`),
+  `app_defaults_match_backend_authoritative_default_render` (`:221`), and
+  `model_snapshot_contains_nonfinite_edit_before_render` (`:451`) — compare `hash.rs` with
+  itself. So the FNV constants remain duplicated at two sites after this slice, by decision
+  rather than by oversight — the census in §7.1 is four sites in three files, and R4-8
+  de-duplicates two of them.
+  **The favourable consequence, recorded:** because those folds stay, §5.2 test 19 remains a
+  genuine two-implementation cross-check over real rendered audio after `hash.rs` lands,
+  rather than a self-comparison. That is what lets the extraction be called bit-exact on
+  evidence.
 - `crates/spectre-graph/tests/containment.rs` — add `PoisonAtFrame` and test 6.
 - `crates/spectre-app/src/lib.rs` — add `pub mod bounce_panel;`. No `AppModel` change.
 - `crates/spectre-app/src/main.rs` — `Bounce…` button in the transport bar, and the panel
@@ -1953,7 +2184,12 @@ implementation does not silently redefine accepted contracts.
   and the four `FIXTURE_*` device values in `fixture.rs` are **moved, not introduced** — they
   are identities and fixture data, not limits, and PROD-003 governs limits — so they get no
   rows either; the values are already in the tree at `lib.rs:297-300`, `lib.rs:328-331`,
-  `bridge_plan.rs:24-27`, and `harness.rs:65-67`. §7.2's list is exhaustive, and the reason
+  `bridge_plan.rs:24-27`, and `harness.rs:65-67`. For the same reason and stated so the
+  claim below is true as written: `FNV_OFFSET_BASIS` and `FNV_PRIME` in `hash.rs` are moved
+  algorithm constants — the published FNV-1a 64-bit offset basis and prime, already in the
+  tree at four sites (§7.1) — and `GOLDEN_HASH` in `tests/bounce.rs` is a checked-in test
+  vector computed from a literal array (§5.1 test 1). Neither is a limit and neither owes a
+  PROD-003 row. **With those named, §7.2's list of numbers is exhaustive**, and the reason
   each absent row is absent is in §8 Q1, in §4.4(8), in §4.7, and in the next paragraph.
 - `docs/status/STATUS.md`, `docs/status/NEXT.md`,
   `docs/06-plans/current-milestone.md` — update when the slice lands, per
