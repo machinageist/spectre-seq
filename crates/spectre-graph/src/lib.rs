@@ -358,7 +358,17 @@ pub enum PlanError {
     NoteRefused(NodeId),
     // Two note inputs name the same node
     DuplicateNoteNode(NodeId),
-    Process { node: NodeId, error: ProcessError },
+    // A parameter application named a node that is not in the plan
+    UnknownParameterNode(NodeId),
+    // The node's processor refused the key
+    Parameter {
+        node: NodeId,
+        error: spectre_dsp::ParameterError,
+    },
+    Process {
+        node: NodeId,
+        error: ProcessError,
+    },
 }
 
 impl std::fmt::Display for PlanError {
@@ -374,6 +384,12 @@ impl std::fmt::Display for PlanError {
             }
             Self::DuplicateNoteNode(node) => {
                 write!(f, "node {} received two note inputs", node.0.raw())
+            }
+            Self::UnknownParameterNode(node) => {
+                write!(f, "parameter names absent node {}", node.0.raw())
+            }
+            Self::Parameter { node, error } => {
+                write!(f, "node {} refused a parameter: {error}", node.0.raw())
             }
             Self::Process { node, error } => {
                 write!(f, "node {} failed to process: {error:?}", node.0.raw())
@@ -530,6 +546,28 @@ impl CompiledPlan {
         }
         self.rendered_frames = frames;
         Ok(())
+    }
+
+    // Apply one parameter value to one live node's processor. Callback-safe: the node lookup is
+    // the same bounded linear scan `process` already performs over `steps`, and the processor's
+    // own setter carries the realtime contract. Nothing is recompiled and no graph edge changes,
+    // so the GRAPH-001 split is unaffected — this mutates a processor's internal value only
+    pub fn set_parameter(
+        &mut self,
+        node: NodeId,
+        key: spectre_dsp::DeviceParameterKey,
+        value: f32,
+    ) -> Result<(), PlanError> {
+        let index = self
+            .steps
+            .iter()
+            .position(|step| step.node == node)
+            .ok_or(PlanError::UnknownParameterNode(node))?;
+        // steps and processors are pushed together in compile, so one index addresses both —
+        // the same invariant `process` relies on when it zips them
+        self.processors[index]
+            .set_parameter(key, value)
+            .map_err(|error| PlanError::Parameter { node, error })
     }
 
     // Borrow the output node's stereo channels from the latest quantum

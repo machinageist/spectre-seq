@@ -290,11 +290,13 @@ fn plan_process_is_rt_clean_through_the_null_stream() {
 fn rt_modules_contain_no_blocking_primitives() {
     // Structural lock guard. Weaker than the allocation guard above: it proves these modules
     // never name a blocking primitive, not that some future call cannot reach one indirectly.
-    const RT_MODULES: [&str; 4] = [
+    const RT_MODULES: [&str; 5] = [
         "src/bridge.rs",
         "src/control.rs",
         "src/spsc.rs",
         "src/null.rs",
+        // Added by R4-2: the parameter route table is resolved inside the render callback
+        "src/route.rs",
     ];
     const FORBIDDEN: [&str; 7] = [
         "Mutex",

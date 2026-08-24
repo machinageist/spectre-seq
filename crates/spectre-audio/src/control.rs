@@ -18,6 +18,21 @@ pub const DEFAULT_NOTE_CAPACITY: usize = 1_024;
 pub const DEFAULT_TRANSPORT_CAPACITY: usize = 64;
 pub const DEFAULT_RECLAIM_CAPACITY: usize = 32;
 
+// Largest parameter-target set a control channel will register.
+//
+// Rationale (decision 16, PROD-003 — this bound is Spectre's own and is not taken from any
+// reference product). It exists because ParameterReader::drain walks every registered slot on
+// every block, so without a cap the per-block cost of the callback path grows without limit as a
+// project grows, which RT-001's "bounded" clause does not permit. The value is deliberately
+// generous rather than tuned, because Spectre has no measurement that would justify a tuned
+// value and a generous bound still discharges the obligation that the number be bounded at all.
+// What is computable from source is the memory: one target costs a 16-byte ParameterTarget, an
+// 8-byte ParameterSlot, a 4-byte `seen` entry, and a 40-byte ParameterRoute, so 1_024 targets
+// reserve 69,632 B — negligible against the plan's own channel pool. R4's complete accepted
+// device scope registers four. Re-open when a real project approaches the cap, or when a
+// hardware run produces the first drain-cost measurement
+pub const MAX_PARAMETER_TARGETS: usize = 1_024;
+
 // Identity of one automatable parameter on one device instance
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ParameterTarget {
@@ -31,6 +46,8 @@ pub enum ControlError {
     UnknownTarget(ParameterTarget),
     TargetIndexOutOfRange(usize),
     DuplicateTarget(ParameterTarget),
+    // Registered target set exceeds the callback path's bounded-work budget
+    TooManyTargets(usize),
     // Strict-FIFO lane overflowed; this is a defect, not a normal outcome
     NoteLaneFull,
     TransportLaneFull,
@@ -54,6 +71,10 @@ impl std::fmt::Display for ControlError {
                 "duplicate parameter target device {} parameter {}",
                 target.device.raw(),
                 target.parameter.raw()
+            ),
+            Self::TooManyTargets(count) => write!(
+                f,
+                "{count} parameter targets exceeds the bounded budget of {MAX_PARAMETER_TARGETS}"
             ),
             Self::NoteLaneFull => write!(f, "note lane overflowed"),
             Self::TransportLaneFull => write!(f, "transport lane overflowed"),
@@ -197,6 +218,9 @@ pub fn control_channel(
     note_capacity: usize,
     transport_capacity: usize,
 ) -> Result<(ControlSender, ControlReceiver), ControlError> {
+    if targets.len() > MAX_PARAMETER_TARGETS {
+        return Err(ControlError::TooManyTargets(targets.len()));
+    }
     for (index, target) in targets.iter().enumerate() {
         if targets[..index].contains(target) {
             return Err(ControlError::DuplicateTarget(*target));

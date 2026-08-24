@@ -55,6 +55,15 @@ impl AudioProcessor for PoisonSource {
         }
     }
 
+    // Test-only device with no descriptors, so every key is refused
+    fn set_parameter(
+        &mut self,
+        key: spectre_dsp::DeviceParameterKey,
+        _value: f32,
+    ) -> Result<(), spectre_dsp::ParameterError> {
+        Err(spectre_dsp::ParameterError::UnknownKey(key))
+    }
+
     fn process(
         &mut self,
         context: &ProcessContext<'_>,
@@ -84,6 +93,15 @@ impl AudioProcessor for PoisonEffect {
             audio_outputs: 2,
             accepts_notes: false,
         }
+    }
+
+    // Test-only device with no descriptors, so every key is refused
+    fn set_parameter(
+        &mut self,
+        key: spectre_dsp::DeviceParameterKey,
+        _value: f32,
+    ) -> Result<(), spectre_dsp::ParameterError> {
+        Err(spectre_dsp::ParameterError::UnknownKey(key))
     }
 
     fn process(

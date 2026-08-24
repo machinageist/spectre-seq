@@ -5,8 +5,9 @@
 
 use spectre_dsp::{
     AudioProcessor, DeviceClass, DeviceParameterKey, Gain, NoteEvent, NoteEventKind,
-    ProcessContext, PulseInstrument, Saturator, ToneSource, Waveform, GAIN_PARAMETERS,
-    NORMALIZED_ROUND_TRIP_MAX_ULPS, PULSE_PARAMETERS, SATURATOR_PARAMETERS, TONE_PARAMETERS,
+    ParameterError, ProcessContext, PulseInstrument, Saturator, ToneSource, Waveform,
+    GAIN_PARAMETERS, NORMALIZED_ROUND_TRIP_MAX_ULPS, PULSE_PARAMETERS, SATURATOR_PARAMETERS,
+    TONE_PARAMETERS,
 };
 
 fn output(frames: usize) -> (Vec<f32>, Vec<f32>) {
@@ -372,4 +373,94 @@ fn same_frame_note_off_must_precede_note_on() {
         },
     ];
     assert!(ProcessContext::new(48_000.0, 16, &events).is_err());
+}
+
+// R4-2 test 1 — every shipping device answers its own descriptor keys and refuses others
+#[test]
+fn every_device_accepts_exactly_its_own_parameter_keys() {
+    let stranger = DeviceParameterKey::new("not_a_parameter").unwrap();
+
+    let mut gain = Gain::new(1.0).unwrap();
+    assert_eq!(gain.set_parameter(GAIN_PARAMETERS[0].key, 0.5), Ok(()));
+    assert_eq!(
+        gain.set_parameter(stranger, 0.5),
+        Err(ParameterError::UnknownKey(stranger))
+    );
+
+    let mut saturator = Saturator::new(1.0, 1.0).unwrap();
+    assert_eq!(
+        saturator.set_parameter(SATURATOR_PARAMETERS[0].key, 4.0),
+        Ok(())
+    );
+    assert_eq!(
+        saturator.set_parameter(SATURATOR_PARAMETERS[1].key, 0.5),
+        Ok(())
+    );
+    assert_eq!(
+        saturator.set_parameter(stranger, 0.5),
+        Err(ParameterError::UnknownKey(stranger))
+    );
+
+    let mut pulse = PulseInstrument::new(Waveform::Saw, 0.3).unwrap();
+    assert_eq!(pulse.set_parameter(PULSE_PARAMETERS[0].key, 0.6), Ok(()));
+    assert_eq!(
+        pulse.set_parameter(stranger, 0.6),
+        Err(ParameterError::UnknownKey(stranger))
+    );
+
+    let mut tone = ToneSource::new(440.0, 0.2).unwrap();
+    assert_eq!(tone.set_parameter(TONE_PARAMETERS[0].key, 880.0), Ok(()));
+    assert_eq!(tone.set_parameter(TONE_PARAMETERS[1].key, 0.4), Ok(()));
+    assert_eq!(
+        tone.set_parameter(stranger, 0.4),
+        Err(ParameterError::UnknownKey(stranger))
+    );
+}
+
+// R4-2 test 2 — the setter clamps against the same descriptor the constructor uses, so a value
+// out of range is contained rather than refused or propagated
+#[test]
+fn a_setter_clamps_against_its_own_descriptor() {
+    let mut gain = Gain::new(1.0).unwrap();
+    gain.set_parameter(GAIN_PARAMETERS[0].key, 999.0).unwrap();
+
+    let (mut left, mut right) = output(4);
+    let context = ProcessContext::new(48_000.0, 4, &[]).unwrap();
+    let ones = vec![1.0_f32; 4];
+    let inputs: [&[f32]; 2] = [&ones, &ones];
+    let mut outputs = [left.as_mut_slice(), right.as_mut_slice()];
+    gain.process(&context, &inputs, &mut outputs).unwrap();
+
+    let expected = GAIN_PARAMETERS[0].maximum();
+    assert!(
+        outputs[0].iter().all(|sample| *sample == expected),
+        "an out-of-range value must clamp to the descriptor maximum, not pass through"
+    );
+    let _ = (&mut left, &mut right);
+}
+
+// R4-2 test 3 — a frequency change is phase-continuous; resetting the phase would click
+#[test]
+fn changing_tone_frequency_does_not_reset_phase() {
+    let mut tone = ToneSource::new(440.0, 0.2).unwrap();
+    let context = ProcessContext::new(48_000.0, 8, &[]).unwrap();
+
+    let (mut left, mut right) = output(8);
+    let mut outputs = [left.as_mut_slice(), right.as_mut_slice()];
+    tone.process(&context, &[], &mut outputs).unwrap();
+    let last_before = outputs[0][7];
+
+    tone.set_parameter(TONE_PARAMETERS[0].key, 441.0).unwrap();
+    let (mut next_left, mut next_right) = output(8);
+    let mut next = [next_left.as_mut_slice(), next_right.as_mut_slice()];
+    tone.process(&context, &[], &mut next).unwrap();
+
+    // One sample at 440 Hz / 48 kHz advances the phase by ~0.0092 of a cycle, so a continuous
+    // waveform cannot jump by more than a small fraction of its amplitude across the boundary
+    let step = (next[0][0] - last_before).abs();
+    assert!(
+        step < 0.05,
+        "a frequency change must not restart the phase; step was {step}"
+    );
+    let _ = (&mut next_left, &mut next_right);
 }

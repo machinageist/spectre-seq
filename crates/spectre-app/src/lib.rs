@@ -47,6 +47,17 @@ pub struct TrackView {
     pub level: f32,
 }
 
+// The canonical result of one accepted Shape edit: what the model stored, and which stable
+// identities name it. Public fields, matching ParameterControl, because this is an app-thread
+// value rather than a published cross-crate DTO like DeviceParameterSnapshot
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ParameterEdit {
+    pub device_instance_id: ObjectId,
+    pub parameter_instance_id: ObjectId,
+    // Already clamped by the parameter's own descriptor; this is what offline rendering would use
+    pub value: f32,
+}
+
 // One backend-defined parameter and its current app-thread value
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParameterControl {
@@ -385,24 +396,42 @@ impl AppModel {
             .collect()
     }
 
-    pub fn set_device_parameter(
+    // Apply a Shape edit and report the canonical stored value with its stable identities.
+    // This is the single clamping site in the app, so a value cannot be clamped in one place and
+    // published unclamped from another
+    pub fn edit_device_parameter(
         &mut self,
         device_key: &str,
         parameter_key: &str,
         value: f32,
-    ) -> Result<(), &'static str> {
+    ) -> Result<ParameterEdit, &'static str> {
         let device = self
             .devices
             .iter_mut()
             .find(|device| device.key == device_key)
             .ok_or("unknown device")?;
+        let device_instance_id = device.instance_id;
         let parameter = device
             .parameters
             .iter_mut()
             .find(|parameter| parameter.descriptor.key.as_str() == parameter_key)
             .ok_or("unknown parameter")?;
         parameter.value = parameter.descriptor.clamp(value);
-        Ok(())
+        Ok(ParameterEdit {
+            device_instance_id,
+            parameter_instance_id: parameter.instance_id,
+            value: parameter.value,
+        })
+    }
+
+    pub fn set_device_parameter(
+        &mut self,
+        device_key: &str,
+        parameter_key: &str,
+        value: f32,
+    ) -> Result<(), &'static str> {
+        self.edit_device_parameter(device_key, parameter_key, value)
+            .map(|_| ())
     }
 
     pub fn add_track(&mut self, name: impl Into<String>) -> Result<ObjectId, &'static str> {

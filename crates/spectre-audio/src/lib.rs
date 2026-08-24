@@ -9,6 +9,7 @@ pub mod bridge;
 pub mod control;
 pub mod midi;
 pub mod null;
+pub mod route;
 pub mod spsc;
 
 #[cfg(feature = "cpal-backend")]

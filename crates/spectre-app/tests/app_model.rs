@@ -571,3 +571,42 @@ fn setter_and_snapshot_preserve_signed_zero_and_subnormal_bits() {
         GAIN_PARAMETERS[0].default().to_bits()
     );
 }
+
+// R4-2 test 15 — edit_device_parameter is the single clamping site and reports the identities
+// the live lane addresses by, so a value cannot be clamped in one place and published from another
+#[test]
+fn editing_a_parameter_reports_the_clamped_value_and_its_stable_identities() {
+    let mut model = AppModel::prototype();
+    let gain = model
+        .devices()
+        .iter()
+        .find(|device| device.key == "gain")
+        .expect("the prototype ships a gain device");
+    let device_id = gain.instance_id;
+    let parameter_id = gain.parameters[0].instance_id;
+    let maximum = gain.parameters[0].descriptor.maximum();
+
+    let edit = model
+        .edit_device_parameter("gain", "gain", 999.0)
+        .expect("a known device and parameter must accept an edit");
+
+    assert_eq!(edit.device_instance_id, device_id);
+    assert_eq!(edit.parameter_instance_id, parameter_id);
+    assert_eq!(
+        edit.value, maximum,
+        "the reported value must be the clamped one the model stored"
+    );
+    assert_eq!(
+        model
+            .devices()
+            .iter()
+            .find(|device| device.key == "gain")
+            .unwrap()
+            .parameters[0]
+            .value,
+        maximum
+    );
+
+    assert!(model.edit_device_parameter("gain", "nope", 0.5).is_err());
+    assert!(model.edit_device_parameter("nope", "gain", 0.5).is_err());
+}

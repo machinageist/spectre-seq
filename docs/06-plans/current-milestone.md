@@ -15,14 +15,14 @@ Notes: Exactly one milestone is active; the roadmap owns ordering
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
 - **Supersedes:** the R3 live-shell milestone, exited 2026-08-09
 - **Open decisions:** none new at intake; decisions 13 and 17 gate later milestones
-- **Known gaps:** slice 1 landed 2026-08-24; the other eight slices are unimplemented. A Shape edit still does not change live audio until slice 2, and R4-1's manual protocol has not run
+- **Known gaps:** slices 1 and 2 landed 2026-08-24; the other seven are unimplemented. Neither landed slice has run its manual protocol
 
 ## Inherited debt
 
 R4 carries four obligations from earlier milestones. None is optional and none should be rediscovered later:
 
 1. **Linux device qualification (decision 23).** R3 exited on macOS hardware alone. No Linux audio device has ever been opened. Discharge with `cargo test -p spectre-audio --test lifecycle_health -- --ignored --nocapture` on real Linux hardware. Until then no Linux support claim is authorized, and decision 1's co-first-class commitment remains undischarged.
-2. **Runtime parameter seam (decision 22).** The design is accepted in `../03-architecture/dsp-device-io.md`; the implementation lands here. The RT-002 parameter lane already exists and is tested but nothing consumes it, so the bridge counts edits as `parameters_pending`. A playable alpha needs this closed.
+2. ~~**Runtime parameter seam (decision 22).**~~ **Discharged 2026-08-24 by slice 2.** The RT-002 parameter lane is now consumed end to end: `AudioProcessor::set_parameter`, `CompiledPlan::set_parameter`, and a render-side route table applied once per block before `process`. `parameters_pending` stays zero in a correctly wired build and a Shape edit changes rendered output. **One thing this did not settle:** the accepted contract asserts twice that `Gain` smooths and the shipped `Gain` does not. Slice 2 refused to resolve that by assertion — adding smoothing would break the bit-exact live/offline hash equality — so it stands as D-R3 for Jeff.
 3. **CORE-004 atomic save.** The API design is accepted in `../03-architecture/project-persistence.md`; the filesystem implementation lands here, with crash qualification at R5.
 4. **CORE-001 reorder evidence.** Explicitly gated on the first persisted collection, which R4 introduces.
 
@@ -85,7 +85,7 @@ VST3 hosting, recording, automation and modulation, session/live slots, mixer se
 ## Exit evidence
 
 - ~~`./spectre` opens the qualified backend and produces sound through the existing compiled plan, with no second render path~~ — **partially closed 2026-08-24.** The open path, the render, and the no-second-path claim are all evidenced; the app's own drill rendered 88 real driver blocks. Audible confirmation and the manual protocol are outstanding, so this row is `implemented`, not closed.
-- Decision 22's parameter seam is implemented, so a UI edit changes live audio.
+- ~~Decision 22's parameter seam is implemented, so a UI edit changes live audio~~ — **closed 2026-08-24.** `a_shape_edit_changes_live_audio_and_nothing_stays_pending` asserts exactly this: the rendered hash changes and `parameters_pending` is 0.
 - A MIDI clip plays through a track into master.
 - One small original synth and one original effect ship as the alpha's voice.
 - Atomic save and reload round-trip a project containing tracks, clips, and device parameters (CORE-004 implementation, CORE-001 reorder evidence).

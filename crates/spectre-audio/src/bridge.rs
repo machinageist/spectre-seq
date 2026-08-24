@@ -27,6 +27,7 @@ pub struct BridgeTelemetry {
     frame_capacity_rejections: AtomicU64,
     notes_deferred: AtomicU64,
     parameters_pending: AtomicU64,
+    parameters_applied: AtomicU64,
     // RT-003 containment republished from the plan so the app thread can read it
     contaminated_nodes: AtomicU64,
     denormals_flushed: AtomicU64,
@@ -48,6 +49,7 @@ impl Default for BridgeTelemetry {
             frame_capacity_rejections: AtomicU64::new(0),
             notes_deferred: AtomicU64::new(0),
             parameters_pending: AtomicU64::new(0),
+            parameters_applied: AtomicU64::new(0),
             contaminated_nodes: AtomicU64::new(0),
             denormals_flushed: AtomicU64::new(0),
             last_contaminated_node: AtomicU64::new(0),
@@ -79,9 +81,15 @@ impl BridgeTelemetry {
         self.notes_deferred.load(Ordering::Relaxed)
     }
 
-    // Count parameter changes observed but not yet applicable to a live plan
+    // Count parameter changes observed but not delivered to a processor. Since R4-2 the plan
+    // can accept them, so in a correctly wired build this stays zero for the life of the process
     pub fn parameters_pending(&self) -> u64 {
         self.parameters_pending.load(Ordering::Relaxed)
+    }
+
+    // Count parameter changes applied to a live processor
+    pub fn parameters_applied(&self) -> u64 {
+        self.parameters_applied.load(Ordering::Relaxed)
     }
 
     // Count node-quanta silenced by RT-003 containment
@@ -126,16 +134,39 @@ pub struct RenderBridge {
     sample_rate: f64,
     transport: Transport,
     telemetry: Arc<BridgeTelemetry>,
+    // Built on the app thread before the stream opens; immutable for the bridge's life, so no
+    // retired route table is ever handed to the reclaim lane
+    routes: crate::route::ParameterRoutes,
 }
 
 impl RenderBridge {
-    // Build a bridge over an already-compiled plan
+    // Build a bridge over an already-compiled plan, with no parameter routing. Kept so the R3
+    // evidence that calls it compiles unchanged rather than being rewritten for this slice
     pub fn new(
         plan: CompiledPlan,
         control: ControlReceiver,
         note_node: NodeId,
         sample_rate: f64,
         note_scratch: usize,
+    ) -> Self {
+        Self::with_parameter_routes(
+            plan,
+            control,
+            note_node,
+            sample_rate,
+            note_scratch,
+            crate::route::ParameterRoutes::empty(),
+        )
+    }
+
+    // Build a bridge with a live parameter route table
+    pub fn with_parameter_routes(
+        plan: CompiledPlan,
+        control: ControlReceiver,
+        note_node: NodeId,
+        sample_rate: f64,
+        note_scratch: usize,
+        routes: crate::route::ParameterRoutes,
     ) -> Self {
         Self {
             plan,
@@ -145,6 +176,7 @@ impl RenderBridge {
             sample_rate,
             transport: Transport::default(),
             telemetry: Arc::new(BridgeTelemetry::default()),
+            routes,
         }
     }
 
@@ -175,14 +207,29 @@ impl RenderBridge {
         self.apply_transport();
         self.collect_notes();
 
-        // Parameter changes are observed but cannot reach live processors yet: the accepted
-        // AudioProcessor contract has no runtime parameter seam. Counting them keeps the gap
-        // visible instead of silently discarding edits.
-        let pending = self.control.drain_parameters(|_, _| {});
-        if pending > 0 {
+        // Parameter application runs once per block, before `process`, so the whole block sees
+        // one coherent parameter set. Borrows are split by field before the call, so the closure
+        // captures `plan` and `routes` rather than `self`, leaving `&mut self.control` free
+        let plan = &mut self.plan;
+        let routes = &self.routes;
+        let mut applied = 0_u64;
+        let mut unapplied = 0_u64;
+        self.control.drain_parameters(|target, value| {
+            match routes.resolve(target) {
+                Some((node, key)) if plan.set_parameter(node, key, value).is_ok() => applied += 1,
+                // Fail-closed: the previous value keeps rendering, nothing is logged, nothing panics
+                _ => unapplied += 1,
+            }
+        });
+        if applied > 0 {
+            self.telemetry
+                .parameters_applied
+                .fetch_add(applied, Ordering::Relaxed);
+        }
+        if unapplied > 0 {
             self.telemetry
                 .parameters_pending
-                .fetch_add(pending as u64, Ordering::Relaxed);
+                .fetch_add(unapplied, Ordering::Relaxed);
         }
 
         let inputs = [PlanNoteInput {

@@ -9,8 +9,8 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use spectre_app::engine::{
-    build_engine_parts, AuditionError, EngineParts, EngineState, EngineUnavailable, LiveEngine,
-    ENGINE_BUFFER_FRAMES, ENGINE_PLAN_FRAME_MARGIN,
+    apply_parameter_edit, build_engine_parts, AuditionError, EngineParts, EngineState,
+    EngineUnavailable, LiveEngine, ENGINE_BUFFER_FRAMES, ENGINE_PLAN_FRAME_MARGIN,
 };
 use spectre_app::AppModel;
 use spectre_audio::bridge::BridgeTelemetry;
@@ -81,6 +81,7 @@ fn open_null(
     NullStream,
     spectre_audio::control::ControlSender,
     Arc<BridgeTelemetry>,
+    Box<[spectre_audio::control::ParameterTarget]>,
 ) {
     let EngineParts {
         mut bridge,
@@ -88,6 +89,8 @@ fn open_null(
         telemetry,
         config,
         plan_max_frames: _,
+        targets,
+        nodes: _,
     } = parts;
     let backend = NullBackend::new();
     let mut stream = backend
@@ -98,21 +101,23 @@ fn open_null(
         )
         .unwrap();
     stream.start().unwrap();
-    (stream, sender, telemetry)
+    (stream, sender, telemetry, targets)
 }
 
 // Wrap an opened null stream in the engine without erasing its concrete type
 fn engine_over_null(parts: EngineParts) -> LiveEngine<NullStream> {
     let config = parts.config;
-    let (stream, sender, telemetry) = open_null(parts);
-    LiveEngine::from_open_stream(
+    let (stream, sender, telemetry, targets) = open_null(parts);
+    let mut engine = LiveEngine::from_open_stream(
         Box::new(stream),
         sender,
         telemetry,
         spectre_audio::NULL_BACKEND_NAME,
         "Null Output".to_string(),
         config,
-    )
+    );
+    engine.set_targets(targets);
+    engine
 }
 
 // Hash interleaved output the way the offline harness hashes its planar output
@@ -196,7 +201,7 @@ fn play_produces_nonzero_output_and_stop_returns_exact_silence() {
 fn the_live_plan_matches_the_offline_render_of_the_same_app_snapshot() {
     let snapshot = prototype_snapshot();
     let parts = build_engine_parts(&snapshot, config()).unwrap();
-    let (mut stream, mut sender, telemetry) = open_null(parts);
+    let (mut stream, mut sender, telemetry, _targets) = open_null(parts);
 
     for event in spectre_offline::fixture_events(FRAMES) {
         sender.send_note(event).unwrap();
@@ -224,7 +229,7 @@ fn repeated_engine_builds_render_identically() {
     let mut hashes = Vec::new();
     for _ in 0..3 {
         let parts = build_engine_parts(&snapshot, config()).unwrap();
-        let (mut stream, mut sender, _telemetry) = open_null(parts);
+        let (mut stream, mut sender, _telemetry, _targets) = open_null(parts);
         for event in spectre_offline::fixture_events(FRAMES) {
             sender.send_note(event).unwrap();
         }
@@ -394,6 +399,90 @@ fn play_then_stop_inside_one_block_is_refused_into_counted_silence() {
         "the discarded pair must leave no stuck note"
     );
     assert_eq!(engine.health().plan_errors, 1);
+}
+
+// 16 — the acceptance criterion for R4-2, stated in the terms §1.3 names
+#[test]
+fn a_shape_edit_changes_live_audio_and_nothing_stays_pending() {
+    let mut model = AppModel::prototype();
+    let parts = build_engine_parts(&model.device_parameter_snapshot().unwrap(), config()).unwrap();
+    let mut engine = engine_over_null(parts);
+
+    engine.start_audition().unwrap();
+    engine.stream_mut().pump().unwrap();
+    let before = hash_interleaved(engine.stream_mut().last_block(), CHANNELS, FRAMES);
+
+    let mut status = String::new();
+    apply_parameter_edit(&mut model, Some(&engine), "gain", "gain", 0.1, &mut status);
+    assert!(
+        status.is_empty(),
+        "a routed edit must report no failure: {status}"
+    );
+
+    engine.stream_mut().pump().unwrap();
+    let after = hash_interleaved(engine.stream_mut().last_block(), CHANNELS, FRAMES);
+
+    assert_ne!(
+        before, after,
+        "a gain edit must change what the render thread produces"
+    );
+    let health = engine.health();
+    assert_eq!(
+        health.parameters_pending, 0,
+        "no edit may reach the engine without reaching a processor"
+    );
+    assert_eq!(health.parameters_applied, 1);
+}
+
+// 17 — an unregistered target is refused on the app thread, before it can be silently lost
+#[test]
+fn an_unregistered_target_is_refused_at_publication() {
+    let parts = build_engine_parts(&prototype_snapshot(), config()).unwrap();
+    let engine = engine_over_null(parts);
+
+    let stranger = spectre_audio::control::ParameterTarget {
+        device: spectre_core::ObjectId::from_raw(0xDEAD_BEEF).unwrap(),
+        parameter: spectre_core::ObjectId::from_raw(0xFEED_FACE).unwrap(),
+    };
+    assert_eq!(
+        engine.send_parameter(stranger, 0.5),
+        Err(ControlError::UnknownTarget(stranger))
+    );
+    assert_eq!(engine.health().parameters_applied, 0);
+}
+
+// 18 — the whole registered fixture routes, and a repeated sweep coalesces latest-wins
+#[test]
+fn every_fixture_parameter_routes_and_a_sweep_coalesces() {
+    let parts = build_engine_parts(&prototype_snapshot(), config()).unwrap();
+    let mut engine = engine_over_null(parts);
+    assert_eq!(
+        engine.targets().len(),
+        4,
+        "the canonical fixture has four parameters"
+    );
+
+    let target = engine.targets()[0];
+    // Latest-wins: a fast sweep occupies one slot and cannot starve the lane
+    for step in 0..500 {
+        engine.send_parameter(target, step as f32 / 1000.0).unwrap();
+    }
+    engine.stream_mut().pump().unwrap();
+
+    let health = engine.health();
+    assert_eq!(
+        health.parameters_applied, 1,
+        "500 writes to one target must coalesce to a single application"
+    );
+    assert_eq!(health.parameters_pending, 0);
+
+    // Every registered target resolves to a live processor
+    for target in engine.targets().to_vec() {
+        engine.send_parameter(target, 0.5).unwrap();
+    }
+    engine.stream_mut().pump().unwrap();
+    assert_eq!(engine.health().parameters_applied, 5);
+    assert_eq!(engine.health().parameters_pending, 0);
 }
 
 // Hardware evidence for the app's own open path, not in the spec's test list. The deterministic

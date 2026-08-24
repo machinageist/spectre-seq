@@ -4,10 +4,10 @@
 // Notes: Phase accumulation uses f64; process paths allocate nothing
 
 use crate::io::{
-    validate_buffers, AudioProcessor, DeviceClass, DeviceIo, NoteEventKind, ProcessContext,
-    ProcessError,
+    validate_buffers, AudioProcessor, DeviceClass, DeviceIo, NoteEventKind, ParameterError,
+    ProcessContext, ProcessError,
 };
-use crate::parameter::{parameter, DspParameter};
+use crate::parameter::{parameter, DeviceParameterKey, DspParameter};
 use spectre_core::ParamUnit;
 use std::f64::consts::TAU;
 
@@ -76,6 +76,20 @@ impl ToneSource {
 impl AudioProcessor for ToneSource {
     fn io(&self) -> DeviceIo {
         SOURCE_IO
+    }
+
+    // Changing frequency mid-stream deliberately does not reset `phase`, so a frequency change
+    // is phase-continuous; resetting it would click
+    fn set_parameter(&mut self, key: DeviceParameterKey, value: f32) -> Result<(), ParameterError> {
+        if key == TONE_PARAMETERS[0].key {
+            self.frequency = TONE_PARAMETERS[0].clamp(value);
+            return Ok(());
+        }
+        if key == TONE_PARAMETERS[1].key {
+            self.level = TONE_PARAMETERS[1].clamp(value);
+            return Ok(());
+        }
+        Err(ParameterError::UnknownKey(key))
     }
 
     fn process(
@@ -160,6 +174,16 @@ impl PulseInstrument {
 impl AudioProcessor for PulseInstrument {
     fn io(&self) -> DeviceIo {
         INSTRUMENT_IO
+    }
+
+    // Level applies at the next block boundary; the phase and the active note are untouched, so
+    // a level change during a held note does not restart it
+    fn set_parameter(&mut self, key: DeviceParameterKey, value: f32) -> Result<(), ParameterError> {
+        if key == PULSE_PARAMETERS[0].key {
+            self.level = PULSE_PARAMETERS[0].clamp(value);
+            return Ok(());
+        }
+        Err(ParameterError::UnknownKey(key))
     }
 
     fn process(

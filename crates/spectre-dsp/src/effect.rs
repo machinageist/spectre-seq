@@ -4,9 +4,10 @@
 // Notes: Effects contain non-finite input and fully overwrite output buffers
 
 use crate::io::{
-    validate_buffers, AudioProcessor, DeviceClass, DeviceIo, ProcessContext, ProcessError,
+    validate_buffers, AudioProcessor, DeviceClass, DeviceIo, ParameterError, ProcessContext,
+    ProcessError,
 };
-use crate::parameter::{parameter, DspParameter};
+use crate::parameter::{parameter, DeviceParameterKey, DspParameter};
 use spectre_core::ParamUnit;
 
 const EFFECT_IO: DeviceIo = DeviceIo {
@@ -50,6 +51,16 @@ impl Gain {
 impl AudioProcessor for Gain {
     fn io(&self) -> DeviceIo {
         EFFECT_IO
+    }
+
+    // Compare against the device's own const descriptor table so the setter cannot drift from
+    // the descriptors the UI and the offline snapshot both read
+    fn set_parameter(&mut self, key: DeviceParameterKey, value: f32) -> Result<(), ParameterError> {
+        if key == GAIN_PARAMETERS[0].key {
+            self.set_gain(value);
+            return Ok(());
+        }
+        Err(ParameterError::UnknownKey(key))
     }
 
     fn process(
@@ -107,6 +118,19 @@ impl Saturator {
 impl AudioProcessor for Saturator {
     fn io(&self) -> DeviceIo {
         EFFECT_IO
+    }
+
+    // Reuses the existing inherent setters, which clamp against the same const table
+    fn set_parameter(&mut self, key: DeviceParameterKey, value: f32) -> Result<(), ParameterError> {
+        if key == SATURATOR_PARAMETERS[0].key {
+            self.set_drive(value);
+            return Ok(());
+        }
+        if key == SATURATOR_PARAMETERS[1].key {
+            self.set_mix(value);
+            return Ok(());
+        }
+        Err(ParameterError::UnknownKey(key))
     }
 
     fn process(

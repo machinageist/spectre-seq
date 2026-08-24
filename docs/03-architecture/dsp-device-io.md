@@ -80,7 +80,21 @@ Bus identity is semantic rather than positional at the editable-graph layer. The
 
 ## Runtime parameter seam
 
-Accepted 2026-08-09 as decision 22, design-only. Implementation lands at R4, following the CORE-004 precedent where an API is accepted at one milestone and implemented at a later one. R3 does not implement this, and R3's exit does not depend on it.
+Accepted 2026-08-09 as decision 22, design-only. **Implemented 2026-08-24 in R4 slice 2**, following the CORE-004 precedent where an API is accepted at one milestone and implemented at a later one. R3 did not implement this, and R3's exit did not depend on it.
+
+The method that landed, on `AudioProcessor` in `crates/spectre-dsp/src/io.rs`:
+
+```rust
+fn set_parameter(
+    &mut self,
+    key: DeviceParameterKey,
+    value: f32,
+) -> Result<(), ParameterError>;
+```
+
+It is required rather than defaulted, so a device added later must answer the seam instead of silently ignoring every edit made to it. `CompiledPlan::set_parameter` addresses one node's processor; `spectre_audio::route::ParameterRoutes` maps an RT-002 target to a node and key with a binary search over a frozen boxed slice; `RenderBridge` applies the drained lane once per block before `process`. Failures are counted into `parameters_pending` and never logged on the audio thread.
+
+> **Unresolved conflict — D-R3.** Two sentences below assert that `Gain` smooths. The shipped `Gain` is a single clamped `f32` multiplied directly per sample, with no target, no coefficient, and no per-sample ramp. R4-2 deliberately did **not** add smoothing: doing so would change rendered output for identical inputs and break the bit-exact live/offline hash equality that `crates/spectre-audio/tests/bridge_plan.rs` asserts, and it would need its own numeric bound with a rationale row. This document has not been edited to match the code, because implementation does not silently redefine an accepted contract. Jeff decides which side is wrong; the disposition is tracked as D-R3 in `gauntlet-output/decisions-needed.md`.
 
 The problem this closes: v1 devices take their parameters as constructor arguments, so a compiled plan's processors are fixed once built. The RT-002 parameter lane can deliver a latest-wins value per `(device, parameter)` target to the render thread, but no processor can accept it. Recompiling a plan per change is rejected because compilation allocates and cannot run on the audio thread.
 

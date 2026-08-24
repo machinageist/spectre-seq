@@ -7,8 +7,10 @@
 
 use spectre_audio::bridge::{BridgeTelemetry, RenderBridge, DEFAULT_NOTE_SCRATCH};
 use spectre_audio::control::{
-    control_channel, ControlError, ControlSender, DEFAULT_NOTE_CAPACITY, DEFAULT_TRANSPORT_CAPACITY,
+    control_channel, ControlError, ControlSender, ParameterTarget, DEFAULT_NOTE_CAPACITY,
+    DEFAULT_TRANSPORT_CAPACITY,
 };
+use spectre_audio::route::{ParameterRoute, ParameterRoutes, RouteError};
 use spectre_audio::{AudioBackend, AudioStream, BackendError, RenderBlock, StreamConfig};
 use spectre_core::{IdGen, TransportCommand};
 use spectre_dsp::{
@@ -18,7 +20,7 @@ use spectre_dsp::{
 use spectre_graph::{Connection, EditableGraph, NodeId};
 use std::sync::Arc;
 
-use crate::DeviceParameterSnapshotError;
+use crate::{AppModel, DeviceParameterSnapshotError};
 
 // Numeric bounds this slice introduces, each with its own rationale (decision 16, PROD-003)
 
@@ -73,6 +75,9 @@ pub enum EngineUnavailable {
     // The live plan could not be compiled from the app snapshot; a defect, not user error
     Plan(String),
     Control(ControlError),
+    // Two parameter targets resolved to the same identity; a shadowed route would send every
+    // edit of one parameter to the wrong device, so it is refused rather than tolerated
+    Route(RouteError),
     // The app snapshot was not the complete canonical fixture
     Snapshot(DeviceParameterSnapshotError),
 }
@@ -86,7 +91,8 @@ impl std::fmt::Display for EngineUnavailable {
             Self::NotAttempted => formatter.write_str("engine start was not attempted"),
             Self::Backend(error) => write!(formatter, "audio backend: {error}"),
             Self::Plan(error) => write!(formatter, "plan compilation: {error}"),
-            Self::Control(error) => write!(formatter, "control transport: {error:?}"),
+            Self::Control(error) => write!(formatter, "control transport: {error}"),
+            Self::Route(error) => write!(formatter, "parameter routing: {error}"),
             Self::Snapshot(error) => write!(formatter, "device snapshot: {error}"),
         }
     }
@@ -123,6 +129,11 @@ pub struct EngineHealth {
     pub notes_deferred: u64,
     pub contaminated_nodes: u64,
     pub stream_errors: u64,
+    // Parameter edits delivered to a live processor
+    pub parameters_applied: u64,
+    // Parameter edits observed but not delivered. In a correctly wired build this stays zero;
+    // §1.3 of the R4-2 spec names it as the field that encodes the acceptance criterion
+    pub parameters_pending: u64,
 }
 
 // Render-side halves built together, before any device is touched
@@ -135,6 +146,64 @@ pub struct EngineParts {
     // new/telemetry/transport/render, so plan capacity is unreadable through the bridge; this
     // carries the value build_engine_parts passed to EditableGraph::compile instead
     pub plan_max_frames: usize,
+    // Registered lane targets, so the app can address slots by stable identity without
+    // rebuilding the set it already published
+    pub targets: Box<[ParameterTarget]>,
+    // The plan nodes build_engine_parts allocated, exposed so routes can be built against them
+    pub nodes: FixtureNodes,
+}
+
+// The three plan nodes build_engine_parts allocates
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FixtureNodes {
+    pub pulse: NodeId,
+    pub gain: NodeId,
+    pub saturator: NodeId,
+}
+
+impl FixtureNodes {
+    // Resolve a canonical device key to its plan node
+    fn node_for(&self, device_key: &str) -> Option<NodeId> {
+        match device_key {
+            "pulse" => Some(self.pulse),
+            "gain" => Some(self.gain),
+            "saturator" => Some(self.saturator),
+            _ => None,
+        }
+    }
+}
+
+// Build the lane's target set and the render-side route table from the same validated snapshot
+// the plan is built from. No new app-side identity plumbing is needed: DeviceParameterSnapshot
+// already carries device_instance_id, device_key, parameter_instance_id, and parameter_key,
+// which is exactly the join
+pub fn build_parameter_wiring(
+    snapshot: &[DeviceParameterSnapshot],
+    nodes: &FixtureNodes,
+) -> Result<(Vec<ParameterTarget>, ParameterRoutes), EngineUnavailable> {
+    let mut targets = Vec::with_capacity(snapshot.len());
+    let mut routes = Vec::with_capacity(snapshot.len());
+    for entry in snapshot {
+        let Some(node) = nodes.node_for(entry.device_key()) else {
+            // A device outside the canonical fixture cannot be routed; fixture_values already
+            // refused an incomplete snapshot, so this is an unknown extra rather than a gap
+            return Err(EngineUnavailable::Snapshot(
+                DeviceParameterSnapshotError::MissingDevice(entry.device_key()),
+            ));
+        };
+        let target = ParameterTarget {
+            device: entry.device_instance_id(),
+            parameter: entry.parameter_instance_id(),
+        };
+        targets.push(target);
+        routes.push(ParameterRoute {
+            target,
+            node,
+            key: entry.parameter_key(),
+        });
+    }
+    let routes = ParameterRoutes::new(routes).map_err(EngineUnavailable::Route)?;
+    Ok((targets, routes))
 }
 
 // Which half of a two-send audition sequence was refused; the caller needs the distinction
@@ -229,17 +298,24 @@ pub fn build_engine_parts(
         })
         .map_err(plan_error)?;
 
-    // No parameter targets are registered: consuming the parameter lane is decision 22's seam
-    // and lands at R4-2. The bridge continues to count observed changes as parameters_pending
+    // The lane's target set and the render-side route table come from the same snapshot the plan
+    // was built from, so an identity can never be registered without a node to apply it to
+    let nodes = FixtureNodes {
+        pulse,
+        gain,
+        saturator,
+    };
+    let (targets, routes) = build_parameter_wiring(snapshot, &nodes)?;
     let (sender, receiver) =
-        control_channel(&[], DEFAULT_NOTE_CAPACITY, DEFAULT_TRANSPORT_CAPACITY)
+        control_channel(&targets, DEFAULT_NOTE_CAPACITY, DEFAULT_TRANSPORT_CAPACITY)
             .map_err(EngineUnavailable::Control)?;
-    let bridge = RenderBridge::new(
+    let bridge = RenderBridge::with_parameter_routes(
         plan,
         receiver,
         pulse,
         f64::from(config.sample_rate),
         DEFAULT_NOTE_SCRATCH,
+        routes,
     );
     let telemetry = bridge.telemetry();
 
@@ -249,6 +325,8 @@ pub fn build_engine_parts(
         telemetry,
         config,
         plan_max_frames,
+        targets: targets.into_boxed_slice(),
+        nodes,
     })
 }
 
@@ -275,6 +353,8 @@ pub fn open_default(
         telemetry,
         config,
         plan_max_frames: _,
+        targets,
+        nodes: _,
     } = parts;
 
     let mut stream = backend
@@ -286,14 +366,16 @@ pub fn open_default(
         .map_err(EngineUnavailable::Backend)?;
     stream.start().map_err(EngineUnavailable::Backend)?;
 
-    Ok(LiveEngine::from_open_stream(
+    let mut engine = LiveEngine::from_open_stream(
         stream,
         sender,
         telemetry,
         backend.name(),
         device.name,
         config,
-    ))
+    );
+    engine.set_targets(targets);
+    Ok(engine)
 }
 
 // App-thread owner of the live stream; not Send, because AudioStream is not Send. Generic over
@@ -309,6 +391,8 @@ pub struct LiveEngine<S: ?Sized = dyn AudioStream> {
     config: StreamConfig,
     // Sequence counter for outgoing note events; the ordering key's tie-break
     next_sequence: u64,
+    // Registered lane targets, so a Shape edit can be addressed by stable identity
+    targets: Box<[ParameterTarget]>,
     // Box<S> is itself Sized even when S is not, so field order is unconstrained here
     stream: Box<S>,
 }
@@ -332,8 +416,26 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
             device_name,
             config,
             next_sequence: 0,
+            targets: Box::new([]),
             stream,
         }
+    }
+
+    // Record the lane targets the parts registered. Separate from from_open_stream so R4-1's
+    // signature, and every test that calls it, is unchanged
+    pub fn set_targets(&mut self, targets: Box<[ParameterTarget]>) {
+        self.targets = targets;
+    }
+
+    // Report the registered lane targets
+    pub fn targets(&self) -> &[ParameterTarget] {
+        &self.targets
+    }
+
+    // Publish one already-clamped value to its latest-wins slot. Takes &self, not &mut self:
+    // the write is an atomic store and needs no exclusivity
+    pub fn send_parameter(&self, target: ParameterTarget, value: f32) -> Result<(), ControlError> {
+        self.sender.parameters().set_target(target, value)
     }
 
     // Borrow the stream for callers that must drive it explicitly. The app never calls this; it
@@ -377,6 +479,8 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
             notes_deferred: self.telemetry.notes_deferred(),
             contaminated_nodes: self.telemetry.contaminated_nodes(),
             stream_errors: self.stream.stream_errors(),
+            parameters_applied: self.telemetry.parameters_applied(),
+            parameters_pending: self.telemetry.parameters_pending(),
         }
     }
 
@@ -437,5 +541,49 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
     // Release the device; the engine is unusable afterward
     pub fn close(&mut self) -> Result<(), BackendError> {
         self.stream.close()
+    }
+}
+
+// Apply a Shape edit to the model and publish the accepted value to the live lane.
+//
+// A free function rather than inline in main.rs so it can be tested against a real AppModel:
+// main.rs is a binary target and its types are unreachable from crates/spectre-app/tests/.
+//
+// Generic over the stream rather than taking `Option<&LiveEngine>` as the spec declared. The
+// declared form cannot be called with the concrete `LiveEngine<NullStream>` a test holds —
+// `Option<&LiveEngine>` defaults to `LiveEngine<dyn AudioStream>`, and since `stream: Box<S>`
+// the two have different layouts, so the reference does not coerce. The app still passes the
+// erased type; only the tests need the concrete one.
+pub fn apply_parameter_edit<S: AudioStream + ?Sized>(
+    model: &mut AppModel,
+    engine: Option<&LiveEngine<S>>,
+    device_key: &str,
+    parameter_key: &str,
+    value: f32,
+    feedback_status: &mut String,
+) {
+    // The model is the value of record and the single clamping site; the lane only ever carries
+    // a copy of what the model already accepted
+    let edit = match model.edit_device_parameter(device_key, parameter_key, value) {
+        Ok(edit) => edit,
+        Err(error) => {
+            *feedback_status =
+                format!("Could not set {device_key}.{parameter_key}: {error}. Nothing changed.");
+            return;
+        }
+    };
+    let Some(engine) = engine else {
+        return;
+    };
+    let target = ParameterTarget {
+        device: edit.device_instance_id,
+        parameter: edit.parameter_instance_id,
+    };
+    if let Err(error) = engine.send_parameter(target, edit.value) {
+        // The model keeps the edit: it is the value of record, and offline rendering will use it.
+        // Only the live copy failed to publish, and the message says exactly that
+        *feedback_status = format!(
+            "{device_key}.{parameter_key} was stored but did not reach live audio: {error}"
+        );
     }
 }

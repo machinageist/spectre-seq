@@ -8,7 +8,9 @@ use spectre_dsp::{
     AudioProcessor, DeviceClass, DeviceIo, Gain, NoteEvent, NoteEventKind, ProcessContext,
     ProcessError, PulseInstrument, ToneSource, Waveform,
 };
-use spectre_graph::{CompiledPlan, Connection, EditableGraph, GraphError, NodeId, PlanNoteInput};
+use spectre_graph::{
+    CompiledPlan, Connection, EditableGraph, GraphError, NodeId, PlanError, PlanNoteInput,
+};
 
 // Deterministic node IDs for one test graph
 fn ids(count: usize) -> Vec<NodeId> {
@@ -266,6 +268,15 @@ impl AudioProcessor for ImpulseSource {
         }
     }
 
+    // Test-only device with no descriptors, so every key is refused
+    fn set_parameter(
+        &mut self,
+        key: spectre_dsp::DeviceParameterKey,
+        _value: f32,
+    ) -> Result<(), spectre_dsp::ParameterError> {
+        Err(spectre_dsp::ParameterError::UnknownKey(key))
+    }
+
     fn process(
         &mut self,
         _context: &ProcessContext<'_>,
@@ -335,4 +346,40 @@ fn unreachable_nodes_are_excluded_from_the_plan() {
         .unwrap();
     assert_eq!(plan.step_count(), 2);
     assert!(!built.contains(&nodes[2]));
+}
+
+// R4-2 test 4 — the plan applies a parameter to the addressed node and refuses an absent one
+#[test]
+fn plan_applies_a_parameter_to_a_live_node_and_refuses_an_absent_one() {
+    let nodes = ids(3);
+    let mut plan = tone_gain_plan(nodes[0], nodes[1], 64);
+
+    let key = spectre_dsp::GAIN_PARAMETERS[0].key;
+    assert_eq!(plan.set_parameter(nodes[1], key, 0.25), Ok(()));
+
+    // nodes[2] was never added, so it has no processor to address
+    assert_eq!(
+        plan.set_parameter(nodes[2], key, 0.25),
+        Err(PlanError::UnknownParameterNode(nodes[2]))
+    );
+}
+
+// R4-2 test 5 — a key the processor does not own is refused as a recoverable error, not a panic,
+// and the refusal names both the node and the key so the app thread can build a diagnostic
+#[test]
+fn plan_reports_a_processor_refusal_without_panicking() {
+    let nodes = ids(2);
+    let mut plan = tone_gain_plan(nodes[0], nodes[1], 64);
+
+    let stranger = spectre_dsp::DeviceParameterKey::new("drive").unwrap();
+    assert_eq!(
+        plan.set_parameter(nodes[1], stranger, 4.0),
+        Err(PlanError::Parameter {
+            node: nodes[1],
+            error: spectre_dsp::ParameterError::UnknownKey(stranger),
+        })
+    );
+
+    // The plan still renders after a refusal: fail-closed means the previous value keeps working
+    assert!(plan.process(48_000.0, 8, &[]).is_ok());
 }

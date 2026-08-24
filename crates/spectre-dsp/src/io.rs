@@ -3,6 +3,8 @@
 // Description: Borrowed planar-buffer and bounded-event DSP process contract
 // Notes: Validation allocates nothing and process callers own all storage
 
+use crate::parameter::DeviceParameterKey;
+
 // Native device processing role
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceClass {
@@ -157,11 +159,40 @@ impl NoteEventKind {
     }
 }
 
+// Callback-safe parameter-application failure. Carries the refused key so the app thread can
+// build a diagnostic; constructing it copies a &'static str pointer and never allocates
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterError {
+    // The device has no parameter under this key. Recoverable, never a panic
+    UnknownKey(DeviceParameterKey),
+}
+
+impl std::fmt::Display for ParameterError {
+    // App-thread diagnostic; never formatted on the render path
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownKey(key) => write!(formatter, "unknown parameter key {}", key.as_str()),
+        }
+    }
+}
+
 // Allocation-free native device process seam
 // Send is required: a compiled plan is built on the app thread and moved to the audio thread,
 // so a device that cannot cross threads could never run in the callback
 pub trait AudioProcessor: Send {
     fn io(&self) -> DeviceIo;
+
+    // Apply one already-validated parameter value to a live processor.
+    //
+    // Inherits the full realtime contract of `process`: no allocation, no locks, no I/O, no
+    // string formatting, no logging, no panic. Implementations perform assignment and at most
+    // bounded arithmetic. Values arriving here are already canonical — the app thread clamped
+    // them against this parameter's own descriptor before publication — so an implementation
+    // applies, it does not police. Unknown keys are refused, never panicked on.
+    //
+    // Required rather than defaulted, deliberately: a device added later must answer the seam
+    // instead of silently ignoring every edit made to it
+    fn set_parameter(&mut self, key: DeviceParameterKey, value: f32) -> Result<(), ParameterError>;
 
     fn process(
         &mut self,

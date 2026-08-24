@@ -7,9 +7,9 @@
 
 use eframe::egui::{self, Color32, CornerRadius, RichText, Stroke, Vec2};
 use spectre_app::engine::{
-    AuditionError, EngineHealth, EngineState, EngineUnavailable, LiveEngine,
+    apply_parameter_edit, AuditionError, EngineHealth, EngineState, EngineUnavailable, LiveEngine,
 };
-use spectre_app::{open_device_in_shape_from_ui, set_device_parameter_from_ui, AppModel, Lens};
+use spectre_app::{open_device_in_shape_from_ui, AppModel, Lens};
 
 const BG: Color32 = Color32::from_rgb(15, 18, 24);
 const PANEL: Color32 = Color32::from_rgb(24, 29, 38);
@@ -192,7 +192,7 @@ impl SpectrePrototype {
                                     .color(MUTED),
                                 )
                                 .on_hover_text(format!(
-                                    "blocks {} · xruns {} · plan errors {} · frame rejections {} · notes deferred {} · contaminated {} · stream errors {}",
+                                    "blocks {} · xruns {} · plan errors {} · frame rejections {} · notes deferred {} · contaminated {} · stream errors {} · params applied {} · params pending {}",
                                     health.blocks_rendered,
                                     health.xruns,
                                     health.plan_errors,
@@ -200,6 +200,8 @@ impl SpectrePrototype {
                                     health.notes_deferred,
                                     health.contaminated_nodes,
                                     health.stream_errors,
+                                    health.parameters_applied,
+                                    health.parameters_pending,
                                 ));
                                 ui.label(
                                     RichText::new(format!(
@@ -496,7 +498,7 @@ impl SpectrePrototype {
         ui.label(
             RichText::new(
                 "This chain is the live plan: the same compiled plan the offline harness renders. \
-                 Parameter edits do not reach it yet — the runtime parameter seam lands at R4-2.",
+                 Shape edits reach it at the next block boundary.",
             )
             .small()
             .color(WARM),
@@ -510,14 +512,30 @@ impl SpectrePrototype {
             )
             .color(MUTED),
         );
-        ui.label(
-            RichText::new(
-                "Edits here change the model and the offline render. They do not change live \
-                 audio: the runtime parameter seam is decision 22 and lands at R4-2.",
-            )
-            .small()
-            .color(WARM),
-        );
+        // Three states, each stating what an edit actually reaches right now
+        let (message, color) = match self.engine_health() {
+            None => (
+                "No engine is running. Edits change the model and the offline render only."
+                    .to_string(),
+                WARM,
+            ),
+            Some(health) if health.parameters_pending > 0 => (
+                format!(
+                    "{} edit(s) reached the engine but no processor. This is a defect — see the \
+                     transport bar's counters.",
+                    health.parameters_pending
+                ),
+                WARM,
+            ),
+            Some(health) => (
+                format!(
+                    "Edits reach live audio at the next block boundary. {} applied so far.",
+                    health.parameters_applied
+                ),
+                ACCENT,
+            ),
+        };
+        ui.label(RichText::new(message).small().color(color));
         ui.add_space(12.0);
         let mut edits = Vec::new();
         let presentation = self.model.shape_presentation();
@@ -564,9 +582,12 @@ impl SpectrePrototype {
                 ui.label(RichText::new(message).color(WARM));
             }
         });
+        // One call site for both halves: the model stores the clamped value and the same value
+        // is published to the live lane, so the two can never drift apart
         for (device_key, parameter_key, value) in edits {
-            set_device_parameter_from_ui(
+            apply_parameter_edit(
                 &mut self.model,
+                self.engine.as_ref(),
                 device_key,
                 parameter_key,
                 value,
