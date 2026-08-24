@@ -9,7 +9,7 @@ Notes: Re-verification of the iteration-3 feasibility failure plus a full grade 
   Read at every cited range plus surrounding context: crates/spectre-offline/src/lib.rs
   (:19-34, :45-46, :144-150, :163-178, :204-215, :240-245, :255-300, :319-334),
   crates/spectre-offline/tests/harness.rs (:55-175 in full, plus a symbol map of all 470 lines),
-  crates/spectre-audio/tests/bridge_plan.rs (:1-100 in full, :106-121, :166-176, :227-245, plus
+  crates/spectre-audio/tests/bridge_plan.rs (:1-121 in full, :166-176, :227-245, plus
   a full symbol map), crates/spectre-graph/src/lib.rs (:203, :209-224, :324, :401-414, :451-464,
   :512-521, :533-544), crates/spectre-dsp/src/source.rs (:113-119, :194-197, :202-209),
   effect.rs (:50-52, :62-71, :107-109, :119, :121-129), io.rs (:52, :93, :96-99, :163-164),
@@ -40,6 +40,22 @@ Notes: Re-verification of the iteration-3 feasibility failure plus a full grade 
   Did NOT execute cargo — spectre-offline's hash.rs, fixture.rs, bounce.rs and wav.rs do not
   exist yet, so the -D warnings finding below is re-derived from the trait definition and
   every use site, not from a build.
+  SECOND PASS, after the first draft: I closed every range I had sampled rather than opened,
+  so no claim in this scorecard rests on a partial read. Newly opened in full and confirmed:
+  crates/spectre-graph/tests/containment.rs :19-45 (the Poison enum is :19-27 and its sample()
+  impl :29-41, so the spec's ":19-41" covers the type and its only method — the two things
+  test 6's PoisonAtFrame uses), crates/spectre-audio/src/bridge.rs :1-10 (the :3-8 header Sec 1.2
+  cites says exactly what Sec 1.2 quotes), crates/spectre-audio/tests/bridge_plan.rs :94-105,
+  crates/spectre-dsp/src/effect.rs :40-74, docs/03-architecture/dsp-device-io.md :81-96,
+  docs/02-reference-research/serum-2-observations.md :10-38 in full, synth-modular-observations.md
+  :25 in full, crates/spectre-app/src/lib.rs (symbol map), and R4-1's spec :421-432 and :560-578.
+  Three Sec 7.1 claims I had not personally confirmed in the first pass, now confirmed:
+  harness.rs holds exactly 21 `#[test]` functions (counted); spectre-offline's public surface is
+  exactly OfflineReport, RenderReport, default_project, inspect_project, fixture_events,
+  render_vertical_slice, render_app_snapshot, render_silence; and NO pub signature in that crate
+  names a spectre-graph type today, so Sec 4.5's "spectre-graph types enter spectre-offline's
+  public API for the first time" is true rather than assumed. Every second-pass check confirmed
+  the spec; none changed a score.
 -->
 
 # Scorecard: Offline Bounce — iteration 4
@@ -262,6 +278,7 @@ presentation gap in a change log, not a surviving claim in the artifact's normat
 | Test strategy executable with current infrastructure | ✓ | Test 17's blocker is removed; test 15's lane is adequate for `[NoteEvent; 2]` with per-block re-basing; test 1's vector is correct and independent; test 21's imports are reachable and its assertion can fail. Every named `-p X --test Y` target either exists or is created by this spec and named as such. |
 | Performance budget realistic | ✓ | Correct at every figure, with the `block_frames` ceiling case stated and no cap introduced. |
 | No undeclared dependency on unbuilt features | ✓ | §7.4 declares each; the core proof composes only implemented components. |
+| **Second-pass §7.1 spot checks** | ✓ **three more claims confirmed** | `harness.rs` holds exactly **21** `#[test]` functions, matching §7.1's "21 harness tests" and §5.2 test 19's "its 21 existing tests." `spectre-offline`'s public surface is exactly `OfflineReport`, `RenderReport`, `default_project`, `inspect_project`, `fixture_events`, `render_vertical_slice`, `render_app_snapshot`, `render_silence` — and **no** `pub` signature in that crate names a `spectre-graph` type today, so §4.5's recorded consequence ("`spectre-graph` types enter `spectre-offline`'s **public** API for the first time") is true rather than assumed, and `spectre-dsp`'s really do already appear via `render_app_snapshot`. `crates/spectre-app/src/lib.rs` declares no `pub mod` at all today, so §7.2's scheduled `pub mod bounce_panel;` is a clean addition to a single-file lib root. |
 | **Residual** | ⚠ **one false uncited claim, non-blocking** | §5.2 test 15: "the same lane widths every existing test in `bridge_plan.rs` uses." `:169` uses `control_channel(&[], 256, 8)`. Not in §7.1, does not affect the chosen value, does not affect compilability or any assertion. Charged to 4E; P2. |
 
 **Feasibility verdict:** Feasible as written. Every source path the spec cites was opened and
