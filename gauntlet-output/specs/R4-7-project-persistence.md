@@ -4,8 +4,17 @@ Date: 2026-08-15
 Description: R4-7 spec — implement CORE-004 atomic filesystem save/reload over the accepted persistence contract and land CORE-001's reorder evidence on the first persisted collection
 Notes: The persistence API is already accepted in docs/03-architecture/project-persistence.md; this spec implements
   it and does not redesign it. Crash-durability evidence, journaled autosave, recovery, and migrations are R5 and
-  are deferred explicitly. Today crates/spectre-app declares spectre-project as a dependency and never uses it;
-  ./spectre can neither save nor open a project file, and it still produces no sound.
+  are deferred explicitly. At the baseline commit 7.1 declares, crates/spectre-app declares spectre-project as a
+  dependency and never uses it; ./spectre can neither save nor open a project file, and it still produces no sound.
+  Iteration 2 corrects iteration 1 in six places, all of them about the schema-2 change rather than the design:
+  the four added ProjectDoc fields break two out-of-crate struct literals and the SCHEMA_VERSION bump breaks an
+  existing test in spectre-offline, so 7.2's change inventory and 8 Q2's blast radius were both understated;
+  the version stamp had no owner in any declared component and now belongs to project_envelope, with I9 and I15
+  pinning the two halves; three counts in 7.1 were wrong; 1.3 overstated fault-injection coverage; and I11's
+  device assertion could not fail. Giving the stamp an owner surfaced Q12, which is new in this iteration.
+  Iteration 2 also re-baselines onto 8b1633d, where R4-1 has landed: spectre-project, spectre-core, and
+  spectre-offline are unchanged, spectre-app/src/lib.rs shifted by exactly +3, and every citation into
+  spectre-app/src/main.rs and Cargo.toml is now by symbol or quoted literal because R4-1 restructured both.
 -->
 
 # Spec: Project Persistence
@@ -14,18 +23,18 @@ Notes: The persistence API is already accepted in docs/03-architecture/project-p
 **Parent feature:** `R4` Credible Alpha (root)
 **Spec author agent:** gauntlet spec agent, R4-7 leaf
 **Date:** 2026-08-15
-**Iteration:** 1
+**Iteration:** 2
 
 - **Status:** proposed
-- **Last verified:** 2026-08-15 (source read at branch `rename/geist-to-spectre`, HEAD `2e005e5`)
+- **Last verified:** 2026-08-24 at HEAD `8b1633d` (iteration 2; every claim re-read from source, not carried over from iteration 1). Iteration 1's baseline was `2e005e5`; R4-1 landed in between. `git diff 2e005e5 8b1633d -- crates/spectre-project crates/spectre-core crates/spectre-offline` is **empty**, so every pin into those three crates holds at both commits; `crates/spectre-app/src/lib.rs` shifted uniformly by **+3** and its pins are the `8b1633d` values; `crates/spectre-app/src/main.rs` and `Cargo.toml` were restructured and are therefore cited by symbol or quoted literal only. §7.1 states this in full.
 - **Scope:** app-thread `load_project` / `save_project_atomic` on the real filesystem, the reusable semantic validator both call, the first persisted object collection, and the app-layer save/open surface in `./spectre`
 - **Decision authority:** Jeff
-- **Upstream sources:** `docs/03-architecture/project-persistence.md` (design authority, accepted for R4/R5 implementation), `docs/01-requirements/requirements-ledger.md` (CORE-001 `:46`, CORE-003 `:48`, CORE-004 `:49`, RT-001..003 `:28–30`, PROD-003 `:64`), `docs/01-requirements/decision-gates.md` (rows 1 `:25`, 3 `:27`, 4 `:28`, 8 `:32`, 13 `:37`, 14 `:38`, 16 `:40`, 17 `:41`, 23 `:49`), `docs/00-product/vision.md:33`, `docs/06-plans/current-milestone.md` §"Inherited debt" items 3–4, `docs/status/NEXT.md` slice 7
+- **Upstream sources:** `docs/03-architecture/project-persistence.md` (design authority, accepted for R4/R5 implementation), `docs/01-requirements/requirements-ledger.md` (CORE-001 `:46`, CORE-003 `:48`, CORE-004 `:49`, RT-001..003 `:28–30`, PROD-003), `docs/01-requirements/decision-gates.md` (rows 1 `:25`, 3 `:27`, 4 `:28`, 8 `:32`, 13 `:37`, 14 `:38`, 16 `:40`, 17 `:41`, 23 `:49`), `docs/00-product/vision.md:33`, `docs/06-plans/current-milestone.md` §"Inherited debt" items 3–4, `docs/status/NEXT.md` slice 7
 - **Downstream dependents:** R4-4 (track model), R4-5 (MIDI clips), R4-6 (small synth/effect), R4-8 (offline bounce), R4-9 (end-to-end fixture and manual QA), and every R5 project-safety slice (journaled autosave, recovery, migrations, salvage, missing-media)
 - **Supersedes:** none
 - **Superseded by:** none
-- **Open decisions:** §8 Q1–Q11
-- **Known gaps:** the accepted benchmark corpus contains **no** citable observation about how any benchmark product writes a project file, recovers from an interrupted save, bounds undo depth, or persists view state. The four adjacent records that do exist are used in §2/§3 and the hole is named in Appendix A rather than filled in. Crash-durability evidence is R5 by the design authority's own milestone table and is not claimed here.
+- **Open decisions:** §8 Q1–Q12
+- **Known gaps:** the accepted benchmark corpus contains **no** citable observation about how any benchmark product writes a project file, recovers from an interrupted save, bounds undo depth, or persists view state. The seven adjacent records that do exist are cited in Appendix A — which is the only place in this spec any `OBS-` ID appears — and they inform §3.6's failure messages and §4.2's non-finite rule rather than being quoted into them. The hole is named there rather than filled in. Crash-durability evidence is R5 by the design authority's own milestone table and is not claimed here.
 
 This spec is subordinate to the conflict precedence in `docs/README.md`. It implements an
 accepted architecture contract; it does not amend one. Two places where it touches
@@ -50,13 +59,13 @@ atomic save, autosave, recovery, missing-media repair — losing work is a
 product-killing defect."* R4's release bar (`vision.md:48`) names `save/reload` as one
 of the six things the credible alpha must actually do.
 
-Right now none of it exists as a product behavior. `crates/spectre-app/Cargo.toml:16`
-declares `spectre-project = { path = "../spectre-project" }`, and **no file under
+Right now none of it exists as a product behavior. `crates/spectre-app/Cargo.toml`
+declares `spectre-project = { path = "../spectre-project" }` in `[dependencies]`, and **no file under
 `crates/spectre-app/src/` or `crates/spectre-app/tests/` mentions `spectre_project` at
-all** — the app declares the persistence crate and never uses it. `main.rs`'s own header
-says so in line 4: *"Interaction prototype only; audio and persistence wiring remain out
-of scope."* There is no menu item, no path field, and no code path in `./spectre` that
-writes or reads a file. Everything a musician does in the prototype is lost when the
+all** — the app declares the persistence crate and never uses it. `main.rs`'s own header Notes
+block says so, and names this slice while doing it: *"Persistence wiring remains out of
+scope until R4-7."* There is no menu item, no path field, and no code path in `./spectre`
+that writes or reads a file. Everything a musician does in the prototype is lost when the
 process exits.
 
 Below that gap the crate is not empty, and this spec must be precise about the
@@ -83,9 +92,13 @@ One command produces the whole result:
 `cargo test --locked -p spectre-project -p spectre-app -p spectre-offline` passes with
 (a) a real-filesystem test that saves a project containing three tracks, reorders them,
 saves again, reloads, and asserts each track's `ObjectId` is unchanged and the new order
-is exact; (b) a fault-injection test at every one of the seven `SaveStage` values that
-asserts the destination is byte-identical to its pre-call contents whenever the call
-failed before the replacement; and (c) an offline test asserting
+is exact; (b) fault-injection unit tests at **six** of the seven `SaveStage` values —
+every stage except `EncodeSnapshot`, which no validated envelope can reach and which §5.1
+therefore leaves deliberately untested — each asserting the exact `target_state` and the
+ordered `FaultFs` call log for that stage, together with two real-filesystem tests (I4,
+I5) asserting that a pre-commit failure leaves an existing destination byte-identical to
+its pre-call contents and leaves a previously absent destination absent; and (c) an
+offline test asserting
 `spectre_offline::render_app_snapshot` returns the **same** `RenderReport.hash` for a
 project before and after a save/reload round trip, so persistence is proved not to change
 what the project computes.
@@ -143,11 +156,11 @@ regions of the single-window shell in `crates/spectre-app/src/main.rs`.
 
 | Region | Navigation path | New or modified | Layout pattern |
 |---|---|---|---|
-| **PROJECT** block, top of the left panel (`track_list()`, `main.rs:115–158`) | always visible | **new block inside an existing panel** | left `SidePanel` (`main.rs:116`, `default_width(220.0)`, `min_width(180.0)`), vertical stack above the existing `TRACKS` label at `main.rs:126` |
-| Transport bar title area (`transport()`, `main.rs:50–84`) | always visible, 62 px fixed (`main.rs:52`) | modified — one dirty-state marker beside the `SPECTRE` wordmark (`main.rs:60`) | full-width top panel, horizontal centered row |
+| **PROJECT** block, top of the left panel (`SpectrePrototype::track_list`) | always visible | **new block inside an existing panel** | left `SidePanel::left("tracks")` with `default_width(220.0)` and `min_width(180.0)`, vertical stack above the existing `TRACKS` label |
+| Transport bar title area (`SpectrePrototype::transport`) | always visible, 62 px fixed (`.exact_height(62.0)`) | modified — one dirty-state marker beside the `SPECTRE` wordmark | full-width top panel, horizontal centered row |
 
 The PROJECT block deliberately reuses the widget pattern already in the same panel: the
-add-track control at `main.rs:141–152` is a `TextEdit::singleline` with `hint_text` next
+add-track control already in `track_list` is a `TextEdit::singleline` with `hint_text` next
 to a small button whose failure path writes into `self.feedback_status`. The save control
 is the same shape, so this adds no new interaction vocabulary.
 
@@ -198,17 +211,17 @@ interaction. No modal. Rationale in §3.6.
 PROJECT block, top → bottom, inside `SidePanel::left("tracks")`:
 
 1. `PROJECT` section label — small, strong, `MUTED`, matching the existing `TRACKS`
-   (`main.rs:126`) and `BROWSER` (`main.rs:153`) labels exactly.
+   and `BROWSER` labels exactly.
 2. Path field — `egui::TextEdit::singleline` sized to the panel width,
    `hint_text("Project file path")`. Data source: a new `project_path: String` field on
-   `SpectrePrototype` (`main.rs:17–21`), not on `AppModel`. A path is shell state, not
+   `SpectrePrototype` (the shell struct in `main.rs`), not on `AppModel`. A path is shell state, not
    project state.
 3. Action row, leading → trailing: `Save project`, `Open project`. Both `egui::Button`,
    both disabled with `on_disabled_hover_text` when the path field is empty.
 4. Status line — one wrapped label. Sources, in priority order: the last
    `SaveError`/`LoadError` message, then the last success message, then the empty-state
    copy.
-5. Dirty indicator — the text `Unsaved changes` in `WARM` (`main.rs:13`) when dirty,
+5. Dirty indicator — the text `Unsaved changes` in `WARM` (one of the shell's palette constants) when dirty,
    `Saved` in `MUTED` when not. Colour is never the only signal (§3.7).
 
 **Empty state.** With no path and no save yet, the status line reads: *"No project file
@@ -217,8 +230,10 @@ leaves the old file intact."* This states a property the code will have, not one
 the copy ships in the same slice as the behavior (§6.3).
 
 Transport bar: a single `•` glyph plus the text `unsaved` after the `SPECTRE` wordmark
-(`main.rs:60`) while dirty. No other transport-bar literal changes; the `ENGINE OFFLINE`
-string at `main.rs:79` is R4-1's, not this spec's, and must not be touched here.
+while dirty. No other transport-bar literal changes. In particular the engine status
+cluster R4-1 put in that same row — its state label, its `blocks` counter, its
+`ENGINE UNAVAILABLE` copy, and its `Retry` control — belongs to R4-1 and must not be
+touched here.
 
 ### 3.4 Input & gestures
 
@@ -232,18 +247,18 @@ string at `main.rs:79` is R4-1's, not this spec's, and must not be touched here.
   §"Prohibited conclusions at current evidence level". The commands are named
   (`project.save`, `project.open`) so that a later remappable, context-scoped command
   resolver can bind them; this spec fixes no binding, and in particular does not claim
-  ⌘S. The existing `Space` and `1`–`4` bindings (`main.rs:425–437`) are unchanged.
+  ⌘S. The existing `Space` and `1`–`4` bindings are unchanged.
 - Specialized input: none. No stylus, controller, voice, or camera.
-- Responsive: the block lives in a resizable panel with `min_width(180.0)`
-  (`main.rs:119`); the path field takes the available width, and the two buttons wrap to
+- Responsive: the block lives in a resizable panel with `min_width(180.0)`;
+  the path field takes the available width, and the two buttons wrap to
   a second row below the panel's minimum comfortable width. Window minimum is
-  1060 × 680 (`main.rs:508`).
+  1060 × 680 (`with_min_inner_size([1060.0, 680.0])`).
 
 ### 3.5 Transitions & animation
 
 None. No navigation transition, because no view is entered or left. The dirty marker and
 status line change text between frames with no animation. The app repaints on a 250 ms
-timer (`main.rs:443`), so a status change is visible within one repaint.
+timer (`request_repaint_after` of 250 ms), so a status change is visible within one repaint.
 
 Reduced motion: nothing to reduce — this is the correct answer here rather than an
 omission. A synchronous save blocks the UI thread, so no spinner can animate during it
@@ -282,17 +297,20 @@ required — discarding unsaved work — is an in-place two-press control, not a
 - **Focus order:** path field → `Save project` → `Open project`, in declaration order,
   ahead of the existing `TRACKS` list so that the block reads top-down.
 - **Text scaling:** the status line wraps; the buttons size to their text. The 62 px
-  transport bar (`main.rs:52`) is unchanged and the dirty marker is short by design so it
+  transport bar is unchanged and the dirty marker is short by design so it
   cannot push the transport row out of that fixed height.
-- **Screen readers — stated honestly.** `crates/spectre-app/Cargo.toml:13` sets
-  `default-features = false` on `eframe` with only `default_fonts` and `glow` enabled, so
+- **Screen readers — stated honestly.** `crates/spectre-app/Cargo.toml`'s `eframe`
+  dependency reads `{ version = "0.32.3", default-features = false, features =
+  ["default_fonts", "glow"] }`, so
   whatever accessibility integration eframe ships behind a feature flag is **off** in
   this build. This spec therefore makes **no screen-reader claim**, and must not be read
   as delivering one. What it does is avoid foreclosing decision 17
   (`decision-gates.md:41`, keyboard-complete operation and screen-reader labels by beta,
   scoped audit at R4): every element here is a standard labelled widget, so enabling the
   feature later is a manifest change plus an audit, not a redesign. Enabling it is
-  routed to §8 Q5 and belongs to the R4 accessibility audit, not to this slice.
+  routed to §8 Q5 and belongs to the R4 accessibility audit, not to this slice. (The
+  dependency is quoted rather than line-pinned because R4-1 adds a `[features]` block and a
+  `spectre-audio` dependency to the same manifest, which moves every line in it.)
 
 ---
 
@@ -322,13 +340,17 @@ can name `spectre-project`, because the dependency graph does not permit it:
 - `crates/spectre-core/Cargo.toml:12–14` — `serde`, `serde_json`. No path dependencies.
 
 So `load_project` and `save_project_atomic` are not merely "not called" from the render
-path — they are **unnameable** there. §5.1 test U12 turns that into a test that fails if
-anyone adds the edge. This is the primary RT-001 argument (`requirements-ledger.md:28`):
+path — they are **unnameable** in every render-path *library* target, which is the target
+the callback runs in. The one qualification, stated so the claim is exact:
+`crates/spectre-audio/Cargo.toml:23–24` dev-depends on `spectre-offline`, which depends on
+`spectre-project`, so `spectre_project` *is* nameable inside `spectre-audio`'s test
+targets. No callback executes there. §5.1 test U12 turns the lib-target property into a
+test that fails if anyone adds a direct edge. This is the primary RT-001 argument (`requirements-ledger.md:28`):
 a compile-time impossibility, not a code-review promise.
 
 The secondary argument covers the app thread. `save_project_atomic` blocks in
 `write_all`, `sync_all`, `rename`, and a directory `sync_all`. It runs on the egui update
-thread (`main.rs:424`), which is not the audio thread: with R4-1 in place the driver owns
+thread (`impl eframe::App for SpectrePrototype`'s `update`), which is not the audio thread: with R4-1 in place the driver owns
 its own callback thread, so a blocked UI thread stalls *messages to* the engine, never the
 engine itself. §4.4 states what that costs.
 
@@ -355,9 +377,8 @@ refusal already exists and is tested — the gate at `src/lib.rs:92` and the tes
 limits, so PROD-003 does not apply to them; the three constants it does apply to are
 listed at the end of this section.
 
-**Documents.** `ProjectEnvelope` (`src/lib.rs:20–27`) is unchanged in shape.
-`ProjectDoc` (`src/lib.rs:30–38`) gains four fields, all `#[serde(default)]` so a
-schema-1 file still decodes:
+**Documents.** `ProjectEnvelope` is unchanged in shape. `ProjectDoc` gains four fields,
+all `#[serde(default)]` so a schema-1 file still decodes:
 
 ```rust
 // Minimal R1 project document, extended at schema 2 with the first persisted collections
@@ -434,28 +455,48 @@ pub enum LensDoc {
 }
 ```
 
+**Adding these fields is a compile-affecting change, and §7.2 inventories it as one.**
+`#[serde(default)]` governs deserialization; it does nothing for Rust construction. None
+of the four fields is an `Option`, so **every** struct literal of `ProjectDoc` in the
+workspace must name them or fail to compile. There are exactly three. `grep -rn
+"ProjectDoc {" crates/` returns six hits: those three literals, plus the `struct`
+definition, the `impl` block, and the `-> ProjectDoc {` return type on the third helper's
+own signature. The three literals are the in-crate test helper `envelope()` in
+`crates/spectre-project/src/lib.rs`,
+`default_project()` in `crates/spectre-offline/src/lib.rs`, and the `project()` helper in
+`crates/spectre-project/tests/command_history.rs`. The last two are outside the crate, so
+they are ordinary downstream breakage rather than internal churn; §7.2 lists both as
+modified files and shows both literals updated.
+
+A `#[derive(Default)]` escape hatch is **not** available and must not be reached for:
+`ProjectDoc.id` is an `ObjectId`, whose whole invariant is that it is nonzero
+(`ObjectId::from_raw` returns `None` for `0`, and its hand-written `Deserialize` rejects
+`0`), so `ObjectId` derives no `Default` and cannot be given one without destroying
+CORE-001's guarantee. `..Default::default()` in the literals is therefore not an option
+either.
+
 `LensDoc` intentionally duplicates the four variants of `spectre_app::Lens`
-(`crates/spectre-app/src/lib.rs:12–18`). The document schema is a wire format with its
+(`crates/spectre-app/src/lib.rs:15–21`). The document schema is a wire format with its
 own compatibility rules; the UI enum is not, and `spectre-project` must not depend on
 `spectre-app`. `spectre-app` owns the two conversions (§4.3).
 
 `AppModel` has no zoom state — its fields are `transport`, `lens`, `tracks`, `devices`,
 `selected_track`, `selected_device`, `ids`, `feedback`
-(`crates/spectre-app/src/lib.rs:205–214`) — so there is no zoom to persist. `feedback` is
-prototype-feedback text (`lib.rs:432–445`) and is deliberately **not** persisted;
+(`crates/spectre-app/src/lib.rs:208–217`) — so there is no zoom to persist. `feedback` is
+prototype-feedback text (`lib.rs:435–448`) and is deliberately **not** persisted;
 it is instrumentation, not the musician's work.
 
-`armed` (`crates/spectre-app/src/lib.rs:43`) is deliberately **not** persisted. Recording
-does not exist — the Record button is inert with the hover text *"Recording arrives after
-the live audio shell."* (`main.rs:72–73`) — and restoring an armed track into a live
+`armed` (`crates/spectre-app/src/lib.rs:46`) is deliberately **not** persisted. Recording
+does not exist — the Record button is inert with the hover text *"Recording arrives at R7; no capture
+path exists yet."* — and restoring an armed track into a live
 engine is a decision that belongs with recording, not with a file format. Routed to §8 Q6.
 
 **Generator state — a real hazard this schema closes.** `IdGen` is a deterministic
 splitmix64 seeded once (`crates/spectre-core/src/id.rs:45–67`), and `AppModel::prototype`
 seeds it with the fixed constant `IdGen::new(0x0047_4549_5354_5549)`
-(`crates/spectre-app/src/lib.rs:219`). If the generator position is not persisted, then
+(`crates/spectre-app/src/lib.rs:222`). If the generator position is not persisted, then
 after a reload the app restarts from that same seed and the very next `add_track`
-(`lib.rs:405–422`) mints an ID that is already in the loaded project — a *guaranteed*
+(`lib.rs:408–425`) mints an ID that is already in the loaded project — a *guaranteed*
 duplicate, not a probabilistic one, and a direct CORE-001 violation. Persisting
 `id_gen_state` closes it, and resuming needs no new constructor: `IdGen::new(seed)` sets
 `state` directly (`id.rs:51–53`) and `next_id` advances before use (`id.rs:56–58`), so
@@ -479,7 +520,7 @@ files that will exist after R5 migrations — is routed to §8 Q7.
 
 **The reusable validator.** The contract's "Current codec qualification" section requires
 one validator called after decode *and* before encoding. Today `validate` is private
-(`src/lib.rs:105–128`) and only `from_bytes` calls it (`src/lib.rs:101`); `to_bytes`
+(`src/lib.rs:105–124`) and only `from_bytes` calls it (`src/lib.rs:100`); `to_bytes`
 (`src/lib.rs:80–82`) does not revalidate. This spec makes the validator public with its
 own error type and leaves `to_bytes` alone as the low-level encoder, because
 `save_project_atomic` — the only path that writes a destination — calls the validator
@@ -498,7 +539,7 @@ pub fn validate_envelope(envelope: &ProjectEnvelope) -> Result<(), ValidationErr
 
 Every rule the private `validate` enforces today is preserved verbatim — nonzero project
 ID (`:106–108`), tempo-map reconstruction (`:109–110`), meter-map decode (`:111`),
-enabled-loop-requires-region (`:112–118`), and ordered loop region (`:119–123`). Schema 2
+enabled-loop-requires-region (`:113–117`), and ordered loop region (`:118–122`). Schema 2
 adds:
 
 1. **Project-wide unique object IDs.** Every `ObjectId` in the document — `project.id`,
@@ -535,14 +576,14 @@ construction (`crates/spectre-dsp/src/parameter.rs:89–103`). `spectre-app::ado
 that path (§4.3).
 
 **Numeric bounds introduced here.** Three, each with its own rationale, none copied from
-any product. PROD-003 (`requirements-ledger.md:64`) requires the rationale to be recorded
-**in the ledger**, so all three appear in §7.2's modified-file list.
+any product. PROD-003 (cited by ID, not by line — the ledger grows during R4 and its line numbers move)
+requires the rationale to be recorded **in the ledger**, so all three appear in §7.2's modified-file list.
 
 | Constant | Value | Rationale (Spectre-derived) |
 |---|---|---|
 | `SAVE_TEMP_NAME_ATTEMPTS` | `8` | The temporary name mixes the process ID, the nanosecond field of the wall clock, and a monotonic counter, so a collision needs a leftover temporary whose three components all match. Retrying is required by the contract (*"retries name collisions without truncating another file"*), but the retry must be **bounded**: this runs synchronously on the UI thread, and an unbounded loop over a pathological directory would hang the window instead of failing. Eight attempts is small enough that the worst case is imperceptible and large enough that an accidental collision cannot exhaust it. |
 | `MAX_PROJECT_FILE_BYTES` | `64 * 1024 * 1024` | `load_project` reads a file that may be truncated, corrupt, or not a project at all before it can know anything about it. Without a bound, the read allocates whatever the file claims to be. The checked-in R1 fixture is **912 bytes**; a schema-2 project with the collections in this spec is a few kilobytes. 64 MiB is four orders of magnitude of headroom for the alpha while keeping the app-thread allocation bounded. It also bounds the validator's uniqueness set, which is sized by the document. It is a starting envelope for R4 and is expected to be revisited when R5 or later persists sample or media references — recorded as such rather than presented as a final number. |
-| `TRACK_LEVEL_RANGE` | `0.0..=1.0` | Not a new number: the shell already constrains it at `crates/spectre-app/src/main.rs:180` (`Slider::new(&mut track.level, 0.0..=1.0)`) and seeds `0.78` / `0.72` (`crates/spectre-app/src/lib.rs:226`, `:417`). The validator has to enforce *something*, and enforcing a different bound than the UI would let a file exist that the UI cannot represent. The rationale row makes an existing undocumented UI bound explicit, which PROD-003 currently has no row for. |
+| `TRACK_LEVEL_RANGE` | `0.0..=1.0` | Not a new number: the shell already constrains it — the inspector's level control is `egui::Slider::new(&mut track.level, 0.0..=1.0).text("Level")` — and seeds `0.78` / `0.72` (`crates/spectre-app/src/lib.rs:229`, `:418`). The validator has to enforce *something*, and enforcing a different bound than the UI would let a file exist that the UI cannot represent. The rationale row makes an existing undocumented UI bound explicit, which PROD-003 currently has no row for. |
 
 ### 4.3 API contracts
 
@@ -612,8 +653,8 @@ limiting applies; this is a local file API.
    `io::ErrorKind::InvalidData` and a message naming the bound.
    *(A dedicated `TooLarge` variant would extend an accepted enum, so it is routed to §8
    Q8 rather than taken unilaterally.)*
-3. Peek `schema_version` and gate it, reusing the existing logic at `src/lib.rs:86–97` →
-   `LoadError::SchemaTooNew`.
+3. Peek `schema_version` and gate it, reusing the existing logic in `from_bytes`
+   (`src/lib.rs:86–97`) → `LoadError::SchemaTooNew`.
 4. Decode the envelope → `LoadError::Malformed`.
 5. `validate_envelope(&envelope)` → `LoadError::InvalidProject`.
 6. Return the complete validated envelope. No failure returns a partial project, and no
@@ -632,6 +673,14 @@ limiting applies; this is a local file API.
 | 7 | replace | `std::fs::rename(&temp, path)` | POSIX `rename(2)` replaces an existing name atomically with respect to other processes: **no window in which the destination is missing or half-written.** This is the commit point | `Io { ReplaceTarget, Unchanged }` + cleanup |
 | 8 | sync dir | `File::open(parent)?.sync_all()` | flushes the *directory entry* so the replacement itself, not just the data, survives a crash | `Io { SyncParentDirectory, ReplacedDurabilityUncertain }`, **no second replacement attempt** |
 | 9 | receipt | `Ok(SaveReceipt { target_state: ReplacedDurable })` | only after every required synchronization succeeded | — |
+
+**`save_project_atomic` does not stamp the schema version, and nothing in the algorithm
+above does.** Step 2 encodes the snapshot it was handed; the parameter is
+`&ProjectEnvelope`, so the function cannot mutate it; and the accepted contract's eight
+required steps contain no stamping step, so adding one here would amend accepted material
+rather than implement it. The writer therefore reproduces the snapshot's own
+`schema_version` byte for byte. The stamp belongs to whoever *builds* the snapshot, which
+is `project_envelope` (below).
 
 The temporary lives in the target's **existing parent directory** (`path.parent()`,
 falling back to `Path::new(".")` for a bare filename), named
@@ -662,16 +711,38 @@ pub enum AdoptError {
 }
 ```
 
-`project_envelope` reads `AppModel::tracks()` (`lib.rs:289`), `devices()` (`:313`),
+`project_envelope` reads `AppModel::tracks()` (`lib.rs:292`), `devices()` (`:313`),
 `selected_track_id()` (`:293`), `selected_device_id()` (`:324`), `lens()` (`:281`), the
 transport, and the generator position via the new `IdGen::state()`. It reads nothing
 else and mutates nothing.
+
+**`project_envelope` is the sole owner of the version stamp.** It is the only component
+that constructs a `ProjectEnvelope` from scratch, so it is the only component that can
+set `schema_version`, and it sets it to `SCHEMA_VERSION` unconditionally. That is what
+makes *"a save always writes the current version"* true of **the product**: `./spectre`
+has exactly one save path and it goes through this function. It is deliberately not true
+of the crate — a caller that hands `save_project_atomic` a schema-1 envelope gets a
+schema-1 file back, which is the property I9 pins and I15 pins from the other side. If a
+later slice adds a second snapshot builder, that slice inherits the stamp, and §7.2's
+migration rule must be restated rather than assumed.
+
+**What `project_envelope` cannot carry, stated before anyone relies on it.** `AppModel`
+has no field for the envelope's or the document's `#[serde(flatten)]` unknown map, and
+§4.4 adds none, so an envelope built from `AppModel` carries **empty** unknown maps. An
+unknown field read from a file therefore survives `load_project` (I8) and survives a
+crate-level rewrite (the existing `canonical_fixture_unknown_fields_survive_rewrite`), but
+does **not** survive open → edit → save through `./spectre`. The R4 exposure is narrow —
+`load_project` refuses any file whose `schema_version` exceeds `MAX_READABLE_SCHEMA`, so
+the only unknown fields this build can read are ones a same-version writer or a hand edit
+put there — but it is a real hole in CORE-003's forward-field preservation *at the product
+level*, this slice does not close it, and no test, ledger row, or product string may say
+otherwise. Routed to §8 Q12.
 
 `adopt` maps persisted device and parameter keys back to the canonical `&'static str`
 descriptors — required, because `DeviceParameterSnapshot::device_key` is a `&'static str`
 (`crates/spectre-dsp/src/parameter.rs:83`) and a `String` read from a file is not one —
 rejecting any key not in `PULSE_PARAMETERS` / `GAIN_PARAMETERS` / `SATURATOR_PARAMETERS`
-(`crates/spectre-app/src/lib.rs:8`), and any value outside its descriptor range. It
+(`crates/spectre-app/src/lib.rs:11`), and any value outside its descriptor range. It
 applies `TransportCommand::Stop` (`spectre-core/src/transport.rs:86`) before the loaded
 transport becomes live. It mutates `model` only after every mapping has succeeded.
 
@@ -691,23 +762,26 @@ indices return a new `CommandError::TrackIndexOutOfRange` variant, joining the t
 
 ### 4.4 State management
 
-- **Project truth** stays in `AppModel` (`crates/spectre-app/src/lib.rs:205–214`). This
+- **Project truth** stays in `AppModel` (`crates/spectre-app/src/lib.rs:208–217`). This
   feature adds **no** field to it. The single-model, linked-lens invariant
   (`vision.md:37`) is preserved: save serializes the one model, and open replaces the one
-  model, so no lens can hold a private copy.
+  model, so no lens can hold a private copy. The one thing that costs, stated where the
+  claim is made rather than buried: because `AppModel` has no field for the decoded
+  envelope's `#[serde(flatten)]` unknown maps, an unknown field read from a file does not
+  survive a round trip *through the app* (§4.3). That is a deliberate consequence of adding
+  no field, not an oversight, and it is routed to §8 Q12.
 - **Shell state** — `project_path: String`, `dirty: bool`, `status: String` — goes on
-  `SpectrePrototype` (`main.rs:17–21`), beside the existing `new_track_name` and
-  `feedback_status`. A file path is not project content.
+  `SpectrePrototype`, beside the existing `new_track_name` and `feedback_status`. A file path is not project content.
 - **Dirty rule.** Set on any model mutation reachable from the shell (`toggle_play`,
   `select_lens`, `select_track`, `add_track`, `set_device_parameter`, the inspector's
-  direct mutations through `selected_track_mut` at `lib.rs:308`). Cleared **only** on
+  direct mutations through `selected_track_mut` at `lib.rs:311`). Cleared **only** on
   `Ok(ReplacedDurable)`. Explicitly **not** cleared on
   `ReplacedDurabilityUncertain` — the contract requires the caller to *"keep the
   in-memory project dirty"*.
 - **Save serialization is structural.** The contract requires the app layer to serialize
   saves to the same normalized target and forbids the crate from adding a lock or
   coordinator. `save_project_atomic` is synchronous and `./spectre` calls it from the one
-  egui update thread (`main.rs:424`), so a second save cannot begin while the first is
+  egui update thread, so a second save cannot begin while the first is
   running — the thread is inside the call. No flag, no lock, no queue. If a future slice
   moves saving off the UI thread, that slice owns the serialization, and this spec says
   so rather than pretending the property is intrinsic.
@@ -738,8 +812,8 @@ named as such.
   `crates/spectre-project/tests/fixtures/r4-canonical.json`, generated by the encoder
   itself the same way `r1-canonical.json` was, and read by `include_bytes!` exactly as at
   `tests/project_codec.rs:9`.
-- **New internal crate edges:** none. `spectre-app → spectre-project` already exists at
-  `crates/spectre-app/Cargo.toml:16`; this spec is what finally uses it.
+- **New internal crate edges:** none. `spectre-app → spectre-project` is already declared
+  in `crates/spectre-app/Cargo.toml`; this spec is what finally uses it.
 - **Test scratch space:** tests create a unique directory under `std::env::temp_dir()`
   named from the process ID and a counter, and remove it at the end of the test. This is a
   ten-line test-local helper, not a dependency. It does not clean up after a panicking
@@ -797,7 +871,10 @@ guaranteed, what is platform-specific, and what this spec is not entitled to cla
 evidence gate may remain open") from `verified` ("stated acceptance evidence passes").
 When this slice lands, CORE-004 moves to **`implemented`, not `verified`**, and STATUS
 must say so. R4 can prove, on both platforms, in ordinary tests: correct ordering of the
-nine steps; the exact target state at every failure stage; that no partial destination is
+accepted contract's **eight** required steps — §4.3's table shows nine rows because it
+splits the contract's step 5 ("`sync_all` … and close or otherwise release handles") into
+a sync row and a release row, which is this spec's decomposition and not the contract's
+count; the exact target state at every failure stage; that no partial destination is
 ever observable to a concurrent reader in a running process; that the old bytes survive
 every pre-commit failure. R4 **cannot** prove that a replaced file survives a power loss,
 because that needs crash injection against real qualified filesystems — which is R5's
@@ -827,7 +904,7 @@ targets. No feature flag, because a half-enabled save path is worse than no save
   is not free even for a small file: it is commonly single-digit milliseconds on an SSD
   and can be tens of milliseconds when it forces the drive's own cache, which is exactly
   what `F_FULLFSYNC`-class behavior does on Apple hardware. At the app's 250 ms repaint
-  cadence (`main.rs:443`) that is at most a visible hitch, not a freeze. These figures are
+  cadence that is at most a visible hitch, not a freeze. These figures are
   **estimates from the nature of the calls, not measurements**; §5.4 requires the manual
   protocol to record the real elapsed time on both platforms, and §8 Q10 asks whether the
   measured number should force saving off the UI thread in R5.
@@ -872,7 +949,14 @@ are integration tests, because they need nothing private.
 *Group A — fault injection through the private seam (`crates/spectre-project/src/fs.rs`).*
 `FaultFs` implements the private `FsOps` trait, records an ordered call log, and fails at a
 chosen `SaveStage`. Setup for all of A: a valid schema-2 envelope from a module-local
-`envelope()` helper modeled on the one at `src/lib.rs:133–147`.
+`envelope()` helper modeled on the one at `src/lib.rs:132–145`.
+
+Group A covers **six** of the seven `SaveStage` values — `ValidateSnapshot` (U1),
+`CreateTemporary` (U2, U4), `WriteTemporary` (U5, U9), `SyncTemporary` (U6),
+`ReplaceTarget` (U7), and `SyncParentDirectory` (U8). `EncodeSnapshot` is the seventh and
+is deliberately uncovered, for the reason stated after the table. Byte-identity of a real
+destination is **not** a Group A property — `FaultFs` has no real destination — and is
+proved instead by I4 and I5 on a real filesystem.
 
 | # | Name | Setup | Assertion | Edge covered |
 |---|---|---|---|---|
@@ -886,13 +970,23 @@ chosen `SaveStage`. Setup for all of A: a valid schema-2 envelope from a module-
 | U8 | `parent_sync_failure_reports_durability_uncertain` | `FaultFs` fails `sync_parent_dir` | `Err(Io { stage: SyncParentDirectory, target_state: ReplacedDurabilityUncertain, .. })`; the log shows exactly **one** `replace` and no `remove` after it | the one non-`Unchanged` failure; no second replacement attempt |
 | U9 | `cleanup_failure_does_not_mask_primary_error` | `FaultFs` fails `write_all` **and** fails `remove` | the returned error is still `Io { stage: WriteTemporary, .. }`, not a cleanup error | contract: cleanup never masks the primary failure |
 | U10 | `bounded_read_refuses_oversize` | private `read_bounded(path, max)` called with `max = 16` against a 64-byte temporary file | `Err` with `ErrorKind::InvalidData` and fewer than `max + 1` bytes buffered | makes `MAX_PROJECT_FILE_BYTES` testable without writing 64 MiB |
-| U11 | `ordering_is_validate_encode_create` | `FaultFs` that never fails | the first three log entries are `create_new`, `write_all`, `sync_file` in that order, and `replace` follows `sync_file` | the nine-step order is pinned, not incidental |
+| U11 | `ordering_is_validate_encode_create` | `FaultFs` that never fails | the first three log entries are `create_new`, `write_all`, `sync_file` in that order, and `replace` follows `sync_file` | the contract's required step order is pinned, not incidental |
 
 There is deliberately **no** test for `SaveError::Encode`. With the current encoder a
 validated envelope cannot fail to encode, so any such test would be a test that cannot
 fail, which `criteria.md` 1G scores 0. The variant exists because the contract requires the
 distinction; that it is currently unreachable is stated here rather than papered over with
 a green check. Routed to §8 Q11.
+
+There is also deliberately **no** test for the last item on the contract's fault-injection
+checklist — *"simultaneous same-target operations are prevented by the app-level owner
+rather than serialized by hidden project-crate state."* §4.4 discharges it structurally
+(the crate holds no lock, no queue, and no target-keyed state, and `./spectre` calls the
+synchronous function from its one update thread, so a second save cannot begin while the
+first is running), and a test that spawns two threads to prove a single-threaded caller is
+single-threaded would assert the test harness, not the product. This is named here, the
+same way `EncodeSnapshot` is named, rather than left silently uncovered. It stops being
+structural the moment saving leaves the UI thread, which is §8 Q10.
 
 *Group B — structural guard (`crates/spectre-project/tests/render_path_isolation.rs`).*
 
@@ -927,32 +1021,46 @@ directories.*
 | I6 | `reorder_preserves_identity_across_save_and_reload` | build three tracks; save; apply `reorder_tracks(0, 2)` through `EditHistory`; save; load — the loaded `tracks` are in the reordered order and the `ObjectId`s are the same three values as before, in the new positions | **CORE-001's R4 reorder evidence.** Fails if identity is ever derived from index |
 | I7 | `undone_reorder_reloads_in_the_original_order` | continue I6: `undo`, save, load — original order, same IDs | reorder + undo + save/load in one sequence, which is the full clause CORE-001 states |
 | I8 | `schema_one_fixture_loads_with_empty_collections` | `load_project` on a copy of `tests/fixtures/r1-canonical.json` succeeds; `tracks`, `devices` are empty; `id_gen_state` is 0; `project.id.raw() == 1_311_768_467_463_790_320`; the `r1_extension` and `future_session` unknown fields are still present | tolerant read of the older schema; CORE-003's preservation guarantee still holds |
-| I9 | `resaving_a_schema_one_project_writes_schema_two_and_keeps_unknown_fields` | load the v1 fixture, save it, reload: `schema_version == SCHEMA_VERSION` (2), collections empty, `r1_extension` and `future_session` intact | the version-stamp-on-save rule in §7.2, and CORE-003's unknown-field preservation across it |
+| I9 | `resaving_a_loaded_schema_one_project_keeps_its_version_and_unknown_fields` | load a copy of the v1 fixture, hand the returned envelope straight to `save_project_atomic`, reload: `schema_version` is still **1**, `tracks` and `devices` are still empty, `id_gen_state` is still `0`, and `r1_extension` / `future_session` are intact | the writer's half of the version rule — `save_project_atomic` reproduces the snapshot's own `schema_version` and never rewrites it (§4.3) — plus CORE-003's unknown-field preservation across a real filesystem round trip. Fails if anyone puts a stamp in the writer |
 | I10 | `a_newer_schema_file_is_refused_and_not_rewritten` | a file whose `schema_version` is `MAX_READABLE_SCHEMA + 1`: `Err(LoadError::SchemaTooNew { .. })`, and the file's bytes are unchanged afterward | failing closed is what protects the file |
 
 *`crates/spectre-app/tests/project_io.rs` — model mapping. This test file is the first
-code in `spectre-app` to use the dependency declared at `crates/spectre-app/Cargo.toml:16`.*
+code in `spectre-app` to use the `spectre-project` dependency its manifest already declares.*
 
 | # | Name | Assertion |
 |---|---|---|
-| I11 | `model_envelope_round_trip_preserves_identity_and_order` | `AppModel::prototype()` (`lib.rs:218`) + two `add_track` calls (`lib.rs:405`); `project_envelope(&model, "T")` → `to_bytes` → `from_bytes` → `adopt` into a fresh `AppModel::prototype()`: `tracks()` match by id, name, and order; `devices()` match by `instance_id`; every `ParameterControl.instance_id` and `value` matches | CORE-001 across save/load for tracks, devices, **and** parameters |
-| I12 | `adopting_a_project_stops_the_transport` | envelope whose transport state is `Playing`; after `adopt`, `model.is_playing()` (`lib.rs:264`) is `false` | opening a file never starts playback — and, post R4-1, never starts audio |
+| I11 | `model_envelope_round_trip_preserves_identity_order_and_edited_values` | `AppModel::prototype()` (`lib.rs:221`) + two `add_track` calls (`lib.rs:408`) + `set_device_parameter("saturator", "drive", 6.0)` (`lib.rs:388`); `project_envelope(&model, "T")` → `to_bytes` → `from_bytes` → `adopt` into a fresh `AppModel::prototype()`. Assertions: `tracks()` match by id, name, and order — the fresh target holds **one** track before the call and **three** after; the target's `saturator` `drive` reads `6.0`; and `6.0 != SATURATOR_PARAMETERS[0].default()` is asserted in the same test so the discriminating property is explicit | CORE-001 across save/load for tracks, plus a device assertion that can actually fail: an `adopt` that ignored the persisted devices would leave `drive` at its descriptor default and fail here |
+| I12 | `adopting_a_project_stops_the_transport` | envelope whose transport state is `Playing`; after `adopt`, `model.is_playing()` (`lib.rs:267`) is `false` | opening a file never starts playback — and, post R4-1, never starts audio |
 | I13 | `a_failed_adopt_leaves_the_model_untouched` | envelope with `DeviceDoc.key = "not-a-device"`: `Err(AdoptError::UnknownDevice { .. })`, and `tracks()`, `devices()`, `selected_track_id()`, `lens()` are all identical to before the call | the contract's "keep the current live project unchanged until that result is available and accepted" |
 | I14 | `out_of_range_parameter_values_are_refused_not_clamped` | a `ParameterDoc.value` above its descriptor maximum: `Err(AdoptError::ValueOutOfRange { .. })` | a file must not be able to smuggle a value the UI cannot produce; refusing beats silently clamping on the load path |
+| I15 | `an_app_built_snapshot_carries_the_current_schema_version` | `project_envelope(&AppModel::prototype(), "T")` returns an envelope whose `schema_version` is `SCHEMA_VERSION`; saving it with `save_project_atomic` and reloading returns `SCHEMA_VERSION` again | the version stamp has exactly one owner — the snapshot builder (§4.3). With I9 this pins both halves of the rule: the builder stamps, the writer does not. Fails if the stamp is moved, dropped, or duplicated |
+
+**Why I11 mutates a parameter before the round trip.** `AppModel::prototype()` seeds
+`IdGen` with the fixed constant at `lib.rs:222` and mints every device and parameter
+`ObjectId` **before** any `add_track`, and `DeviceControl::from_descriptors` sets
+`value: descriptor.default()` (`lib.rs:86`). A source model and a fresh target model
+therefore agree on device `instance_id`s and on every parameter value *by construction*.
+Asserting that they match would pass even if `adopt` ignored the persisted devices
+entirely — a test that cannot fail, which `criteria.md` 1G scores 0. The edited `drive`
+value is what makes the device half of I11 discriminating. The `instance_id` equality is
+deliberately **not** asserted as evidence: it would be a consistency check that cannot
+fail, and making it discriminate would need a seeded `AppModel` constructor this slice
+does not add and does not need.
 
 *`crates/spectre-offline/tests/harness.rs` — determinism. This file already has
-`spectre-app` as a dev-dependency (`crates/spectre-offline/Cargo.toml:23–24`), so no new
-dependency is introduced.*
+`spectre-app` as a dev-dependency (`crates/spectre-offline/Cargo.toml:20–21`), so no new
+dependency is introduced. It is also the file whose `first.schema_version` assertion the
+schema bump breaks — see §7.2.*
 
 | # | Name | Assertion |
 |---|---|---|
-| I15 | `a_save_reload_round_trip_does_not_change_what_the_project_renders` | take `model.device_parameter_snapshot()` (`crates/spectre-app/src/lib.rs:348`); render with `spectre_offline::render_app_snapshot(48_000.0, 256, &snapshot)` (`crates/spectre-offline/src/lib.rs:306`); round-trip the model through `project_envelope` → `to_bytes` → `from_bytes` → `adopt`; take the snapshot again; render again — `RenderReport.hash` is **equal** and `peak` is nonzero | Determinism, using the **existing** FNV-1a hash walk in `spectre-offline` rather than a new comparison method. The nonzero peak is what stops two silent renders from agreeing vacuously |
+| I16 | `a_save_reload_round_trip_does_not_change_what_the_project_renders` | take `model.device_parameter_snapshot()` (`crates/spectre-app/src/lib.rs:351`); render with `spectre_offline::render_app_snapshot(48_000.0, 256, &snapshot)` (`crates/spectre-offline/src/lib.rs:306`); round-trip the model through `project_envelope` → `to_bytes` → `from_bytes` → `adopt`; take the snapshot again; render again — `RenderReport.hash` is **equal** and `peak` is nonzero | Determinism, using the **existing** FNV-1a hash walk in `spectre-offline` rather than a new comparison method. The nonzero peak is what stops two silent renders from agreeing vacuously |
 
 ### 5.3 UI / E2E tests
 
 No automated UI test exists or is proposed. `./spectre` has no GUI harness: the only
-process-level test is the headless `--smoke-test` path (`main.rs:480–497`, invoked at
-`main.rs:500`), which constructs an `AppModel` and prints one line. This spec extends that
+process-level test is the headless `--smoke-test` path (`smoke_test()`, invoked from
+`main` before any window opens), which constructs an `AppModel` and prints one line. This spec extends that
 line with `project=none` so `crates/spectre-app/tests/smoke_cli.rs` asserts the shell
 starts with no project loaded — a real assertion that fails if launch state changes, and
 the honest limit of what can be automated here.
@@ -978,8 +1086,8 @@ on Linux, and record both.
 | Newer schema | Hand-edit `schema_version` to 3, open, confirm the refusal message names both numbers and the file is unchanged on disk |
 | Discard guard | Edit, press `Open project`, confirm the button becomes `Discard and open` and that one press does not discard |
 | **Timing** | Time the save on both platforms with a warm and a cold page cache; record the numbers in the R4-9 QA protocol. §4.7's figures are estimates until this runs |
-| Text size / window extremes | At the 1060 × 680 minimum (`main.rs:508`) and with a large system text scale, the PROJECT block still fits the 180 px minimum panel width (`main.rs:119`) and the status line wraps rather than clipping |
-| Theme variants | **N/A** — the shell defines one dark palette as constants (`main.rs:9–15`) and no light theme exists. Nothing in this slice introduces one |
+| Text size / window extremes | At the 1060 × 680 minimum and with a large system text scale, the PROJECT block still fits the 180 px minimum panel width and the status line wraps rather than clipping |
+| Theme variants | **N/A** — the shell defines one dark palette as seven `Color32` constants in `main.rs` and no light theme exists. Nothing in this slice introduces one |
 | **Honesty check** | Confirm no copy anywhere claims the save is crash-proof, recoverable, or autosaved. None of those is true at R4 |
 
 ---
@@ -1033,9 +1141,11 @@ overclaiming:
    exists at R4.
 
 This spec also states three negatives about the current build that the product copy must
-respect: `./spectre` produces no sound; R4-1 is specified but not implemented; and no
-screen-reader claim is authorized while `eframe`'s features are as declared at
-`crates/spectre-app/Cargo.toml:13`.
+respect: nothing in this slice makes `./spectre` produce sound, and no copy here may
+borrow R4-1's engine as evidence for persistence; R4-1 itself is `implemented`, not
+`verified`, so no copy may describe live audio as confirmed; and no
+screen-reader claim is authorized while `eframe`'s features are as declared in
+`crates/spectre-app/Cargo.toml`.
 
 ### 6.4 Regulatory alignment
 
@@ -1054,7 +1164,7 @@ Lens 3 of `gauntlet-output/criteria.md`, criterion by criterion:
   it exports nothing, and no import/export affordance appears anywhere in §3.
 - **3C Deliberately small first devices.** No device is added, grown, or given a preset
   system. What is persisted is the four existing parameter values across the three
-  existing device instances (`crates/spectre-app/src/lib.rs:348–383`). Decision 15
+  existing device instances (`crates/spectre-app/src/lib.rs:351–386`). Decision 15
   (`decision-gates.md:39`) is untouched.
 - **3D Originality.** Schema, field names, error vocabulary, and algorithm are Spectre's.
   The atomic write-temp-fsync-rename-fsync-dir sequence is a POSIX idiom, not a product's
@@ -1077,17 +1187,35 @@ Lens 3 of `gauntlet-output/criteria.md`, criterion by criterion:
 
 ### 7.1 What exists today
 
-Read at branch `rename/geist-to-spectre`, HEAD `2e005e5`. Every row is checkable in one
-`Read`.
+**Baseline, stated exactly, because it moved during this spec's second iteration.**
+Iteration 1 read the tree at HEAD `2e005e5`. Iteration 2 re-read every claim at HEAD
+`8b1633d`, which is `2e005e5` plus R4-1 (`live-audio-wiring`). What that commit did and did
+not disturb, verified rather than assumed:
+
+- `crates/spectre-project`, `crates/spectre-core`, and `crates/spectre-offline` are
+  **byte-identical** across the two commits — `git diff 2e005e5 8b1633d -- crates/spectre-project
+  crates/spectre-core crates/spectre-offline` is empty — so every line number this section
+  pins into those three crates holds at both.
+- `crates/spectre-app/src/lib.rs` gained `pub mod engine;` and two comment lines at the top
+  and nothing else, shifting every line below by exactly **+3**. The pins here are the
+  `8b1633d` values.
+- `crates/spectre-app/src/main.rs` was restructured (+216 lines) and
+  `crates/spectre-app/Cargo.toml` gained a `[features]` block and a `spectre-audio`
+  dependency. **This spec pins no line in either file.** Every reference to them is by
+  symbol or by quoted literal, because R4-2 and R4-4 will move them again.
+
+Every row below is checkable in one `Read` at `8b1633d`.
 
 **Absent — this is the gap R4-7 closes.**
 
 - **`crates/spectre-app` declares `spectre-project` and never uses it.**
   `crates/spectre-app/Cargo.toml:16` reads
   `spectre-project = { path = "../spectre-project" }`, and **grep for `spectre_project`
-  across `crates/spectre-app/src/` and `crates/spectre-app/tests/` returns nothing.** The
-  app crate is two source files (`lib.rs`, `main.rs`) and two test files (`app_model.rs`,
-  `smoke_cli.rs`); none of them names the persistence crate. This is the cleanest possible
+  across `crates/spectre-app/src/` and `crates/spectre-app/tests/` returns nothing** at
+  `8b1633d`. The grep, not a file count, is the durable form of this claim, and R4-1 is the
+  proof: it added `src/engine.rs` and `tests/live_engine.rs` to those directories — the crate
+  is now three source files and three test files — and still added no use of
+  `spectre_project`. The dependency edge is declared and entirely unused. This is the cleanest possible
   statement of how far this feature is from existing: the dependency edge is declared and
   entirely unused.
 - **No filesystem code exists anywhere in `spectre-project`.** The crate is
@@ -1096,45 +1224,54 @@ Read at branch `rename/geist-to-spectre`, HEAD `2e005e5`. Every row is checkable
   `TargetState`, no `SaveReceipt`, and no use of `std::fs` or `std::path`. The only file
   I/O in the crate is `include_bytes!` of a checked-in fixture at
   `tests/project_codec.rs:9`, which is compile-time.
-- **`main.rs`'s own header says so.** `crates/spectre-app/src/main.rs:4`: *"Interaction
-  prototype only; audio and persistence wiring remain out of scope."* There is no menu
-  bar, no file dialog, no path field, and no save or open button in the shell.
+- **`main.rs`'s own header says so, and now says it about this slice by name.** Its
+  Notes block reads *"Persistence wiring remains out of scope until R4-7."* There is no
+  menu bar, no file dialog, no path field, and no save or open button in the shell.
 - **No persisted object collection exists.** `ProjectDoc` (`src/lib.rs:30–38`) has
   exactly four typed fields — `id`, `name`, `tempo_map`, `transport` — plus the flattened
   unknown map. There is no `tracks`, no `devices`, no `view`, and no `id_gen_state`.
   `crates/spectre-core/src/id.rs:4` records the consequence in the source itself:
   *"project-wide duplicate validation arrives with persisted object collections."*
-- **`./spectre` produces no sound.** `spectre:9` runs `cargo run -p spectre-app`; the app
-  does not depend on `spectre-audio`; R4-1 is specified but **not implemented**. Nothing
-  in this spec changes that, and nothing in it should be read as implying otherwise.
+- **R4-1 has landed since this spec's first iteration, and that changes one sentence, not
+  the gap.** At `8b1633d` the app owns a live engine (`crates/spectre-app/src/engine.rs`),
+  its manifest depends on `spectre-audio`, and `docs/status/STATUS.md` records R4-1 as
+  `implemented`, **not** `verified` — *"no one has confirmed by ear that sound leaves the
+  speakers."* This spec therefore no longer claims `./spectre` makes no sound, and it must
+  not claim the opposite either: whatever R4-1's status line says is R4-1's to say. What is
+  unchanged is the only thing this section needs: `spectre_project` still appears nowhere
+  in `crates/spectre-app/`, verified again at `8b1633d`, so the persistence gap is exactly
+  as wide as it was.
 
 **Implemented — `spectre-project`, all of it in memory.**
 
 | Element | Path | What it actually does |
 |---|---|---|
 | `SCHEMA_VERSION = 1`, `MAX_READABLE_SCHEMA = 1` | `src/lib.rs:13`, `:16` | schema identifiers |
-| `ProjectEnvelope`, `ProjectDoc` with `#[serde(flatten)]` unknown maps | `src/lib.rs:20–27`, `:30–38` (flatten at `:24`, `:36`) | CORE-003's forward-field preservation |
+| `ProjectEnvelope`, `ProjectDoc` with `#[serde(flatten)]` unknown maps | `src/lib.rs:20–26`, `:30–38` (flatten at `:24`, `:36`) | CORE-003's forward-field preservation |
 | `ProjectDoc::meter_map` | `src/lib.rs:42–49` | decodes optional meter state out of the unknown map |
 | `ProjectError { SchemaTooNew, InvalidProject(&'static str), Malformed(serde_json::Error) }` | `src/lib.rs:54–58` | three of the five distinctions the load contract needs; it has **no** I/O variants, because there is no I/O |
 | `to_bytes` | `src/lib.rs:80–82` | `serde_json::to_vec_pretty`. **Does not revalidate** — the design authority's "Current codec qualification" section says so explicitly |
-| `from_bytes` | `src/lib.rs:85–103` | peeks the version (`:86–91`), gates it (`:92–97`), decodes, then calls `validate` (`:101`) |
-| `validate` — **private** | `src/lib.rs:105–128` | nonzero project ID, tempo-map reconstruction, meter-map decode, loop-enabled-requires-region, ordered loop region. Not callable from outside the crate |
+| `from_bytes` | `src/lib.rs:85–102` | peeks the version (`:86–91`), gates it (`:92–97`), decodes, then calls `validate` (`:100`) |
+| `validate` — **private** | `src/lib.rs:105–124` | nonzero project ID, tempo-map reconstruction, meter-map decode, loop-enabled-requires-region, ordered loop region. Not callable from outside the crate |
 | `ProjectCommand::rename`, `Transaction`, `EditHistory` | `src/command.rs:43`, `:72–90`, `:114–180` | in-memory command transactions with generated inverses (`:92–112`) and bounded undo/redo with oldest-edit eviction (`:176–181`). `command.rs:4` calls it the *"App-thread project mutation seam; never callback-reachable"* |
 
 **Verified — the R1 codec fixtures.** `crates/spectre-project/tests/fixtures/r1-canonical.json`
 (52 lines, 912 bytes, `schema_version: 1` at `:2`, project id `1311768467463790320` at
-`:4`, an `r1_extension` unknown block at `:48–51`), driven by nine tests in
-`crates/spectre-project/tests/project_codec.rs`: decode with representative state
-(`:21–50`), byte-stable rewrite (`:52–58`), decode-encode-decode round trip (`:60–67`),
-unknown-field survival (`:69–83`), newer-schema rejection (`:85–98`), and invalid
-tempo/meter/loop rejection (`:100–110`, `:112–122`, `:124–134`). Five more codec unit
-tests live in `src/lib.rs:129–221` and eight command tests in
-`tests/command_history.rs`. CORE-003 is `verified` in the ledger (`:48`) on this evidence.
+`:4`, a `future_session` unknown block at `:43–46` and an `r1_extension` unknown block at
+`:48–51`), driven by **eight** tests in `crates/spectre-project/tests/project_codec.rs` —
+the file is 134 lines and `#[test]` appears at `:21, :52, :60, :69, :85, :100, :112, :124`:
+decode with representative state (`:21–50`), byte-stable rewrite (`:52–58`),
+decode-encode-decode round trip (`:60–67`), unknown-field survival (`:69–83`),
+newer-schema rejection (`:85–98`), and invalid tempo/meter/loop rejection (`:100–110`,
+`:112–122`, `:124–134`). Five more codec unit tests live in the crate's own
+`#[cfg(test)] mod tests` (`src/lib.rs:127–221`), and **five** command tests live in
+`tests/command_history.rs` (121 lines; `#[test]` at `:26, :50, :69, :91, :111`).
+CORE-003 is `verified` in the ledger (`:48`) on this evidence.
 **None of these tests opens a file at runtime.**
 
 **Implemented — what the app has that would need to persist.**
 
-- `AppModel` (`crates/spectre-app/src/lib.rs:205–214`): `transport`, `lens`, `tracks:
+- `AppModel` (`crates/spectre-app/src/lib.rs:208–217`): `transport`, `lens`, `tracks:
   Vec<TrackView>`, `devices: Vec<DeviceControl>`, `selected_track`, `selected_device`,
   `ids: IdGen`, `feedback`. **`tracks` is already an ordered collection of objects
   carrying stable `ObjectId`s** (`TrackView` at `:38–45`), created by `prototype()`
@@ -1144,13 +1281,15 @@ tests live in `src/lib.rs:129–221` and eight command tests in
 - `device_parameter_snapshot` (`:348–383`) publishes exactly four validated
   `DeviceParameterSnapshot` values by canonical identity.
 - `IdGen` (`crates/spectre-core/src/id.rs:45–67`) is deterministic splitmix64 seeded at
-  `crates/spectre-app/src/lib.rs:219`; it exposes `next_id` but **no accessor for its
+  `crates/spectre-app/src/lib.rs:222`; it exposes `next_id` but **no accessor for its
   state**, so its position cannot currently be saved.
 
 **Accepted but not implemented — the design this spec implements.**
 `docs/03-architecture/project-persistence.md` is `accepted for R4/R5 implementation` and
-specifies the two signatures, the load ordering, the save algorithm's nine steps, the
-failure vocabulary, the per-stage target-state table, the platform-qualification split,
+specifies the two signatures, the load ordering, the save algorithm's **eight** ordered
+steps (`project-persistence.md:120–127`; §4.3's table has nine rows because it splits the
+contract's step 5 into a sync row and a handle-release row — that ninth row is this spec's
+decomposition, not the contract's), the failure vocabulary, the per-stage target-state table, the platform-qualification split,
 and the private test seam. Its own §"Milestone ownership" says: *"**R1:** accept this API,
 state machine, and failure contract. No filesystem API is implemented in this slice."*
 Nothing in the repository implements any of it.
@@ -1182,47 +1321,127 @@ Nothing in the repository implements any of it.
   with three tracks, three devices, four parameters, and a view block.
 - `crates/spectre-app/src/project.rs` — `project_envelope`, `adopt`, `AdoptError`, the two
   `Lens ↔ LensDoc` conversions.
-- `crates/spectre-app/tests/project_io.rs` — I11–I14.
+- `crates/spectre-app/tests/project_io.rs` — I11–I15.
 
 **Modified files**
 
 - `crates/spectre-project/src/lib.rs` — `pub mod fs;`; `SCHEMA_VERSION`/
   `MAX_READABLE_SCHEMA` to 2 (`:13`, `:16`); the four new `ProjectDoc` fields (`:30–38`);
   `TrackDoc`, `DeviceDoc`, `ParameterDoc`, `ViewDoc`, `LensDoc`; `ValidationError`;
-  `validate` (`:105–128`) becomes `pub fn validate_envelope` returning `ValidationError`,
+  `validate` (`:105–124`) becomes `pub fn validate_envelope` returning `ValidationError`,
   with the existing rules preserved verbatim and the four schema-2 rules added; the call
-  site at `:101` adapts. `to_bytes` (`:80–82`) and `from_bytes` (`:85–103`) keep their
-  signatures, so `spectre-offline`'s use at `crates/spectre-offline/src/lib.rs:14` is
-  unaffected. U15–U18 added to the module's test block.
+  site at `:100` adapts. `to_bytes` (`:80–82`) and `from_bytes` (`:85–102`) keep their
+  **signatures**. The in-crate test helper `envelope()` (`:132–145`) contains a `ProjectDoc`
+  literal and gains the four fields. U15–U18 added to the module's test block.
 - `crates/spectre-project/src/command.rs` — `CommandKind::ReorderTracks`;
   `ProjectCommand::reorder_tracks`; `CommandError::TrackIndexOutOfRange` joining `:11–15`;
   U13–U14.
 - `crates/spectre-core/src/id.rs` — `IdGen::state()` accessor. One method, no behavior
   change; `next_id` (`:56–67`) and `IdGen::new` (`:51–53`) untouched.
-- `crates/spectre-project/tests/project_codec.rs` — **three assertions change, and the
-  change is not cosmetic.** `:25` asserts `envelope.schema_version == SCHEMA_VERSION`,
-  which is false once the constant is 2, and becomes an assertion against the literal `1`.
-  `canonical_fixture_rewrite_is_byte_stable` (`:52–58`) **cannot survive a version bump by
-  construction**: rewriting a v1 document stamps the current version, so the bytes
-  necessarily differ. It is retargeted to the new `r4-canonical.json`, and its v1 role is
-  taken by I8 and I9, which assert the stronger property — that a v1 file still decodes
-  completely and that its unknown fields survive the upgrade. The remaining seven tests are
-  unchanged. **This touches the acceptance evidence of a `verified` requirement
-  (CORE-003, `requirements-ledger.md:48`), so it is flagged here and routed to §8 Q2
-  rather than done quietly.**
+- `crates/spectre-project/tests/project_codec.rs` — **two of its eight tests change; six
+  are unchanged.** (1) `canonical_fixture_decodes_with_representative_r1_state` asserts
+  `envelope.schema_version == SCHEMA_VERSION` at `:25`; the fixture is a v1 document, so
+  that assertion is false the moment the constant is 2 and becomes an assertion against the
+  literal `1`. (2) `canonical_fixture_rewrite_is_byte_stable` (`:52–58`) **cannot survive
+  this change by construction** — and the reason is *not* a version stamp, which no
+  component performs (§4.3). It is that `id_gen_state`, `tracks`, `devices`, and `view` are
+  plain `#[serde(default)]` fields with no `skip_serializing_if`, so `to_bytes` emits all
+  four on **every** encode, including the rewrite of a v1 document whose `schema_version`
+  the writer leaves at `1`. The encoded bytes differ from the checked-in golden regardless
+  of what `SCHEMA_VERSION` holds. It is retargeted to the new `r4-canonical.json`, and its
+  v1 role is taken by I8 and I9. The other six — decode-encode-decode round trip
+  (`:60–67`), unknown-field survival (`:69–83`), newer-schema rejection (`:85–98`, which
+  compares against `MAX_READABLE_SCHEMA + 1` and so is version-relative), and the three
+  invalid tempo/meter/loop rejections (`:100–110`, `:112–122`, `:124–134`) — pass unchanged
+  under the bump and under the four new validator rules, because the v1 fixture has one
+  `ObjectId`, no collections, and no view. **This touches the acceptance evidence of a
+  `verified` requirement (CORE-003, `requirements-ledger.md:48`), so it is flagged here and
+  routed to §8 Q2 rather than done quietly.**
 - `crates/spectre-app/src/lib.rs` — `pub mod project;`. No `AppModel` field or
   method-semantics change.
-- `crates/spectre-app/src/main.rs` — the PROJECT block inside `track_list`
-  (`:115–158`); `project_path`, `dirty`, `status` on `SpectrePrototype` (`:17–21`) and its
-  `Default` (`:23–32`); the dirty marker in `transport` (`:50–84`); dirty-setting on the
-  existing mutation call sites; `project=` in the smoke line (`:486–496`); and the header
-  Notes line at `:4`, which currently says persistence is out of scope and will no longer
-  be true.
+- `crates/spectre-app/src/main.rs` — the PROJECT block inside `track_list`;
+  `project_path`, `dirty`, and `status` on `SpectrePrototype` and on its `Default` impl;
+  the dirty marker inside `transport`, placed beside R4-1's engine status cluster rather
+  than replacing any of it; dirty-setting at the existing mutation call sites; `project=`
+  added to `smoke_test`'s single println, which already carries `engine=not-started`; and
+  the header Notes line, which currently reads *"Persistence wiring remains out of scope
+  until R4-7"* and stops being true when this slice lands. **No line in this file is pinned
+  anywhere in this spec**: R4-1 restructured it by 216 lines while this spec was in its
+  second iteration, and R4-2 and R4-4 will move it again.
+- `crates/spectre-project/tests/command_history.rs` — **a compile break, not a behavior
+  change.** Its `project()` helper (`:13–24`) builds a `ProjectDoc` literal (`:17–23`), which
+  stops compiling the moment the four non-`Option` fields exist. It is an integration-test
+  target, so it sees only the public API, exactly like an out-of-workspace consumer would.
+  The import list gains `ViewDoc` and the literal gains four lines:
+
+  ```rust
+  fn project() -> ProjectDoc {
+      let mut ids = IdGen::new(41);
+      let mut unknown = Map::new();
+      unknown.insert("future".into(), json!({"kept": true}));
+      ProjectDoc {
+          id: ids.next_id(),
+          name: "Original".into(),
+          tempo_map: TempoMap::constant(120.0).unwrap(),
+          transport: Transport::new(),
+          id_gen_state: ids.state(),
+          tracks: Vec::new(),
+          devices: Vec::new(),
+          view: ViewDoc::default(),
+          unknown,
+      }
+  }
+  ```
+
+  None of its five tests changes an assertion: they exercise `rename`, `Transaction`, and
+  `EditHistory`, none of which reads the new fields.
+- `crates/spectre-offline/src/lib.rs` — **also a compile break, and this crate is not
+  unaffected.** `default_project()` (`:150–163`) holds the workspace's other out-of-crate
+  `ProjectDoc` literal (`:154–160`). Its `use` at `:14` imports `SCHEMA_VERSION` alongside
+  `from_bytes`, `ProjectDoc`, and `ProjectEnvelope`; `to_bytes`/`from_bytes` keep their
+  signatures, but the **value** of `SCHEMA_VERSION` changes and `:153` stamps it into every
+  `default_project()` envelope, so this file is touched by both halves of the change:
+
+  ```rust
+  // Build the deterministic empty project used by smoke tests and future render fixtures
+  pub fn default_project() -> ProjectEnvelope {
+      let mut ids = IdGen::new(0x0047_4549_5354);
+      ProjectEnvelope {
+          schema_version: SCHEMA_VERSION,
+          project: ProjectDoc {
+              id: ids.next_id(),
+              name: "Untitled".into(),
+              tempo_map: TempoMap::constant(120.0).expect("constant default tempo is valid"),
+              transport: Transport::new(),
+              id_gen_state: ids.state(),
+              tracks: Vec::new(),
+              devices: Vec::new(),
+              view: ViewDoc::default(),
+              unknown: Map::new(),
+          },
+          unknown: Map::new(),
+      }
+  }
+  ```
+
+  `id_gen_state` is initialized from the new `IdGen::state()` accessor rather than from `0`,
+  because struct-literal fields evaluate in source order and `id: ids.next_id()` has already
+  advanced the generator — which is the whole point of persisting the position (§4.2).
+  `default_project()`'s only consumer is `default_project_report_is_deterministic` in
+  `crates/spectre-offline/tests/harness.rs`, which compares two `inspect_project` reports of
+  the same bytes and never byte-compares against a golden, so the added fields change nothing
+  it asserts. The `schema_version` literal in the same test is a separate break, below.
+- `crates/spectre-offline/tests/harness.rs` — I16, **plus one existing assertion that the
+  bump breaks.** `default_project_report_is_deterministic` asserts
+  `assert_eq!(first.schema_version, 1)` at `:25`, and `first` comes from
+  `inspect_project(to_bytes(default_project()))`, so it reads whatever `SCHEMA_VERSION`
+  holds. It becomes `assert_eq!(first.schema_version, SCHEMA_VERSION)`, which is the
+  assertion it meant. This is a **second crate** and a **second existing passing test**
+  disturbed by the bump; §8 Q2 states the blast radius accordingly.
 - `crates/spectre-app/tests/smoke_cli.rs` — assert `project=none`.
-- `crates/spectre-offline/tests/harness.rs` — I15.
 - **`docs/01-requirements/requirements-ledger.md`** — three rationale rows, one per
   numeric bound: `SAVE_TEMP_NAME_ATTEMPTS`, `MAX_PROJECT_FILE_BYTES`, and the track level
-  range, each carrying the §4.2 text. PROD-003 (`requirements-ledger.md:64`) requires the
+  range, each carrying the §4.2 text. PROD-003 requires the
   rationale to be recorded **in that ledger**, and decision 16 (`decision-gates.md:40`)
   makes it a standing rule, so §4.2's table does not discharge it on its own. The rows
   are proposed in the CORE family (`:44–49`) as CORE-005, CORE-006, CORE-007, since all
@@ -1239,14 +1458,28 @@ Nothing in the repository implements any of it.
   does not change.
 
 **Deliberately not modified:** all of `crates/spectre-audio`, `crates/spectre-graph`,
-`crates/spectre-dsp`; `crates/spectre-offline/src/lib.rs`; every RT module scanned by
-`crates/spectre-audio/tests/rt_guard.rs`. No render code, no DSP, no callback-reachable
-path, and no `Cargo.toml` in the render-path crates is touched — U12 exists to keep that
-true.
+`crates/spectre-dsp`; every RT module scanned by `crates/spectre-audio/tests/rt_guard.rs`.
+No render code, no DSP, no callback-reachable path, and no `Cargo.toml` in the render-path
+crates is touched — U12 exists to keep that true. `crates/spectre-offline/src/lib.rs` is
+**not** on this list: an earlier draft of this spec put it there, and that was wrong.
+Adding non-`Option` fields to a public struct breaks every downstream literal of it, and
+that file holds one.
+
+**The schema change's full blast radius, in one place.** Two compile sites outside
+`spectre-project` (`spectre-offline`'s `default_project`, `spectre-project`'s own
+`tests/command_history.rs` helper — an integration-test target, so it too sees only the
+public API) and two existing passing tests in two different crates
+(`project_codec.rs`'s `:25` assertion and its byte-stability test;
+`spectre-offline/tests/harness.rs:25`). Four files, four repairs, none of them optional and
+none of them cosmetic. Anything that describes this change as touching one test in one file
+is understating it.
 
 **Migrations / schema changes:** the version moves 1 → 2 with a **tolerant read plus a
-version stamp on save**: absent fields default, and a save always writes the current
-version. This is deliberately *not* the migration framework R5 owns — there is no
+version stamp in the snapshot builder**: absent fields default on decode, and every
+envelope `project_envelope` constructs carries `SCHEMA_VERSION`, so every save `./spectre`
+performs writes the current version. The stamp is `project_envelope`'s and nothing else's —
+`save_project_atomic` writes the `schema_version` it is handed (§4.3), which is why I9 and
+I15 assert opposite-looking things and are both correct. This is deliberately *not* the migration framework R5 owns — there is no
 transformation of existing data, no down-conversion, no salvage, and no per-version code
 path. Whether that boundary is drawn where Jeff wants it is §8 Q1.
 
@@ -1256,10 +1489,12 @@ path. Whether that boundary is drawn where Jeff wants it is §8 Q1.
 
 **L.** Roughly 400–500 new lines across `spectre-project` (the `fs` module dominates),
 about 120 in `spectre-app`, and a test surface larger than the implementation: 18 unit
-tests, 15 integration tests, one new fixture. It is above **M** for three reasons that are
-each independently costly — a schema version bump that touches an existing `verified`
-requirement's acceptance tests; a private generic seam that has to be designed so it stays
-private while still reaching all seven stages; and a correctness surface where the tests
+tests (U1–U18), 16 integration tests (I1–I16), one new fixture. It is above **M** for three
+reasons that are each independently costly — a schema version bump that touches an existing
+`verified` requirement's acceptance tests, breaks a second existing test in a second crate,
+and breaks two out-of-crate struct literals (§7.2); a private generic seam that has to be
+designed so it stays private while still reaching the six stages §5.1 injects; and a
+correctness surface where the tests
 are the deliverable, since "the old file is intact" is only true if something checks it at
 every stage. It is below **XL** because it writes no DSP, adds no dependency, touches no
 callback-reachable code, and implements an API that is already designed line by line.
@@ -1269,13 +1504,17 @@ callback-reachable code, and implements an API that is already designed line by 
 - **Nothing blocks authorship or implementation.** Every piece this composes — the
   envelope, the validator, the command transactions, the ID generator, the app model's
   track collection — exists today and is tested.
-- **R4-1 (`live-audio-wiring`) does not block this and is not blocked by it.** They touch
-  disjoint files. Two coordination points: the transport-bar edit (this spec adds a dirty
-  marker, R4-1 replaces the `ENGINE OFFLINE` and `CPU —` literals at `main.rs:79–80` —
-  whichever lands second rebases), and §3.2 step 4's transport-stop-on-open, which only
-  becomes load-bearing once an engine exists.
+- **R4-1 (`live-audio-wiring`) landed first, at `8b1633d`, so both coordination points
+  are now this spec's to absorb rather than open questions.** The transport bar it edits
+  no longer holds `ENGINE OFFLINE` and `CPU —`; it holds R4-1's engine status cluster, and
+  the dirty marker in §3.3 goes beside that cluster without replacing any of it. §3.2 step
+  4's transport-stop-on-open stops being theoretical: an engine now exists, so opening a
+  project saved while playing must not start it, which is what I12 asserts. Neither point
+  changes a signature or a file this spec creates; both are rebases inside
+  `crates/spectre-app/src/main.rs`, which R4-1 has already restructured. That restructuring
+  is why this spec pins no line in that file.
 - **R4-4 (`track-model`) will extend `TrackDoc`, not replace it.** This spec persists the
-  track collection that exists **today** (`AppModel.tracks`, `lib.rs:208`), so it does not
+  track collection that exists **today** (`AppModel.tracks`, `lib.rs:211`), so it does not
   wait on R4-4. When R4-4 adds routing and a signal path, those become fields on
   `TrackDoc` and the schema question repeats — which is the argument in §8 Q1 for settling
   the additive-versus-bump rule now rather than per slice.
@@ -1284,7 +1523,7 @@ callback-reachable code, and implements an API that is already designed line by 
   clips that do not exist and does not claim to. It delivers tracks, devices, parameters,
   and view state, and states the remainder as R4-5/R4-6's to add.
 - **R4-8 (`offline-bounce`) depends on this**, in that a bounce of a *loaded* project is
-  only meaningful once loading exists. I15 is deliberately the shape R4-8 will extend.
+  only meaningful once loading exists. I16 is deliberately the shape R4-8 will extend.
 - **R5 blocks the durability claim, not the code.** Crash injection, the qualified
   filesystem matrix, autosave, and recovery are R5's by the design authority's own
   milestone table. Until they run, this feature is `implemented`, not `verified`, and no
@@ -1298,18 +1537,37 @@ callback-reachable code, and implements an API that is already designed line by 
 ## 8. Open Questions
 
 - **Q1 — Is the schema-1 → schema-2 step a tolerant read (R4) or a migration (R5)?**
-  This spec treats "absent fields default, save stamps the current version" as tolerant
-  reading, not migration, because nothing is transformed and there is no per-version code
-  path. The alternative is to keep `SCHEMA_VERSION = 1` and make `tracks`/`devices`
-  additive with `skip_serializing_if`, which preserves the existing byte-stability test
-  untouched — at the cost that an older build silently opens a project with tracks and
-  shows the musician an empty one. §4.2 argues the bump is safer for exactly that reason.
+  This spec treats "absent fields default on decode, and the snapshot builder stamps the
+  current version" as tolerant reading, not migration, because nothing is transformed and
+  there is no per-version code path. The alternative is to keep `SCHEMA_VERSION = 1` and
+  make the four fields additive with `skip_serializing_if` — at the cost that an older build
+  silently opens a project with tracks and shows the musician an empty one. §4.2 argues the
+  bump is safer for exactly that reason. **One correction to that alternative, because it is
+  easy to state too generously:** `skip_serializing_if` preserves
+  `canonical_fixture_rewrite_is_byte_stable` **only if it skips all four fields when the
+  document carries none** — the two empty `Vec`s, the `0` generator state, and the default
+  `ViewDoc` alike. Skipping only `tracks` and `devices` still changes the v1 fixture's
+  encoded bytes and still breaks that test, so "the byte-stability test stays untouched" is
+  not free with the approach: it costs a predicate on every one of the four fields, and the
+  default-valued `ViewDoc` is the awkward one. Note also that the byte-stability test breaks
+  under *this spec's* choice for the same reason — the always-serialized new fields — and
+  **not** because of a version stamp, since the writer performs none (§4.3).
   — *blocks: §4.2, §7.2*
-- **Q2 — Retargeting `canonical_fixture_rewrite_is_byte_stable`.** It is acceptance
-  evidence for a `verified` requirement (CORE-003, `requirements-ledger.md:48`) and cannot
-  survive a version bump by construction. This spec retargets it to the new v2 fixture and
-  replaces its v1 role with the stronger I8/I9 pair. Confirm that this is a preserved
-  guarantee under a new fixture and not a weakened one. — *blocks: §5.2, §7.2*
+- **Q2 — The schema-2 change disturbs a `verified` requirement's evidence and reaches a
+  second crate; the whole radius is stated here so the decision is made on it.**
+  `canonical_fixture_rewrite_is_byte_stable` is acceptance evidence for CORE-003
+  (`requirements-ledger.md:48`, status `verified`) and cannot survive the four added fields
+  by construction; this spec retargets it to the new v2 fixture and replaces its v1 role
+  with the I8/I9 pair. That is the headline and it is not the whole change. The full list,
+  from §7.2: `project_codec.rs:25`'s `SCHEMA_VERSION` assertion flips to the literal `1`;
+  `crates/spectre-offline/tests/harness.rs:25`'s `assert_eq!(first.schema_version, 1)` — an
+  existing **passing** test in a **second crate** — fails on the bump and becomes an
+  assertion against `SCHEMA_VERSION`; and two out-of-crate `ProjectDoc` literals stop
+  compiling until they name the four new fields. So what is being approved is "amend a
+  `verified` requirement's acceptance evidence, repair one further existing test in another
+  crate, and repair two compile sites," not "retarget one test." Confirm the retarget is a
+  preserved guarantee under a new fixture rather than a weakened one, and confirm the radius
+  is acceptable. — *blocks: §5.2, §7.2*
 - **Q3 — Should a save preserve the destination's existing permissions and ownership?**
   The design authority says they are *"not implicitly preserved unless a later accepted
   contract explicitly requires and tests them."* Preserving them costs a `metadata` read
@@ -1320,8 +1578,8 @@ callback-reachable code, and implements an API that is already designed line by 
   this spec adds none. A path field is a poor experience for a credible alpha. If a dialog
   is wanted, it is a separate dependency decision with its own license audit and a Linux
   portal question. — *blocks: §3.1, §4.5*
-- **Q5 — Enable `eframe`'s accessibility feature at R4?** `crates/spectre-app/Cargo.toml:13`
-  sets `default-features = false`, so no screen-reader integration is compiled in and none
+- **Q5 — Enable `eframe`'s accessibility feature at R4?** `crates/spectre-app/Cargo.toml`
+  sets `default-features = false` on `eframe`, so no screen-reader integration is compiled in and none
   is claimed. Decision 17 (`decision-gates.md:41`) scopes an audit at R4; turning the
   feature on is one manifest line plus whatever the audit finds. This spec does not do it
   unilaterally. — *blocks: §3.7*
@@ -1351,6 +1609,22 @@ callback-reachable code, and implements an API that is already designed line by 
   validated envelope, so no honest test can fail on it. The alternative is to extend the
   private seam to force an encoder failure, which tests the plumbing rather than a real
   condition. §5.1 chooses to say so instead. — *blocks: §5.1*
+- **Q12 — Unknown fields do not survive an `AppModel` round trip. Is that acceptable at R4?**
+  `project_envelope` builds a fresh document from `AppModel`, which has nowhere to hold the
+  envelope's or the document's `#[serde(flatten)]` unknown map (§4.3, §4.4), so
+  open → edit → save through `./spectre` drops any field this build does not know. The
+  crate-level guarantee CORE-003 is `verified` on is untouched — `to_bytes`/`from_bytes`
+  still preserve unknown fields, and I8/I9 prove it across a real filesystem — but the
+  product-level guarantee is narrower than the crate-level one, and this is the first slice
+  where that difference is observable at all. The R4 exposure is small: `load_project`
+  refuses any `schema_version` above `MAX_READABLE_SCHEMA`, so only a same-version writer or
+  a hand edit can put an unknown field where this build will read it and then drop it.
+  Closing it costs one opaque preservation field on `AppModel` plus a write-back in
+  `project_envelope`. This spec does not take that unilaterally, because §4.4's "this feature
+  adds **no** field to `AppModel`" is load-bearing for the single-model invariant, and
+  because the question is really "is unknown-field preservation a crate property or a product
+  property" — which is Jeff's to answer. Surfaced by giving the version stamp an explicit
+  owner; it was invisible while the stamp had none. — *blocks: §4.3, §4.4, §7.2*
 
 ---
 
@@ -1382,9 +1656,18 @@ or whether it restores view state on open.** The reasons are checkable:
 - **Phase Plant** (11 records) and **VCV Rack 2** (6) are generator/routing and
   signal-convention dossiers; neither touches file writing.
 
-Recorded as a research need: the file-and-set-management chapters of the Ableton manual
-are the highest-value extraction for any future persistence work, and they are already
-identified as unextracted at `ableton-live-observations.md:19`.
+Recorded as a research need: chapter 5, "Managing Files and Sets", is the highest-value
+extraction for any future persistence work. Its status is **`section-inventoried`, not
+unextracted**, and the distinction matters — the headings and source locations are already
+captured, so the work is extraction rather than discovery.
+`docs/02-reference-research/ableton-live.md:49` carries its matrix row and `:132–148` the
+section breakdown, including 5.4, whose recorded open questions are *"schema/versioning,
+atomic save, recovery, merge identity/conflicts, unknown-data preservation, and
+transactional undo"* — the exact list this feature is working without. `ableton-live.md:160`
+names chapters 3–5 as the next extraction target for that reason. Chapter 5 is **not** among
+the chapters listed as unextracted at `ableton-live-observations.md:19` (2, 10–15, 20–24,
+26, 33, 36–40); an earlier draft of this appendix cited that line for it, and that citation
+did not hold.
 
 **What the corpus *does* support, and how it is used.**
 
