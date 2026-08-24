@@ -9,8 +9,9 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use spectre_app::engine::{
-    apply_parameter_edit, build_engine_parts, AuditionError, EngineParts, EngineState,
-    EngineUnavailable, LiveEngine, ENGINE_BUFFER_FRAMES, ENGINE_PLAN_FRAME_MARGIN,
+    apply_parameter_edit, build_engine_parts, engine_status_field, toggle_transport, AuditionError,
+    EngineParts, EngineState, EngineUnavailable, LiveEngine, ENGINE_BUFFER_FRAMES,
+    ENGINE_PLAN_FRAME_MARGIN,
 };
 use spectre_app::AppModel;
 use spectre_audio::bridge::BridgeTelemetry;
@@ -240,25 +241,93 @@ fn repeated_engine_builds_render_identically() {
     assert_eq!(hashes[1], hashes[2]);
 }
 
-// 7
+// 7 — REWRITTEN after R4-1's implementation review found the original could not fail: it built
+// an AppModel, never passed it to the rule under test, and asserted a fresh prototype was not
+// playing. This version drives the real rule and asserts the model it was actually given
 #[test]
 fn a_refused_transport_send_leaves_the_ui_transport_unchanged() {
     let parts = build_engine_parts(&prototype_snapshot(), config()).unwrap();
     let mut engine = engine_over_null(parts);
     let mut model = AppModel::prototype();
+    let mut status = String::new();
+
+    // Sanity: with a working lane the rule flips the UI, so the assertion below is about the
+    // refusal and not about the rule never flipping anything
+    toggle_transport(&mut model, Some(&mut engine), &mut status).unwrap();
+    assert!(model.is_playing(), "an accepted send must flip the UI");
+    toggle_transport(&mut model, Some(&mut engine), &mut status).unwrap();
+    assert!(!model.is_playing());
 
     // Fill the transport lane without pumping, so nothing drains it
     while engine.send_transport(TransportCommand::Play).is_ok() {}
 
-    match engine.start_audition() {
-        Err(AuditionError::Transport(ControlError::TransportLaneFull)) => {}
-        other => panic!("expected a refused transport send, got {other:?}"),
-    }
+    let refused = toggle_transport(&mut model, Some(&mut engine), &mut status);
+    assert_eq!(
+        refused,
+        Err(AuditionError::Transport(ControlError::TransportLaneFull))
+    );
+    assert!(
+        !model.is_playing(),
+        "a refused transport send must leave the UI transport unchanged"
+    );
+    assert!(
+        status.contains("Nothing changed"),
+        "the refusal must be reported to the user: {status}"
+    );
+}
 
-    // The binding rule: the app sends first and mutates second, so a refusal leaves the UI alone
-    assert!(!model.is_playing());
-    model.select_lens(spectre_app::Lens::Build);
-    assert_eq!(model.lens(), spectre_app::Lens::Build);
+// 7b — the other half of the binding rule: a refused NOTE after an accepted transport command
+// still flips the UI, because a queued command cannot be recalled and a UI reading "stopped"
+// while the render transport plays is the worse divergence
+#[test]
+fn a_refused_note_after_an_accepted_transport_command_still_flips_the_ui() {
+    let parts = build_engine_parts(&prototype_snapshot(), config()).unwrap();
+    let mut engine = engine_over_null(parts);
+    let mut model = AppModel::prototype();
+    let mut status = String::new();
+
+    // Fill the note lane only; the transport lane stays open
+    while engine
+        .send_note(spectre_dsp::NoteEventKind::AllNotesOff { channel: Some(0) })
+        .is_ok()
+    {}
+
+    let result = toggle_transport(&mut model, Some(&mut engine), &mut status);
+    assert!(
+        matches!(result, Err(AuditionError::Note(_))),
+        "expected a refused note, got {result:?}"
+    );
+    assert!(
+        model.is_playing(),
+        "the transport command was queued, so the UI must match what the render thread will see"
+    );
+}
+
+// 7c — with no engine at all the prototype behaves exactly as it did before R4-1
+#[test]
+fn the_transport_rule_still_works_with_no_engine() {
+    let mut model = AppModel::prototype();
+    let mut status = String::new();
+    let engine: Option<&mut LiveEngine<NullStream>> = None;
+
+    toggle_transport(&mut model, engine, &mut status).unwrap();
+    assert!(model.is_playing());
+    assert!(status.is_empty(), "no engine is not an error condition");
+}
+
+// 7d — the smoke line's engine field is derived, not written. This is what makes the assertion
+// in smoke_cli.rs falsifiable: it changes if the headless path ever opens a device
+#[test]
+fn the_smoke_engine_field_tracks_real_engine_state() {
+    let none: Option<&LiveEngine<NullStream>> = None;
+    assert_eq!(engine_status_field(none), "not-started");
+
+    let parts = build_engine_parts(&prototype_snapshot(), config()).unwrap();
+    let mut engine = engine_over_null(parts);
+    assert_eq!(engine_status_field(Some(&engine)), "opened");
+
+    engine.stream_mut().pump().unwrap();
+    assert_eq!(engine_status_field(Some(&engine)), "running");
 }
 
 // A backend that refuses every open, for the failure path

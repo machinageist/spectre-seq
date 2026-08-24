@@ -7,7 +7,8 @@
 
 use eframe::egui::{self, Color32, CornerRadius, RichText, Stroke, Vec2};
 use spectre_app::engine::{
-    apply_parameter_edit, AuditionError, EngineHealth, EngineState, EngineUnavailable, LiveEngine,
+    apply_parameter_edit, engine_status_field, EngineHealth, EngineState, EngineUnavailable,
+    LiveEngine,
 };
 use spectre_app::{open_device_in_shape_from_ui, AppModel, Lens};
 
@@ -82,34 +83,13 @@ impl SpectrePrototype {
 
     // Send first, mutate second. The UI transport changes only when the render thread will see
     // the same change, which is what keeps the app's transport and the bridge's from diverging
+    // Delegate to the tested rule in engine.rs; the shell only supplies the borrows
     fn toggle_transport(&mut self) {
-        let playing = self.model.is_playing();
-        let Some(engine) = self.engine.as_mut() else {
-            self.model.toggle_play();
-            return;
-        };
-        let result = if playing {
-            engine.stop_audition()
-        } else {
-            engine.start_audition()
-        };
-        match result {
-            Ok(()) => {
-                self.model.toggle_play();
-            }
-            // The transport command was queued and the render thread will apply it, so the UI
-            // flips anyway; a queued command cannot be recalled from a wait-free lane
-            Err(AuditionError::Note(error)) => {
-                self.model.toggle_play();
-                self.feedback_status =
-                    format!("Transport changed but the note was dropped: {error:?}");
-            }
-            // No transport command was queued, so the UI must not change either
-            Err(AuditionError::Transport(error)) => {
-                self.feedback_status =
-                    format!("Transport change refused: {error:?}. Nothing changed; try again.");
-            }
-        }
+        let _ = spectre_app::engine::toggle_transport(
+            &mut self.model,
+            self.engine.as_mut(),
+            &mut self.feedback_status,
+        );
     }
 
     // What the transport bar renders, derived from the render thread rather than asserted
@@ -685,15 +665,19 @@ fn mix_surface(ui: &mut egui::Ui, tracks: &[spectre_app::TrackView]) {
 }
 
 fn smoke_test() {
-    let model = AppModel::prototype();
+    // Build the real shell rather than a bare model, so the engine field below reports what the
+    // shell actually holds. If engine startup is ever moved into construction, this changes
+    let shell = SpectrePrototype::default();
+    let model = &shell.model;
     let selected_device = model
         .selected_device()
         .map(|device| format!("{}({})", device.name, device.key))
         .unwrap_or_else(|| "none".into());
-    // The smoke path deliberately opens no device: this assertion is what fails if engine
-    // startup is ever wired into the headless path, which would break CI on a device-less host
+    // The smoke path deliberately opens no device. The engine field is DERIVED from the shell's
+    // own engine, not written as a literal, so the assertion in tests/smoke_cli.rs actually fails
+    // if startup is wired into the headless path — which would break CI on a device-less host
     println!(
-        "Spectre prototype ready lens={} tracks={} transport={} selected_device={} engine=not-started",
+        "Spectre prototype ready lens={} tracks={} transport={} selected_device={} engine={}",
         model.lens(),
         model.tracks().len(),
         if model.is_playing() {
@@ -701,7 +685,8 @@ fn smoke_test() {
         } else {
             "stopped"
         },
-        selected_device
+        selected_device,
+        engine_status_field(shell.engine.as_ref())
     );
 }
 

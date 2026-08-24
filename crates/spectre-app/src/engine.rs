@@ -587,3 +587,64 @@ pub fn apply_parameter_edit<S: AudioStream + ?Sized>(
         );
     }
 }
+
+// Apply the transport binding rule: send first, mutate second.
+//
+// Lives here rather than in main.rs because main.rs is a binary target and its functions are
+// unreachable from crates/spectre-app/tests/. R4-1's own implementation review found that the
+// test written against the in-main.rs version could not fail — it asserted on a model the rule
+// had never touched — so the rule moved to where a falsifiable test can reach it.
+//
+// Returns what happened, so a caller that is not the UI can assert on it.
+pub fn toggle_transport<S: AudioStream + ?Sized>(
+    model: &mut AppModel,
+    engine: Option<&mut LiveEngine<S>>,
+    feedback_status: &mut String,
+) -> Result<(), AuditionError> {
+    let playing = model.is_playing();
+    let Some(engine) = engine else {
+        // With no engine the prototype behaves exactly as it did before R4-1
+        model.toggle_play();
+        return Ok(());
+    };
+    let result = if playing {
+        engine.stop_audition()
+    } else {
+        engine.start_audition()
+    };
+    match result {
+        Ok(()) => {
+            model.toggle_play();
+            Ok(())
+        }
+        // The transport command was queued and the render thread will apply it, so the UI flips
+        // anyway; a queued command cannot be recalled from a wait-free lane, and a UI reading
+        // "stopped" while the render transport plays is the worse of the two divergences
+        Err(AuditionError::Note(error)) => {
+            model.toggle_play();
+            *feedback_status = format!("Transport changed but the note was dropped: {error}");
+            Err(AuditionError::Note(error))
+        }
+        // No transport command was queued, so the UI must not change either
+        Err(AuditionError::Transport(error)) => {
+            *feedback_status =
+                format!("Transport change refused: {error}. Nothing changed; try again.");
+            Err(AuditionError::Transport(error))
+        }
+    }
+}
+
+// Render the engine's state as one stable field for the headless smoke line.
+//
+// Derived from the engine the caller actually holds, never a literal: if engine startup is ever
+// wired into the headless path, this value changes and the smoke assertion fails. A hard-coded
+// string here would make that assertion unfalsifiable, which is what R4-1's review found.
+pub fn engine_status_field<S: AudioStream + ?Sized>(
+    engine: Option<&LiveEngine<S>>,
+) -> &'static str {
+    match engine.map(LiveEngine::state) {
+        None => "not-started",
+        Some(EngineState::Opened { .. }) => "opened",
+        Some(EngineState::Running { .. }) => "running",
+    }
+}

@@ -283,10 +283,12 @@ pre.cmd .c { color:var(--ink-3); }
       <div class="strip" id="strip"></div>
       <div class="callout">
         <span class="lbl">Headline gap</span>
-        <p><code>./spectre</code> launches, but it never constructs anything from
-          <code>spectre-audio</code>. Press Play and the transport state changes; no sound is produced.
-          A live CoreAudio driver has been opened and driven by the render bridge — but only from a
-          test, never from the application.</p>
+        <p><strong>Closed 2026-08-24.</strong> <code>./spectre</code> now compiles a plan from its own
+          snapshot, opens the default device at its native rate, and moves the render bridge into the
+          callback. A Shape slider changes live audio. The app's own hardware drill opened an
+          M-Audio AIR 192|6 through CoreAudio at 88 200 Hz and rendered 88 blocks with 0 xruns and 0
+          stream errors. <strong>What is not established:</strong> nobody has confirmed by ear that
+          sound leaves the speakers, and neither landed slice has run its manual protocol.</p>
       </div>
     </section>
 
@@ -758,9 +760,9 @@ const ATLAS = {
 
   strip: [
     { lbl:"Active milestone", v:"R4", tone:"warn", sub:"Credible Alpha · opened 2026-08-09" },
-    { lbl:"Workspace gate",   v:"230 pass", tone:"ok", sub:"0 failed · 1 ignored (hardware drill)" },
-    { lbl:"R4 specs cleared", v:"8 / 9", tone:"ok", sub:"one back in remediation" },
-    { lbl:"R4 implemented",   v:"0 / 9", tone:"bad", sub:"no slice has been built" }
+    { lbl:"Workspace gate",   v:"256 pass", tone:"ok", sub:"0 failed · 2 ignored (hardware drills)" },
+    { lbl:"R4 specs cleared", v:"8 / 9", tone:"ok", sub:"one awaiting re-verification" },
+    { lbl:"R4 implemented",   v:"2 / 9", tone:"warn", sub:"live audio and the parameter seam" }
   ],
 
   roadmap: [
@@ -808,12 +810,12 @@ const ATLAS = {
   slices: [
     { id:"R4-1", name:"Live audio wiring", group:"pass",
       goal:"Wire ./spectre to the qualified backend so Play produces sound through the existing compiled plan. No new render path, no new DSP.",
-      spec:{ state:"pass", score:"2.950", iters:2 }, impl:0,
-      flag:"The unlock. Every later slice is unobservable until this lands." },
+      spec:{ state:"pass", score:"2.950", iters:2 }, impl:1, implState:"review",
+      flag:"<b>Built 2026-08-24.</b> Implementation review FAILED at 2.581 — not on score, but on three criteria scoring 1 against a limit of two; the three Priority 1 findings are fixed and it awaits re-review." },
     { id:"R4-2", name:"Runtime parameter seam", group:"blocked",
       goal:"Implement decision 22's parameter seam on AudioProcessor, then consume the RT-002 lane the bridge already drains. A Shape edit must change live audio.",
-      spec:{ state:"pass", score:"2.833", iters:1 }, impl:0,
-      flag:"<b>D-R3 blocks implementation.</b> An accepted contract says Gain smooths; the shipped Gain has no smoothing state." },
+      spec:{ state:"pass", score:"2.833", iters:1 }, impl:1, implState:"built",
+      flag:"<b>Built 2026-08-24.</b> A Shape edit changes the rendered hash with nothing pending. <b>D-R3 stands open:</b> the accepted contract says Gain smooths and the shipped Gain does not — neither side was changed by assertion." },
     { id:"R4-3", name:"Linux device qualification", group:"blocked",
       goal:"Run the ignored lifecycle drill on real Linux hardware and record it in the qualification table. One command; it only needs the box.",
       spec:{ state:"pass", score:"2.967", iters:2 }, impl:0,
@@ -832,8 +834,8 @@ const ATLAS = {
       flag:"The tightest exposure to the copied-limits rule in the run, cleanly handled." },
     { id:"R4-7", name:"Project persistence", group:"work",
       goal:"Implement CORE-004's atomic save and reload over the accepted persistence contract, and land CORE-001's reorder evidence on the first persisted collection.",
-      spec:{ state:"fail", score:"2.850", iters:1 }, impl:0,
-      flag:"<b>Reversed on re-review.</b> Scored 3.000 from the orchestrating session, then failed the feasibility rule under an independent grader. Remediation not yet written." },
+      spec:{ state:"pass", score:"—", iters:2 }, impl:0,
+      flag:"<b>Remediated 2026-08-24</b> after failing the feasibility rule at 2.850. Iteration 2 awaits blind re-verification; it raised a new question about unknown-field preservation." },
     { id:"R4-8", name:"Offline bounce", group:"pass",
       goal:"Add offline bounce and prove it matches the live path's computation, extending the hash-equivalence approach the callback bridge already uses.",
       spec:{ state:"pass", score:"2.967", iters:4 }, impl:0,
@@ -845,7 +847,9 @@ const ATLAS = {
   ],
 
   requirements: [
-    { id:"RT-001", family:"Realtime", req:"Callback-reachable code MUST NOT allocate, deallocate, take blocking locks, perform I/O, log, or panic across the callback boundary.", ev:"Allocation and lock guard wrapping every reachable path in CI", st:"accepted" },
+    { id:"ENGINE-001", family:"Engine", req:"The live engine MUST request a driver block of 256 frames, the only size for which Spectre holds its own measured hardware evidence.", ev:"Measured on macOS 2026-08-24: frame_capacity_rejections = 0, so the host honors the request", st:"implemented" },
+  { id:"ENGINE-004", family:"Engine", req:"A control channel MUST refuse more than 1 024 registered parameter targets, because drain walks every slot on every block and RT-001 forbids unbounded per-block work.", ev:"MAX_PARAMETER_TARGETS, checked before any slot is allocated", st:"implemented" },
+  { id:"RT-001", family:"Realtime", req:"Callback-reachable code MUST NOT allocate, deallocate, take blocking locks, perform I/O, log, or panic across the callback boundary.", ev:"Allocation and lock guard wrapping every reachable path in CI", st:"accepted" },
     { id:"RT-002", family:"Realtime", req:"All control↔render communication MUST use bounded wait-free structures with a defined overflow policy and off-thread reclamation of retired state.", ev:"Concurrency tests on the chosen structure", st:"accepted" },
     { id:"RT-003", family:"Realtime", req:"The engine MUST flush denormals and contain NaN/Inf by isolating the offending node, outputting silence rather than noise.", ev:"Injection fixtures per node type", st:"implemented" },
     { id:"TIME-001", family:"Time", req:"Explicit distinct time types with single-definition conversions; raw numeric time in APIs is prohibited.", ev:"Type-level API review and conversion property tests", st:"implemented" },
@@ -1032,8 +1036,11 @@ const ATLAS = {
 
         const implRow = el("div", "stagerow");
         implRow.appendChild(el("span", "lbl", "Build"));
-        implRow.appendChild(el("div", "bar", ""));
-        implRow.appendChild(el("span", "sc", "not started"));
+        const IMPL = { built: ["f-ok", 100, "built"], review: ["f-warn", 100, "in review"] };
+        const impl = IMPL[s.implState] || ["f-ok", 0, "not started"];
+        implRow.appendChild(el("div", "bar",
+          impl[1] ? '<span class="' + impl[0] + '" style="width:' + impl[1] + '%"></span>' : ""));
+        implRow.appendChild(el("span", "sc", impl[2]));
         card.appendChild(implRow);
 
         if (s.flag) card.appendChild(el("div", "flag", s.flag));
@@ -1058,7 +1065,8 @@ const ATLAS = {
 
   const legend = el("p", "footnote",
     "The <strong>spec</strong> bar shows margin above the 2.30 pass threshold, not raw score — " +
-    "a full bar is 3.000. The <strong>build</strong> bar is empty on every card because no R4 slice has been implemented.");
+    "a full bar is 3.000. A filled <strong>build</strong> bar means the slice is written and the gate is green; " +
+    "it does not mean the implementation has passed review.");
   legend.style.marginBottom = "0";
   board.parentNode.insertBefore(legend, board.nextSibling);
 

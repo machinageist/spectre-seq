@@ -61,6 +61,11 @@ values is derived from any other product.
 | ENGINE-004 | A control channel MUST refuse a registered target set larger than 1 024. Rationale: `ParameterReader::drain` walks every registered slot on every block, so without a cap the per-block cost of the callback path grows without limit as a project grows, which RT-001's bounded clause does not permit. The value is deliberately generous rather than tuned, because Spectre has no measurement that would justify a tuned value and a generous bound still discharges the obligation that the number be bounded at all. What is computable is the memory: 1 024 targets reserve 69 632 B, negligible against the plan's own channel pool. R4's complete accepted device scope registers four. | PROD-003; decision 16; RT-001's bounded-work clause | `MAX_PARAMETER_TARGETS` and `ControlError::TooManyTargets` in `crates/spectre-audio/src/control.rs`, checked in `control_channel` before any slot is allocated | implemented |
 | ENGINE-003 | The null backend MUST report 48 000 Hz as its synthetic device rate. Rationale: the null device has no hardware format, and 48 000 is the rate every existing `spectre-audio` test already asserts against, so the synthetic default keeps deterministic tests on the number they already use. | PROD-003; decision 16 | `NULL_SAMPLE_RATE` in `crates/spectre-audio/src/null.rs`; `null_backend_reports_its_fixed_rate_and_refuses_unknown_devices` | implemented |
 
+`ENGINE_NODE_SEED` is deliberately not a ledger row either. It is a seed for deterministic node
+identity, not a bound on anything: no behaviour depends on its value, only on its being fixed, and
+changing it changes no rendered sample. Recorded here because R4-1's implementation review
+correctly flagged that it had no disposition at all.
+
 The R4-1 audition voice constants (`AUDITION_VOICE_ID`, `AUDITION_CHANNEL`, `AUDITION_NOTE`,
 `AUDITION_VELOCITY`) are deliberately not ledger rows: they are the values the offline fixture
 already renders, not bounds on anything, and R4-5 removes the audition voice entirely when clip
