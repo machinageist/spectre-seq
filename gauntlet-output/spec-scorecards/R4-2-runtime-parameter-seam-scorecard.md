@@ -9,6 +9,34 @@ Notes: Reviewer did not author the spec and never saw the author's reasoning —
 
 # Scorecard: Runtime Parameter Seam
 
+> ## ⚠ SUPERSEDED — this scorecard's 3.000 was overstated
+>
+> **An independent full review on 2026-08-23 returned PASS at 2.833.** See
+> `R4-2-runtime-parameter-seam-scorecard-independent.md`. This file is retained as the record
+> of the error, not edited away. The verdict still stands; the score and three of its
+> judgements do not.
+>
+> **What this scorecard got wrong, all confirmed against source:**
+>
+> 1. **"Forty-six citations opened; zero false" does not hold.** At least two are false.
+>    `bridge_plan.rs:33` is `fn fixture_plan`, not a `RenderBridge::new` site — the six real
+>    ones are `:99`/`:128`/`:148`/`:172`/`:215`/`:234`. `source.rs:52` is `level`; `phase` is
+>    at `:53`.
+> 2. **It praised the §5.1 handle preamble as "the exact fix R4-1 needed at iteration 2".**
+>    That preamble is a 15-test map over an 18-test list: false for tests 4–5 (which sit in
+>    `spectre-graph`, a crate whose `Cargo.toml` declares no dev-dependencies and so cannot
+>    build a `RenderBridge`), false for 12–14, and silent on 16–18.
+> 3. **Nine of twenty-six criteria were `[sampled]`, and the missed finding was in that
+>    range.** §1.3's acceptance criterion — `parameters_pending == 0`, the thing the whole
+>    feature is graded on — depends on a field **no document creates**. R4-1's `EngineHealth`
+>    has exactly nine fields and none is a parameter counter; R4-2 schedules only
+>    `parameters_applied`.
+>
+> The independent scorecard supersedes this one. Both are kept: a wrong score that is visible
+> is evidence; a wrong score that is deleted is a gap.
+
+
+
 **Feature ID:** `R4-2` (`runtime-parameter-seam`)
 **Spec file:** `gauntlet-output/specs/R4-2-runtime-parameter-seam.md` (1,686 lines)
 **Reviewer agent:** blind verification, R4-2 iteration 1
