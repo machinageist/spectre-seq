@@ -14,6 +14,11 @@ use crate::{
 pub const NULL_DEVICE_KEY: &str = "null-output";
 pub const NULL_DEVICE_NAME: &str = "Null Output";
 
+// Rate the synthetic device reports. Rationale: the null device has no hardware format, and
+// 48 000 is the rate every existing spectre-audio test already asserts against, so the
+// synthetic default keeps deterministic tests on the number they already use
+pub const NULL_SAMPLE_RATE: u32 = 48_000;
+
 // Backend that enumerates one synthetic device and never touches hardware
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NullBackend;
@@ -63,6 +68,14 @@ impl AudioBackend for NullBackend {
     // Report the synthetic device as the default
     fn default_output_device(&self) -> Result<DeviceInfo, BackendError> {
         Ok(self.device())
+    }
+
+    // Report the synthetic device's fixed rate; an unknown key is refused rather than defaulted
+    fn default_sample_rate(&self, device: &DeviceId) -> Result<u32, BackendError> {
+        if device.as_str() != NULL_DEVICE_KEY {
+            return Err(BackendError::UnknownDevice(device.clone()));
+        }
+        Ok(NULL_SAMPLE_RATE)
     }
 
     // Open the synthetic device behind the trait object
@@ -172,5 +185,10 @@ impl AudioStream for NullStream {
     // Report the configuration the stream was opened with
     fn config(&self) -> StreamConfig {
         self.config
+    }
+
+    // The synthetic stream has no driver, so no driver error can be recorded
+    fn stream_errors(&self) -> u64 {
+        0
     }
 }

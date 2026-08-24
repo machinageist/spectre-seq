@@ -8,7 +8,7 @@ Notes: Only active-milestone slices belong here
 # Next
 
 - **Status:** accepted
-- **Last verified:** 2026-08-09
+- **Last verified:** 2026-08-24
 - **Scope:** immediately actionable R4 slices; closed R2 and R3 queues retained as exit records
 - **Decision authority:** Jeff
 - **Upstream sources:** `STATUS.md`, `../06-plans/current-milestone.md`
@@ -16,11 +16,11 @@ Notes: Only active-milestone slices belong here
 - **Supersedes:** the R3 slice queue, closed 2026-08-09
 - **Superseded by:** none
 - **Open decisions:** none blocking R4 start; decision 23 leaves Linux device qualification as debt to discharge here
-- **Known gaps:** `./spectre` still does not use `spectre-audio`, so nothing launchable makes sound; later milestones are intentionally not decomposed here
+- **Known gaps:** a Shape edit still does not change live audio until slice 2 lands; later milestones are intentionally not decomposed here
 
 ## Next slices
 
-1. Wire `./spectre` to the qualified backend so Play produces sound through the existing compiled plan. R3 built a live shell nothing launches; this is what makes every later R4 slice observable. No new render path, no new DSP.
+1. ~~Wire `./spectre` to the qualified backend so Play produces sound through the existing compiled plan~~ — landed 2026-08-24 as `crates/spectre-app/src/engine.rs`. The app compiles a plan from its own validated four-parameter snapshot, queries the device's native rate through two new app-thread seam methods (`AudioBackend::default_sample_rate`, `AudioStream::stream_errors`), opens at 256 frames with the plan reserving twice that, and moves the existing `RenderBridge` into the render closure. **No new render path and no new DSP:** the app's live output hashes identically to `render_app_snapshot` over the same snapshot, using the FNV-1a walk both the offline harness and the bridge test already use. The transport button and `Space` both send before mutating, so a refused transport send leaves the UI unchanged rather than diverging from the render thread. 14 new tests; the app's own hardware drill opened an M-Audio AIR 192|6 at its native 88 200 Hz for 88 blocks with 0 xruns and 0 stream errors. **Two limits recorded rather than hidden:** the manual protocol has not run and no one has confirmed audible output by ear; and the held audition note is scaffolding that slice 5 replaces with clip playback.
 2. Implement decision 22's runtime parameter seam on `AudioProcessor` per the accepted contract, then connect the RT-002 parameter lane the bridge already drains. A Shape edit must change live audio, and `parameters_pending` must stop incrementing.
 3. Discharge decision 23's Linux debt: run `cargo test -p spectre-audio --test lifecycle_health -- --ignored --nocapture` on real Linux hardware and record it in the milestone's qualification table. One command; it only needs the box.
 4. Introduce the track model with a track-to-master signal path, keeping the graph compilation contract intact.

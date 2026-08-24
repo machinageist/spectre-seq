@@ -193,6 +193,10 @@ pub trait AudioStream {
 
     // Report the configuration the stream was opened with
     fn config(&self) -> StreamConfig;
+
+    // Count driver-thread stream errors recorded since open. Required rather than defaulted
+    // so a new backend must answer instead of silently reporting zero
+    fn stream_errors(&self) -> u64;
 }
 
 // Device enumeration and stream construction; every method is app-thread-only
@@ -205,6 +209,10 @@ pub trait AudioBackend {
 
     // Report the device a stream opens against when none is named
     fn default_output_device(&self) -> Result<DeviceInfo, BackendError>;
+
+    // Report the sample rate a device is currently configured for, before any open attempt.
+    // DeviceInfo carries no format, so without this the app must guess a rate
+    fn default_sample_rate(&self, device: &DeviceId) -> Result<u32, BackendError>;
 
     // Open an output stream against a named device
     fn open_output(

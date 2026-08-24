@@ -1,9 +1,14 @@
 // Author: Jeff
 // Date: 2026-07-12
 // Description: Native egui shell for iterative Spectre workflow feedback
-// Notes: Interaction prototype only; audio and persistence wiring remain out of scope
+// Notes: The live engine is wired here and owned by SpectrePrototype, not by AppModel, so the
+//   model stays renderer-neutral and the non-Send stream stays on the thread that created it.
+//   Persistence wiring remains out of scope until R4-7.
 
 use eframe::egui::{self, Color32, CornerRadius, RichText, Stroke, Vec2};
+use spectre_app::engine::{
+    AuditionError, EngineHealth, EngineState, EngineUnavailable, LiveEngine,
+};
 use spectre_app::{open_device_in_shape_from_ui, set_device_parameter_from_ui, AppModel, Lens};
 
 const BG: Color32 = Color32::from_rgb(15, 18, 24);
@@ -18,6 +23,13 @@ struct SpectrePrototype {
     model: AppModel,
     new_track_name: String,
     feedback_status: String,
+    // The live stream, when one is open. Owned here rather than by AppModel so the model gains
+    // no audio dependency and the thread-affine stream never leaves the UI thread
+    engine: Option<LiveEngine>,
+    // Why no engine is running; displayed verbatim rather than summarized as "offline"
+    engine_unavailable: EngineUnavailable,
+    // The start attempt happens on the first frame, not in Default, so a failure is reportable
+    engine_attempted: bool,
 }
 
 impl Default for SpectrePrototype {
@@ -27,11 +39,88 @@ impl Default for SpectrePrototype {
             new_track_name: String::new(),
             feedback_status: "Type notes while you explore; copy a state-rich report when ready."
                 .into(),
+            engine: None,
+            engine_unavailable: EngineUnavailable::NotAttempted,
+            engine_attempted: false,
         }
     }
 }
 
+// Open the default device against the compiled-in backend
+#[cfg(feature = "live-audio")]
+fn open_engine(model: &AppModel) -> Result<LiveEngine, EngineUnavailable> {
+    let snapshot = model
+        .device_parameter_snapshot()
+        .map_err(EngineUnavailable::Snapshot)?;
+    let backend = spectre_audio::cpal_backend::CpalBackend::new();
+    spectre_app::engine::open_default(&backend, &snapshot)
+}
+
+// Without a real backend the app declines to fake one; NullBackend would produce a running
+// counter and no sound, which is exactly the fake surface the vision prohibits
+#[cfg(not(feature = "live-audio"))]
+fn open_engine(_model: &AppModel) -> Result<LiveEngine, EngineUnavailable> {
+    Err(EngineUnavailable::NoBackendCompiled)
+}
+
 impl SpectrePrototype {
+    // Attempt to open the device once, recording the reason on failure
+    fn start_engine(&mut self) {
+        self.engine_attempted = true;
+        match open_engine(&self.model) {
+            Ok(engine) => {
+                self.engine = Some(engine);
+                self.engine_unavailable = EngineUnavailable::NotAttempted;
+            }
+            Err(error) => {
+                self.feedback_status = format!("Audio engine did not start: {error}");
+                self.engine = None;
+                self.engine_unavailable = error;
+            }
+        }
+    }
+
+    // Send first, mutate second. The UI transport changes only when the render thread will see
+    // the same change, which is what keeps the app's transport and the bridge's from diverging
+    fn toggle_transport(&mut self) {
+        let playing = self.model.is_playing();
+        let Some(engine) = self.engine.as_mut() else {
+            self.model.toggle_play();
+            return;
+        };
+        let result = if playing {
+            engine.stop_audition()
+        } else {
+            engine.start_audition()
+        };
+        match result {
+            Ok(()) => {
+                self.model.toggle_play();
+            }
+            // The transport command was queued and the render thread will apply it, so the UI
+            // flips anyway; a queued command cannot be recalled from a wait-free lane
+            Err(AuditionError::Note(error)) => {
+                self.model.toggle_play();
+                self.feedback_status =
+                    format!("Transport changed but the note was dropped: {error:?}");
+            }
+            // No transport command was queued, so the UI must not change either
+            Err(AuditionError::Transport(error)) => {
+                self.feedback_status =
+                    format!("Transport change refused: {error:?}. Nothing changed; try again.");
+            }
+        }
+    }
+
+    // What the transport bar renders, derived from the render thread rather than asserted
+    fn engine_state(&self) -> Option<EngineState> {
+        self.engine.as_ref().map(LiveEngine::state)
+    }
+
+    fn engine_health(&self) -> Option<EngineHealth> {
+        self.engine.as_ref().map(LiveEngine::health)
+    }
+
     fn configure_style(ctx: &egui::Context) {
         let mut style = (*ctx.style()).clone();
         style.visuals.dark_mode = true;
@@ -48,6 +137,9 @@ impl SpectrePrototype {
     }
 
     fn transport(&mut self, ctx: &egui::Context) {
+        // Both actions mutate self, so they are deferred out of the panel closure that borrows it
+        let mut toggle = false;
+        let mut retry = false;
         egui::TopBottomPanel::top("transport")
             .exact_height(62.0)
             .frame(
@@ -67,20 +159,95 @@ impl SpectrePrototype {
                         })
                         .clicked()
                     {
-                        self.model.toggle_play();
+                        toggle = true;
                     }
-                    ui.button("●  Record")
-                        .on_hover_text("Recording arrives after the live audio shell.");
+                    ui.add_enabled(false, egui::Button::new("●  Record"))
+                        .on_disabled_hover_text(
+                            "Recording arrives at R7; no capture path exists yet.",
+                        );
                     ui.separator();
-                    ui.label(RichText::new("120.00 BPM").monospace().color(TEXT));
-                    ui.label(RichText::new("4 / 4").monospace().color(MUTED));
-                    ui.label(RichText::new("001 · 01 · 000").monospace().color(TEXT));
+                    // Tempo and meter are the model's defaults; position is not derived from the
+                    // render thread yet, so it reads as unknown rather than as a frozen 001
+                    ui.label(RichText::new("120.00 BPM").monospace().color(TEXT))
+                        .on_hover_text("Fixed project default; tempo editing arrives with the arrangement.");
+                    ui.label(RichText::new("4 / 4").monospace().color(MUTED))
+                        .on_hover_text("Fixed project default; meter editing arrives with the arrangement.");
+                    ui.label(RichText::new("—").monospace().color(MUTED))
+                        .on_hover_text("Playhead position is not reported by the engine yet.");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(RichText::new("ENGINE OFFLINE").small().color(WARM));
-                        ui.label(RichText::new("CPU —").monospace().color(MUTED));
+                        match self.engine_state() {
+                            Some(EngineState::Running {
+                                backend,
+                                ref device,
+                                sample_rate,
+                                frames,
+                            }) => {
+                                let health = self.engine_health().unwrap_or_else(|| unreachable!());
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{:.0}% headroom",
+                                        health.worst_headroom.max(0.0) * 100.0
+                                    ))
+                                    .monospace()
+                                    .color(MUTED),
+                                )
+                                .on_hover_text(format!(
+                                    "blocks {} · xruns {} · plan errors {} · frame rejections {} · notes deferred {} · contaminated {} · stream errors {}",
+                                    health.blocks_rendered,
+                                    health.xruns,
+                                    health.plan_errors,
+                                    health.frame_capacity_rejections,
+                                    health.notes_deferred,
+                                    health.contaminated_nodes,
+                                    health.stream_errors,
+                                ));
+                                ui.label(
+                                    RichText::new(format!(
+                                        "ENGINE RUNNING · {backend} · {device} · {sample_rate} Hz · {frames}"
+                                    ))
+                                    .small()
+                                    .color(ACCENT),
+                                );
+                            }
+                            Some(EngineState::Opened {
+                                backend,
+                                ref device,
+                                sample_rate,
+                                frames,
+                            }) => {
+                                ui.label(RichText::new("blocks 0").monospace().color(MUTED));
+                                ui.label(
+                                    RichText::new(format!(
+                                        "ENGINE OPENED · {backend} · {device} · {sample_rate} Hz · {frames}"
+                                    ))
+                                    .small()
+                                    .color(WARM),
+                                )
+                                .on_hover_text("The device is open; the driver has not called back yet.");
+                            }
+                            None => {
+                                if ui
+                                    .button("Retry engine")
+                                    .on_hover_text("Re-attempt opening the default output device.")
+                                    .clicked()
+                                {
+                                    retry = true;
+                                }
+                                ui.label(
+                                    RichText::new("ENGINE UNAVAILABLE").small().color(WARM),
+                                )
+                                .on_hover_text(self.engine_unavailable.to_string());
+                            }
+                        }
                     });
                 });
             });
+        if toggle {
+            self.toggle_transport();
+        }
+        if retry {
+            self.start_engine();
+        }
     }
 
     fn lenses(&mut self, ctx: &egui::Context) {
@@ -327,9 +494,12 @@ impl SpectrePrototype {
         }
         ui.add_space(18.0);
         ui.label(
-            RichText::new("DSP is active in deterministic offline rendering; live audio routing is not connected yet.")
-                .small()
-                .color(WARM),
+            RichText::new(
+                "This chain is the live plan: the same compiled plan the offline harness renders. \
+                 Parameter edits do not reach it yet — the runtime parameter seam lands at R4-2.",
+            )
+            .small()
+            .color(WARM),
         );
     }
 
@@ -339,6 +509,14 @@ impl SpectrePrototype {
                 "Controls derive directly from backend descriptors and preserve DSP ranges.",
             )
             .color(MUTED),
+        );
+        ui.label(
+            RichText::new(
+                "Edits here change the model and the offline render. They do not change live \
+                 audio: the runtime parameter seam is decision 22 and lands at R4-2.",
+            )
+            .small()
+            .color(WARM),
         );
         ui.add_space(12.0);
         let mut edits = Vec::new();
@@ -422,8 +600,16 @@ impl SpectrePrototype {
 
 impl eframe::App for SpectrePrototype {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // First frame opens the device, so a failure is reported in the UI rather than at startup
+        if !self.engine_attempted {
+            self.start_engine();
+        }
+        // Retired render state is released here, on the app thread, never on the audio thread
+        if let Some(engine) = self.engine.as_mut() {
+            engine.reclaim();
+        }
         if ctx.input(|input| input.key_pressed(egui::Key::Space)) {
-            self.model.toggle_play();
+            self.toggle_transport();
         }
         for (key, lens) in [
             (egui::Key::Num1, Lens::Arrange),
@@ -483,8 +669,10 @@ fn smoke_test() {
         .selected_device()
         .map(|device| format!("{}({})", device.name, device.key))
         .unwrap_or_else(|| "none".into());
+    // The smoke path deliberately opens no device: this assertion is what fails if engine
+    // startup is ever wired into the headless path, which would break CI on a device-less host
     println!(
-        "Spectre prototype ready lens={} tracks={} transport={} selected_device={}",
+        "Spectre prototype ready lens={} tracks={} transport={} selected_device={} engine=not-started",
         model.lens(),
         model.tracks().len(),
         if model.is_playing() {

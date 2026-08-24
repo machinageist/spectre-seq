@@ -2266,8 +2266,11 @@ dependencies = [
  "eframe",
  "serde",
  "serde_json",
+ "spectre-audio",
  "spectre-core",
  "spectre-dsp",
+ "spectre-graph",
+ "spectre-offline",
  "spectre-project",
 ]
 

@@ -279,12 +279,13 @@ fn hardware_lifecycle_drill() {
     stream.close().expect("close must succeed");
 
     println!(
-        "blocks={} xruns={} worst_headroom={} plan_errors={} contaminated={}",
+        "blocks={} xruns={} worst_headroom={} plan_errors={} contaminated={} frame_capacity_rejections={}",
         telemetry.blocks_rendered(),
         telemetry.xruns(),
         telemetry.worst_headroom(),
         telemetry.plan_errors(),
-        telemetry.contaminated_nodes()
+        telemetry.contaminated_nodes(),
+        telemetry.frame_capacity_rejections()
     );
     assert!(
         telemetry.blocks_rendered() > 0,
@@ -292,4 +293,11 @@ fn hardware_lifecycle_drill() {
     );
     assert_eq!(telemetry.plan_errors(), 0, "no block may fail to render");
     assert_eq!(telemetry.contaminated_nodes(), 0, "output must stay finite");
+    // Without this the record cannot distinguish "the host honored the requested block size"
+    // from "it did not and every oversized block was refused into counted silence"
+    assert_eq!(
+        telemetry.frame_capacity_rejections(),
+        0,
+        "the host must honor the requested block size"
+    );
 }

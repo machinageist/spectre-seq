@@ -111,6 +111,15 @@ impl AudioBackend for CpalBackend {
         })
     }
 
+    // Report the rate the device is currently configured for, before any open attempt
+    fn default_sample_rate(&self, device: &DeviceId) -> Result<u32, BackendError> {
+        let device = self.find_device(device)?;
+        let config = device
+            .default_output_config()
+            .map_err(|error| BackendError::EnumerationFailed(error.to_string()))?;
+        Ok(config.sample_rate().0)
+    }
+
     // Open a stopped output stream against a named device
     fn open_output(
         &self,
@@ -161,9 +170,11 @@ pub struct CpalStream {
 }
 
 impl CpalStream {
-    // Read the stream-error count recorded by the audio thread
+    // Read the stream-error count recorded by the audio thread. Retained for callers holding
+    // the concrete type; the body now lives behind the trait method, which is what the app
+    // reaches through Box<dyn AudioStream>
     pub fn error_count(&self) -> u64 {
-        self.errors.load(Ordering::Relaxed)
+        self.stream_errors()
     }
 }
 
@@ -216,5 +227,10 @@ impl AudioStream for CpalStream {
     // Report the configuration the stream was opened with
     fn config(&self) -> StreamConfig {
         self.config
+    }
+
+    // Relaxed load of the counter the driver's error callback increments; app thread only
+    fn stream_errors(&self) -> u64 {
+        self.errors.load(Ordering::Relaxed)
     }
 }

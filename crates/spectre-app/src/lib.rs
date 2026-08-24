@@ -1,7 +1,10 @@
 // Author: Jeff
 // Date: 2026-07-12
 // Description: Renderer-neutral application model for the launchable Spectre prototype
-// Notes: UI state delegates transport truth to spectre-core; no audio engine is implied
+// Notes: UI state delegates transport truth to spectre-core; the live engine lives in
+//   engine.rs and AppModel stays renderer-neutral and audio-free
+
+pub mod engine;
 
 use spectre_core::{IdGen, ObjectId, Transport, TransportCommand, TransportState};
 use spectre_dsp::{

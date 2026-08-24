@@ -7,7 +7,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use spectre_audio::null::{NullBackend, NULL_DEVICE_KEY, NULL_DEVICE_NAME};
+use spectre_audio::null::{NullBackend, NULL_DEVICE_KEY, NULL_DEVICE_NAME, NULL_SAMPLE_RATE};
 use spectre_audio::{
     AudioBackend, AudioStream, BackendError, DeviceId, RenderBlock, StreamConfig, StreamState,
     MAX_BUFFER_FRAMES, MAX_SAMPLE_RATE, MIN_BUFFER_FRAMES, MIN_SAMPLE_RATE, NULL_BACKEND_NAME,
@@ -247,4 +247,42 @@ fn trait_object_open_reports_the_same_lifecycle() {
     stream.stop().unwrap();
     stream.close().unwrap();
     assert_eq!(stream.state(), StreamState::Closed);
+}
+
+#[test]
+fn null_stream_reports_no_driver_errors_through_the_trait_object() {
+    let backend = NullBackend::new();
+    let mut stream = backend
+        .open_null_output(
+            &DeviceId::new(NULL_DEVICE_KEY),
+            config(),
+            counting_callback(Arc::default()),
+        )
+        .unwrap();
+    stream.start().unwrap();
+    for _ in 0..4 {
+        stream.pump().unwrap();
+    }
+    assert_eq!(stream.stream_errors(), 0);
+
+    // The accessor must be reachable through the erased type, which is what the app holds; an
+    // inherent method on the concrete stream would be invisible here
+    let erased: Box<dyn AudioStream> = Box::new(stream);
+    assert_eq!(erased.stream_errors(), 0);
+}
+
+#[test]
+fn null_backend_reports_its_fixed_rate_and_refuses_unknown_devices() {
+    let backend = NullBackend::new();
+    assert_eq!(
+        backend
+            .default_sample_rate(&DeviceId::new(NULL_DEVICE_KEY))
+            .unwrap(),
+        NULL_SAMPLE_RATE
+    );
+    let unknown = DeviceId::new("not-a-device");
+    assert_eq!(
+        backend.default_sample_rate(&unknown),
+        Err(BackendError::UnknownDevice(unknown))
+    );
 }

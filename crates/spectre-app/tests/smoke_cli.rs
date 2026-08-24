@@ -17,4 +17,6 @@ fn smoke_mode_reports_launchable_prototype() {
     assert!(stdout.contains("lens=Arrange"));
     assert!(stdout.contains("tracks=1"));
     assert!(stdout.contains("selected_device=Pulse(pulse)"));
+    // The headless path must never open a device; this fails if engine startup is wired into it
+    assert!(stdout.contains("engine=not-started"));
 }

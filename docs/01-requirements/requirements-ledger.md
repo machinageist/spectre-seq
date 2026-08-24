@@ -8,7 +8,7 @@ Notes: Seeded with foundation requirements for R0-R1; grows only with provenance
 # Requirements Ledger
 
 - **Status:** accepted
-- **Last verified:** 2026-07-17
+- **Last verified:** 2026-08-24
 - **Scope:** accepted-for-work normative requirements; each row carries provenance and required evidence
 - **Decision authority:** Jeff
 - **Upstream sources:** `docs/00-product/vision.md`; `docs/01-requirements/decision-gates.md`; `docs/02-reference-research/*observations*.md`
@@ -16,7 +16,7 @@ Notes: Seeded with foundation requirements for R0-R1; grows only with provenance
 - **Supersedes:** removed prototype requirement material
 - **Superseded by:** none
 - **Open decisions:** see decision gates
-- **Known gaps:** only the R0/R1 foundation families are seeded; SEQ/REC/VST/UI families await their milestone intakes
+- **Known gaps:** the R0/R1 foundation families plus the R4 ENGINE bounds are seeded; SEQ/REC/VST/UI families await their milestone intakes
 
 Format: `ID | requirement (MUST/SHOULD/MAY) | provenance | acceptance evidence | status`.
 Statuses: `proposed`, `accepted`, `implemented`, `verified`.
@@ -47,6 +47,23 @@ Statuses: `proposed`, `accepted`, `implemented`, `verified`.
 | CORE-002 | Parameters MUST carry stable identity, typed range, default, display mapping, and unit; normalized value semantics are defined once in spectre-core. | mandate §8.2 device model; OBS-BW53-AUTO-* (override model needs identity) | parameter descriptor unit tests + API review | implemented |
 | CORE-003 | The project envelope MUST carry an explicit schema version from the first byte written; unknown newer fields MUST be preserved on rewrite where feasible. | accepted project-safety contract | round-trip fixtures incl. newer-schema preservation test | verified |
 | CORE-004 | Saves MUST be atomic (write-new + rename) with no partially written project ever observable. | mandate §12.6; vision project-safety pillar | crash-injection save tests at R5; API design review at R1 — completed 2026-07-17 via the accepted [project-persistence contract](../03-architecture/project-persistence.md) (boundaries, save algorithm, failure vocabulary, target-state guarantees, test seam) | accepted |
+
+## ENGINE — live engine bounds (R4 intake)
+
+Every row here exists because PROD-003 requires each numeric limit to carry its own rationale in
+this ledger, and decision 16 prohibits copying a bound from a reference product. None of these
+values is derived from any other product.
+
+| ID | Requirement | Provenance | Acceptance evidence | Status |
+|---|---|---|---|---|
+| ENGINE-001 | The live engine MUST request a driver block of 256 frames. Rationale: 256 is the only block size for which Spectre holds its own measured hardware evidence — the macOS qualification in `../06-plans/current-milestone.md`. Re-open when R4-3's Linux qualification produces a second measurement. | PROD-003; decision 16; the macOS qualification record | `ENGINE_BUFFER_FRAMES` in `crates/spectre-app/src/engine.rs`, exercised by every test in `crates/spectre-app/tests/live_engine.rs` and by the app drill on real hardware | implemented |
+| ENGINE-002 | The compiled plan MUST reserve twice the requested block. Rationale: the seam asks cpal for a fixed buffer size but no Spectre evidence proved every host honors it, so a larger-than-requested block was unproven-absent. Any block beyond the margin still lands in the existing counted-silence refusal. | PROD-003; decision 16; `RenderBridge`'s frame-capacity refusal | `ENGINE_PLAN_FRAME_MARGIN`; `the_plan_reserves_more_frames_than_the_requested_block`. **Measured 2026-08-24:** the macOS drill and the app drill both report `frame_capacity_rejections=0`, so on this host the request is honored; the margin remains because one host is not every host | implemented |
+| ENGINE-003 | The null backend MUST report 48 000 Hz as its synthetic device rate. Rationale: the null device has no hardware format, and 48 000 is the rate every existing `spectre-audio` test already asserts against, so the synthetic default keeps deterministic tests on the number they already use. | PROD-003; decision 16 | `NULL_SAMPLE_RATE` in `crates/spectre-audio/src/null.rs`; `null_backend_reports_its_fixed_rate_and_refuses_unknown_devices` | implemented |
+
+The R4-1 audition voice constants (`AUDITION_VOICE_ID`, `AUDITION_CHANNEL`, `AUDITION_NOTE`,
+`AUDITION_VELOCITY`) are deliberately not ledger rows: they are the values the offline fixture
+already renders, not bounds on anything, and R4-5 removes the audition voice entirely when clip
+playback replaces it.
 
 ## GRAPH — render graph (R2 intake, seeded now)
 

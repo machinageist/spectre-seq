@@ -8,14 +8,14 @@ Notes: Exactly one milestone is active; the roadmap owns ordering
 # Current Milestone — R4 Credible Alpha
 
 - **Status:** accepted
-- **Last verified:** 2026-08-09
+- **Last verified:** 2026-08-24
 - **Scope:** track to master, MIDI clip, a small original synth/effect, minimal UI, save/reload, bounce
 - **Decision authority:** Jeff
 - **Upstream sources:** `rebuild-roadmap.md`, product seeds, decisions 8/13/14/22, CORE-004
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
 - **Supersedes:** the R3 live-shell milestone, exited 2026-08-09
 - **Open decisions:** none new at intake; decisions 13 and 17 gate later milestones
-- **Known gaps:** R4 opens with no implementation. `./spectre` still does not use `spectre-audio`, so nothing the user can launch makes sound
+- **Known gaps:** slice 1 landed 2026-08-24; the other eight slices are unimplemented. A Shape edit still does not change live audio until slice 2, and R4-1's manual protocol has not run
 
 ## Inherited debt
 
@@ -26,9 +26,15 @@ R4 carries four obligations from earlier milestones. None is optional and none s
 3. **CORE-004 atomic save.** The API design is accepted in `../03-architecture/project-persistence.md`; the filesystem implementation lands here, with crash qualification at R5.
 4. **CORE-001 reorder evidence.** Explicitly gated on the first persisted collection, which R4 introduces.
 
-## Wiring gap
+## Wiring gap — closed 2026-08-24
 
-R3 built a live shell that nothing launches. `spectre-audio` has a qualified backend, a control transport, a callback bridge, MIDI ingress, and health telemetry, all tested — but `./spectre` never constructs any of it, so Play still produces no sound. Connecting the app to the audio thread is the first thing that makes R4's other work observable, and it is the honest headline for this milestone.
+R3 built a live shell that nothing launched. `spectre-audio` had a qualified backend, a control transport, a callback bridge, MIDI ingress, and health telemetry, all tested — and `./spectre` never constructed any of it, so Play produced no sound.
+
+Slice 1 closed that. `crates/spectre-app/src/engine.rs` compiles a plan from the app's own validated snapshot, opens the default device through the seam at its native rate, and moves the existing `RenderBridge` into the render closure. The seam gained exactly two app-thread methods — `AudioBackend::default_sample_rate` and `AudioStream::stream_errors` — because `DeviceInfo` reported no format and `error_count` was inherent to `CpalStream` and unreachable through `Box<dyn AudioStream>`. The first of those earned itself immediately: the qualification interface's default rate is **88 200 Hz**, so a hardcoded 48 000 would have opened at the wrong rate or not at all.
+
+No second render path was created: the app's live output hashes identically to `render_app_snapshot` over the same snapshot.
+
+**What slice 1 does not establish.** No one has confirmed by ear that sound leaves the speakers, and the manual protocol in the slice's spec §5.4 — four resting engine states, the `Retry engine` control, text-size and window-size extremes, and mid-playback device removal — has not been run. Status is `implemented`, not `verified`.
 
 ## R3 exit record
 
@@ -78,7 +84,7 @@ VST3 hosting, recording, automation and modulation, session/live slots, mixer se
 
 ## Exit evidence
 
-- `./spectre` opens the qualified backend and produces sound through the existing compiled plan, with no second render path.
+- ~~`./spectre` opens the qualified backend and produces sound through the existing compiled plan, with no second render path~~ — **partially closed 2026-08-24.** The open path, the render, and the no-second-path claim are all evidenced; the app's own drill rendered 88 real driver blocks. Audible confirmation and the manual protocol are outstanding, so this row is `implemented`, not closed.
 - Decision 22's parameter seam is implemented, so a UI edit changes live audio.
 - A MIDI clip plays through a track into master.
 - One small original synth and one original effect ship as the alpha's voice.
@@ -108,10 +114,18 @@ All ten rows are closed, two of them on macOS only under decision 23. R3 exited 
 
 ## Hardware qualification record
 
-| Platform | Date | Backend / device | Blocks | xruns | Worst headroom | Plan errors | Contaminated |
-|---|---|---|---|---|---|---|---|
-| macOS | 2026-08-09 | cpal / CoreAudio, M-Audio AIR 192\|6 | 173 | 0 | 0.990 | 0 | 0 |
-| Linux | not run | cpal / ALSA (decision 20 baseline) | — | — | — | — | — |
+| Platform | Date | Backend / device | Blocks | xruns | Worst headroom | Plan errors | Contaminated | Frame rejections |
+|---|---|---|---|---|---|---|---|---|
+| macOS | 2026-08-09 | cpal / CoreAudio, M-Audio AIR 192\|6 | 173 | 0 | 0.990 | 0 | 0 | not recorded |
+| macOS | 2026-08-24 | cpal / CoreAudio, M-Audio AIR 192\|6 (audio-crate drill, re-run) | 175 | 0 | 0.974 | 0 | 0 | 0 |
+| macOS | 2026-08-24 | cpal / CoreAudio, M-Audio AIR 192\|6 (**app engine drill**, 88 200 Hz) | 88 | 0 | 0.970 | 0 | 0 | 0 |
+| Linux | not run | cpal / ALSA (decision 20 baseline) | — | — | — | — | — | — |
+
+The 2026-08-24 rows add the frame-capacity rejection count, which the original record did not
+carry. Both read 0, so on this host cpal's fixed buffer request is honored rather than merely
+unproven — a larger-than-requested block is now known-absent here instead of unproven-absent.
+The third row is the first qualification through the **application's** own open path rather than
+a test's, and it is the row that establishes `./spectre` reaches a real driver.
 
 Linux **build** qualification did run on 2026-08-09, in a Linux aarch64 container with `libasound2-dev`: the workspace compiles and links against ALSA and all 34 non-hardware `spectre-audio` tests pass, which is the first time the CI `libasound2-dev` step has been exercised. That is a build and portability result, **not** a device qualification. The same run confirmed the drill fails closed on a machine with no audio device, panicking with "no output device to qualify against" rather than reporting a false pass — so the Linux row cannot be satisfied by a container or a VM without real audio.
 
