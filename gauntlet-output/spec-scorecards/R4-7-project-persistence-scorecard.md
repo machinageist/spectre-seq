@@ -9,6 +9,34 @@ Notes: Reviewer did not author the spec and never saw the author's reasoning —
 
 # Scorecard: Project Persistence
 
+> ## ⚠ SUPERSEDED — this scorecard's PASS at 3.000 was wrong
+>
+> **An independent review on 2026-08-23 returned FAIL at 2.850** on the feasibility rule.
+> See `R4-7-project-persistence-scorecard-independent.md`. This file is retained as the
+> record of the error, not edited away.
+>
+> **Two defects in this scorecard, both confirmed against source:**
+>
+> 1. **It grades a criterion `criteria.md` does not define.** The lens-4 table below lists
+>    "4B. Numbers carry rationale". `criteria.md:265` defines **4B as Status vocabulary** —
+>    the `implemented` versus `verified` distinction. "Numbers carry rationale" is 4B in
+>    `criteria-mixing-mastering.md`, a different and later file. A criterion from the
+>    mixing/mastering standard was imported into an R4 scorecard, so the distinction that
+>    matters most for a persistence spec — crash-durability evidence belongs to R5, not R4 —
+>    **was never scored as such.**
+> 2. **Its coverage was partial and its conclusion outran it.** Thirteen of twenty-six
+>    criteria were marked `[sampled]`, and the claim of "zero false citations" did not
+>    survive a full read: §7.1 miscounts two test files (8 and 5, not 9 and 8), §7.2 lists
+>    `spectre-offline` as "deliberately not modified" and "unaffected" while the change
+>    breaks a struct literal at `spectre-offline/src/lib.rs:154` and an assertion at
+>    `spectre-offline/tests/harness.rs:25`, and a second struct literal at
+>    `spectre-project/tests/command_history.rs:17` goes unmentioned.
+>
+> The independent scorecard supersedes this one. Both are kept: a wrong verdict that is
+> visible is evidence; a wrong verdict that is deleted is a gap.
+
+
+
 **Feature ID:** `R4-7` (`project-persistence`)
 **Spec file:** `gauntlet-output/specs/R4-7-project-persistence.md` (1,452 lines)
 **Reviewer agent:** blind verification, R4-7 iteration 1
