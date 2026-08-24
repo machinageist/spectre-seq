@@ -78,6 +78,8 @@ pub enum EngineUnavailable {
     // Two parameter targets resolved to the same identity; a shadowed route would send every
     // edit of one parameter to the wrong device, so it is refused rather than tolerated
     Route(RouteError),
+    // The track graph could not be built from the model
+    Routing(spectre_project::RoutingError),
     // The app snapshot was not the complete canonical fixture
     Snapshot(DeviceParameterSnapshotError),
 }
@@ -93,6 +95,7 @@ impl std::fmt::Display for EngineUnavailable {
             Self::Plan(error) => write!(formatter, "plan compilation: {error}"),
             Self::Control(error) => write!(formatter, "control transport: {error}"),
             Self::Route(error) => write!(formatter, "parameter routing: {error}"),
+            Self::Routing(error) => write!(formatter, "track routing: {error}"),
             Self::Snapshot(error) => write!(formatter, "device snapshot: {error}"),
         }
     }
@@ -149,8 +152,9 @@ pub struct EngineParts {
     // Registered lane targets, so the app can address slots by stable identity without
     // rebuilding the set it already published
     pub targets: Box<[ParameterTarget]>,
-    // The plan nodes build_engine_parts allocated, exposed so routes can be built against them
-    pub nodes: FixtureNodes,
+    // The plan nodes build_engine_parts allocated, exposed so routes can be built against them.
+    // None for a track-list plan, whose node identities live in spectre-project's TrackPathNodes
+    pub nodes: Option<FixtureNodes>,
 }
 
 // The three plan nodes build_engine_parts allocates
@@ -326,7 +330,7 @@ pub fn build_engine_parts(
         config,
         plan_max_frames,
         targets: targets.into_boxed_slice(),
-        nodes,
+        nodes: Some(nodes),
     })
 }
 
@@ -347,6 +351,16 @@ pub fn open_default(
     // The plan is built before the device is touched, so an open failure can never leave a
     // half-built engine behind
     let parts = build_engine_parts(snapshot, config)?;
+    open_with_parts(backend, &device.id, device.name, parts)
+}
+
+// Open and start a named device over already-built parts, consuming the parts' bridge
+pub fn open_with_parts(
+    backend: &dyn AudioBackend,
+    device_id: &spectre_audio::DeviceId,
+    device_name: String,
+    parts: EngineParts,
+) -> Result<LiveEngine, EngineUnavailable> {
     let EngineParts {
         mut bridge,
         sender,
@@ -359,7 +373,7 @@ pub fn open_default(
 
     let mut stream = backend
         .open_output(
-            &device.id,
+            device_id,
             config,
             Box::new(move |mut block: RenderBlock| bridge.render(&mut block)),
         )
@@ -371,7 +385,7 @@ pub fn open_default(
         sender,
         telemetry,
         backend.name(),
-        device.name,
+        device_name,
         config,
     );
     engine.set_targets(targets);
@@ -647,4 +661,164 @@ pub fn engine_status_field<S: AudioStream + ?Sized>(
         Some(EngineState::Opened { .. }) => "opened",
         Some(EngineState::Running { .. }) => "running",
     }
+}
+
+// Build the render-side halves from a track list rather than the fixed fixture snapshot.
+//
+// Sits beside build_engine_parts; neither is a second render path — both produce a CompiledPlan
+// executed by the one RenderBridge, and both hash identically to what the offline harness
+// renders from the same input.
+pub fn build_track_engine_parts(
+    tracks: &spectre_project::TrackList,
+    seed: u64,
+    note_track: Option<spectre_core::ObjectId>,
+    config: StreamConfig,
+) -> Result<EngineParts, EngineUnavailable> {
+    config.validate().map_err(EngineUnavailable::Backend)?;
+
+    let mut ids = IdGen::new(seed);
+    let (graph, nodes) =
+        spectre_project::build_track_graph(tracks, &mut ids).map_err(EngineUnavailable::Routing)?;
+    let plan_max_frames = config.buffer_frames * ENGINE_PLAN_FRAME_MARGIN;
+    let mut factory = spectre_project::track_device_factory(tracks, &nodes);
+    let plan = graph
+        .compile(nodes.master.node, plan_max_frames, &mut factory)
+        .map_err(plan_error)?;
+
+    // Every automatable value on the path — each track's instrument level and gain, then the
+    // master — is registered as a lane target, so a mixer edit is addressable the moment it happens
+    let mut targets = Vec::new();
+    let mut routes = Vec::new();
+    let pairs = nodes.parameter_targets();
+    for ((device, parameter), route_node) in pairs.iter().zip(parameter_route_nodes(&nodes)) {
+        let target = ParameterTarget {
+            device: *device,
+            parameter: *parameter,
+        };
+        targets.push(target);
+        routes.push(ParameterRoute {
+            target,
+            node: route_node.0,
+            key: route_node.1,
+        });
+    }
+    let routes = ParameterRoutes::new(routes).map_err(EngineUnavailable::Route)?;
+
+    // The bridge drives one note node. R4-5 replaces this with clip playback per track
+    let note_node = note_track
+        .and_then(|id| tracks.index_of(id))
+        .and_then(|index| nodes.note_node(index))
+        .unwrap_or(nodes.master.node);
+
+    let (sender, receiver) =
+        control_channel(&targets, DEFAULT_NOTE_CAPACITY, DEFAULT_TRANSPORT_CAPACITY)
+            .map_err(EngineUnavailable::Control)?;
+    let bridge = RenderBridge::with_parameter_routes(
+        plan,
+        receiver,
+        note_node,
+        f64::from(config.sample_rate),
+        DEFAULT_NOTE_SCRATCH,
+        routes,
+    );
+    let telemetry = bridge.telemetry();
+
+    Ok(EngineParts {
+        bridge,
+        sender,
+        telemetry,
+        config,
+        plan_max_frames,
+        targets: targets.into_boxed_slice(),
+        nodes: None,
+    })
+}
+
+// Pair each parameter target with the plan node and key that applies it, in the same order
+// TrackPathNodes::parameter_targets emits them: per track, instrument level then track gain,
+// then the master gain
+fn parameter_route_nodes(
+    nodes: &spectre_project::TrackPathNodes,
+) -> Vec<(NodeId, spectre_dsp::DeviceParameterKey)> {
+    let mut routes = Vec::with_capacity(nodes.instruments.len() * 2 + 1);
+    for (instrument, gain) in nodes.instruments.iter().zip(&nodes.track_gains) {
+        routes.push((instrument.node, PULSE_PARAMETERS[0].key));
+        routes.push((gain.node, GAIN_PARAMETERS[0].key));
+    }
+    routes.push((nodes.master.node, GAIN_PARAMETERS[0].key));
+    routes
+}
+
+// Open and start the default output device running a track list.
+//
+// The seed fixes node identity, so the same list rebuilds to the same graph
+pub fn open_track_engine(
+    backend: &dyn AudioBackend,
+    tracks: &spectre_project::TrackList,
+    seed: u64,
+    note_track: Option<spectre_core::ObjectId>,
+) -> Result<LiveEngine, EngineUnavailable> {
+    let device = backend
+        .default_output_device()
+        .map_err(EngineUnavailable::Backend)?;
+    let sample_rate = backend
+        .default_sample_rate(&device.id)
+        .map_err(EngineUnavailable::Backend)?;
+    let config = StreamConfig::stereo(sample_rate, ENGINE_BUFFER_FRAMES)
+        .map_err(EngineUnavailable::Backend)?;
+    let parts = build_track_engine_parts(tracks, seed, note_track, config)?;
+    open_with_parts(backend, &device.id, device.name, parts)
+}
+
+// Where one track's parameters sit in the ordered target set build_track_engine_parts registers.
+// The order is the contract TrackPathNodes::parameter_targets declares: per track, instrument
+// level then track gain, then the master gain last
+pub const fn track_instrument_target_index(track_index: usize) -> usize {
+    track_index * 2
+}
+
+pub const fn track_gain_target_index(track_index: usize) -> usize {
+    track_index * 2 + 1
+}
+
+pub const fn master_gain_target_index(track_count: usize) -> usize {
+    track_count * 2
+}
+
+// Publish every effective gain a mixer edit invalidated.
+//
+// The publication set is part of the contract, not an implementation detail: effective_gain
+// depends on any_soloed(), so ONE solo edit changes the value for EVERY track. Publishing only
+// the edited id would produce a solo that silences nothing. Over-publishing is free — the lane
+// is one preallocated latest-wins slot per target, with no capacity to exhaust — so when in
+// doubt, republish.
+pub fn publish_track_gains<S: AudioStream + ?Sized>(
+    engine: &LiveEngine<S>,
+    tracks: &spectre_project::TrackList,
+    invalidated: &[spectre_core::ObjectId],
+) -> Result<(), ControlError> {
+    for id in invalidated {
+        let Some(index) = tracks.index_of(*id) else {
+            continue;
+        };
+        let Some(gain) = tracks.effective_gain(*id) else {
+            continue;
+        };
+        let Some(target) = engine.targets().get(track_gain_target_index(index)) else {
+            continue;
+        };
+        engine.send_parameter(*target, gain)?;
+    }
+    Ok(())
+}
+
+// Publish the master fader position
+pub fn publish_master_gain<S: AudioStream + ?Sized>(
+    engine: &LiveEngine<S>,
+    tracks: &spectre_project::TrackList,
+) -> Result<(), ControlError> {
+    let Some(target) = engine.targets().get(master_gain_target_index(tracks.len())) else {
+        return Ok(());
+    };
+    engine.send_parameter(*target, tracks.master_level())
 }

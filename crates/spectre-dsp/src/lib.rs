@@ -5,6 +5,7 @@
 
 mod effect;
 mod io;
+mod mix;
 mod parameter;
 mod source;
 
@@ -13,6 +14,7 @@ pub use io::{
     AudioProcessor, DeviceClass, DeviceIo, NoteEvent, NoteEventKind, ParameterError,
     ProcessContext, ProcessError, MAX_NOTE_EVENTS_PER_BLOCK,
 };
+pub use mix::{SumBus, MAX_SUM_BUSES};
 pub use parameter::{
     DeviceParameterKey, DeviceParameterSnapshot, DspParameter, NORMALIZED_ROUND_TRIP_MAX_ULPS,
 };

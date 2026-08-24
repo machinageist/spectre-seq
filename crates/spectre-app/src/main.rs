@@ -20,6 +20,18 @@ const WARM: Color32 = Color32::from_rgb(240, 166, 90);
 const TEXT: Color32 = Color32::from_rgb(224, 230, 238);
 const MUTED: Color32 = Color32::from_rgb(128, 140, 156);
 
+// The fader's range IS the accepted gain descriptor's range; no fader law is invented here
+const GAIN_MAX: f32 = 2.0;
+const GAIN_RANGE: std::ops::RangeInclusive<f32> = 0.0..=GAIN_MAX;
+
+// One mixer edit, deferred out of the panel closure that borrows the model
+#[derive(Debug, Clone, Copy)]
+enum TrackMixEdit {
+    Level(spectre_core::ObjectId, f32),
+    Muted(spectre_core::ObjectId, bool),
+    Soloed(spectre_core::ObjectId, bool),
+}
+
 struct SpectrePrototype {
     model: AppModel,
     new_track_name: String,
@@ -31,6 +43,9 @@ struct SpectrePrototype {
     engine_unavailable: EngineUnavailable,
     // The start attempt happens on the first frame, not in Default, so a failure is reportable
     engine_attempted: bool,
+    // The track-list revision the running engine was built from. While this differs from the
+    // model's, the app states that the edit is not audible rather than pretending it is
+    engine_revision: u64,
 }
 
 impl Default for SpectrePrototype {
@@ -43,18 +58,27 @@ impl Default for SpectrePrototype {
             engine: None,
             engine_unavailable: EngineUnavailable::NotAttempted,
             engine_attempted: false,
+            engine_revision: 0,
         }
     }
 }
 
 // Open the default device against the compiled-in backend
+// Node identity seed for the app's track graph. Rationale: identities must be stable across a
+// rebuild so the same list produces the same graph; the value itself carries no meaning
+const APP_GRAPH_SEED: u64 = 0x0053_5045_4354_5245;
+
 #[cfg(feature = "live-audio")]
 fn open_engine(model: &AppModel) -> Result<LiveEngine, EngineUnavailable> {
-    let snapshot = model
-        .device_parameter_snapshot()
-        .map_err(EngineUnavailable::Snapshot)?;
     let backend = spectre_audio::cpal_backend::CpalBackend::new();
-    spectre_app::engine::open_default(&backend, &snapshot)
+    // The note node is the selected track's instrument; every other track renders silence until
+    // R4-5 gives each track its own clip
+    spectre_app::engine::open_track_engine(
+        &backend,
+        model.track_list(),
+        APP_GRAPH_SEED,
+        model.selected_track_id(),
+    )
 }
 
 // Without a real backend the app declines to fake one; NullBackend would produce a running
@@ -72,6 +96,7 @@ impl SpectrePrototype {
             Ok(engine) => {
                 self.engine = Some(engine);
                 self.engine_unavailable = EngineUnavailable::NotAttempted;
+                self.engine_revision = self.model.track_list().structure_revision();
             }
             Err(error) => {
                 self.feedback_status = format!("Audio engine did not start: {error}");
@@ -90,6 +115,51 @@ impl SpectrePrototype {
             self.engine.as_mut(),
             &mut self.feedback_status,
         );
+    }
+
+    // Apply one mixer edit and publish every effective gain it invalidated.
+    //
+    // The publication set is part of the contract, not an implementation detail: effective_gain
+    // depends on any_soloed(), so ONE solo edit changes the value for EVERY track. Publishing
+    // only the edited id would produce a solo that silences nothing
+    fn apply_mix_edit(&mut self, edit: TrackMixEdit) {
+        let result = match edit {
+            TrackMixEdit::Level(id, level) => self.model.set_track_level(id, level),
+            TrackMixEdit::Muted(id, muted) => self.model.set_track_muted(id, muted),
+            TrackMixEdit::Soloed(id, soloed) => self.model.set_track_soloed(id, soloed),
+        };
+        match result {
+            Ok(invalidated) => {
+                if let Some(engine) = self.engine.as_ref() {
+                    if let Err(error) = spectre_app::engine::publish_track_gains(
+                        engine,
+                        self.model.track_list(),
+                        &invalidated,
+                    ) {
+                        self.feedback_status =
+                            format!("The mix changed but did not reach live audio: {error}");
+                    }
+                }
+            }
+            Err(error) => self.feedback_status = error.to_string(),
+        }
+    }
+
+    // True while the model's track structure differs from the plan the engine is executing
+    fn engine_is_stale(&self) -> bool {
+        self.engine.is_some()
+            && self.model.track_list().structure_revision() != self.engine_revision
+    }
+
+    // Stop the stream, rebuild the plan from the current list, and start again. R4-4 does this
+    // as an explicit user action with an audible gap rather than a hot swap; a glitch-free swap
+    // needs a fourth control lane and a decision about notes in flight, and is not claimed here
+    fn rebuild_engine(&mut self) {
+        if let Some(engine) = self.engine.as_mut() {
+            let _ = engine.close();
+        }
+        self.engine = None;
+        self.start_engine();
     }
 
     // What the transport bar renders, derived from the render thread rather than asserted
@@ -120,6 +190,8 @@ impl SpectrePrototype {
         // Both actions mutate self, so they are deferred out of the panel closure that borrows it
         let mut toggle = false;
         let mut retry = false;
+        let mut rebuild = false;
+        let stale = self.engine_is_stale();
         egui::TopBottomPanel::top("transport")
             .exact_height(62.0)
             .frame(
@@ -221,6 +293,21 @@ impl SpectrePrototype {
                                 .on_hover_text(self.engine_unavailable.to_string());
                             }
                         }
+                        if stale {
+                            // The plan the render thread is executing no longer matches the
+                            // model. The app says so rather than pretending the edit is audible
+                            if ui
+                                .button("Rebuild engine")
+                                .on_hover_text(
+                                    "Track structure changed. The engine is still playing the \
+                                     previous plan; rebuilding restarts the stream.",
+                                )
+                                .clicked()
+                            {
+                                rebuild = true;
+                            }
+                            ui.label(RichText::new("PLAN STALE").small().color(WARM));
+                        }
                     });
                 });
             });
@@ -229,6 +316,9 @@ impl SpectrePrototype {
         }
         if retry {
             self.start_engine();
+        }
+        if rebuild {
+            self.rebuild_engine();
         }
     }
 
@@ -276,10 +366,20 @@ impl SpectrePrototype {
                 ui.add_space(4.0);
                 let mut select = None;
                 for track in self.model.tracks() {
-                    let selected = self.model.selected_track_id() == Some(track.id);
-                    let label = format!("{}  {}", if track.armed { "●" } else { "○" }, track.name);
+                    let selected = self.model.selected_track_id() == Some(track.id());
+                    // Mute and solo are the two states that actually change what is rendered, so
+                    // they are what the row shows. There is no arm indicator, because there is
+                    // no recording path to arm for
+                    let marker = if track.is_muted() {
+                        "M"
+                    } else if track.is_soloed() {
+                        "S"
+                    } else {
+                        "·"
+                    };
+                    let label = format!("{marker}  {}", track.name());
                     if ui.selectable_label(selected, label).clicked() {
-                        select = Some(track.id);
+                        select = Some(track.id());
                     }
                 }
                 if let Some(id) = select {
@@ -295,7 +395,7 @@ impl SpectrePrototype {
                     if ui.button("+").on_hover_text("Add track").clicked() {
                         match self.model.add_track(self.new_track_name.clone()) {
                             Ok(_) => self.new_track_name.clear(),
-                            Err(error) => self.feedback_status = error.into(),
+                            Err(error) => self.feedback_status = error.to_string(),
                         }
                     }
                 });
@@ -320,18 +420,44 @@ impl SpectrePrototype {
             )
             .show(ctx, |ui| {
                 ui.label(RichText::new("CONTEXT").small().strong().color(MUTED));
-                if let Some(track) = self.model.selected_track_mut() {
-                    ui.heading(&track.name);
+                // Read the track, collect the edits, then apply them after the borrow ends, so
+                // one edit can publish to every id whose effective gain it changed
+                let mut mix_edit: Option<TrackMixEdit> = None;
+                if let Some(track) = self.model.selected_track() {
+                    let id = track.id();
+                    let (mut muted, mut soloed) = (track.is_muted(), track.is_soloed());
+                    let mut level = track.level();
+                    ui.heading(track.name());
                     ui.horizontal(|ui| {
-                        ui.toggle_value(&mut track.muted, "Mute");
-                        ui.toggle_value(&mut track.solo, "Solo");
-                        ui.toggle_value(&mut track.armed, "Arm");
+                        if ui.toggle_value(&mut muted, "Mute").changed() {
+                            mix_edit = Some(TrackMixEdit::Muted(id, muted));
+                        }
+                        if ui.toggle_value(&mut soloed, "Solo").changed() {
+                            mix_edit = Some(TrackMixEdit::Soloed(id, soloed));
+                        }
+                        ui.add_enabled(false, egui::Button::new("Arm"))
+                            .on_disabled_hover_text(
+                                "Recording arrives at R7; nothing records yet.",
+                            );
                     });
-                    ui.add(egui::Slider::new(&mut track.level, 0.0..=1.0).text("Level"));
+                    // The slider's range is the accepted gain descriptor's, so the UI stops
+                    // contradicting the DSP: unity is the descriptor's default, not 100%
+                    let range = GAIN_RANGE;
+                    if ui
+                        .add(egui::Slider::new(&mut level, range).text("Level"))
+                        .changed()
+                    {
+                        mix_edit = Some(TrackMixEdit::Level(id, level));
+                    }
                     ui.separator();
                     ui.label(RichText::new("Signal path").strong());
-                    ui.label(RichText::new("MIDI clip  →  Native synth  →  Master").color(MUTED));
+                    ui.label(
+                        RichText::new("Instrument  →  Track gain  →  Sum  →  Master").color(MUTED),
+                    );
                     ui.add_enabled(false, egui::Button::new("+ Add device"));
+                }
+                if let Some(edit) = mix_edit {
+                    self.apply_mix_edit(edit);
                 }
                 ui.separator();
                 ui.label(
@@ -593,7 +719,7 @@ impl SpectrePrototype {
                     Lens::Arrange => self.arrange(ui),
                     Lens::Build => self.build_devices(ui),
                     Lens::Shape => self.shape_devices(ui),
-                    Lens::Mix => mix_surface(ui, self.model.tracks()),
+                    Lens::Mix => mix_surface(ui, self.model.track_list()),
                 }
             });
     }
@@ -642,25 +768,56 @@ fn unit_label(unit: spectre_core::ParamUnit) -> &'static str {
     }
 }
 
-fn mix_surface(ui: &mut egui::Ui, tracks: &[spectre_app::TrackView]) {
+fn mix_surface(ui: &mut egui::Ui, tracks: &spectre_project::TrackList) {
     ui.horizontal_top(|ui| {
-        for track in tracks {
+        for track in tracks.tracks() {
             egui::Frame::new()
                 .fill(RAISED)
                 .corner_radius(8)
                 .inner_margin(12)
                 .show(ui, |ui| {
                     ui.set_width(130.0);
-                    ui.label(RichText::new(&track.name).strong());
-                    ui.add_space(100.0 * (1.0 - track.level));
+                    ui.label(RichText::new(track.name()).strong());
+                    // The bar shows the EFFECTIVE gain, not the fader position, so a muted or
+                    // solo-silenced track reads as silent instead of reading as its own fader
+                    let effective = tracks.effective_gain(track.id()).unwrap_or(0.0);
+                    let fraction = (effective / GAIN_MAX).clamp(0.0, 1.0);
+                    ui.add_space(100.0 * (1.0 - fraction));
                     ui.add(
-                        egui::ProgressBar::new(track.level)
+                        egui::ProgressBar::new(fraction)
                             .desired_width(105.0)
-                            .text(format!("{:.0}%", track.level * 100.0)),
+                            .text(format!("{effective:.2}")),
                     );
-                    ui.label(RichText::new("Master route").small().color(MUTED));
+                    let route = if track.is_muted() {
+                        "Muted"
+                    } else if tracks.any_soloed() && !track.is_soloed() {
+                        "Solo-silenced"
+                    } else {
+                        "Master route"
+                    };
+                    ui.label(RichText::new(route).small().color(MUTED));
                 });
         }
+        egui::Frame::new()
+            .fill(RAISED)
+            .corner_radius(8)
+            .inner_margin(12)
+            .show(ui, |ui| {
+                ui.set_width(130.0);
+                ui.label(RichText::new("Master").strong().color(ACCENT));
+                let fraction = (tracks.master_level() / GAIN_MAX).clamp(0.0, 1.0);
+                ui.add_space(100.0 * (1.0 - fraction));
+                ui.add(
+                    egui::ProgressBar::new(fraction)
+                        .desired_width(105.0)
+                        .text(format!("{:.2}", tracks.master_level())),
+                );
+                ui.label(
+                    RichText::new(format!("{} track(s) summed", tracks.len()))
+                        .small()
+                        .color(MUTED),
+                );
+            });
     });
 }
 

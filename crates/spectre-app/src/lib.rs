@@ -10,6 +10,7 @@ use spectre_core::{IdGen, ObjectId, Transport, TransportCommand, TransportState}
 use spectre_dsp::{
     DeviceParameterSnapshot, DspParameter, GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS,
 };
+use spectre_project::{Track, TrackError, TrackInstrument, TrackList};
 
 // Persistent workspace lenses over one project selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,17 +35,6 @@ impl std::fmt::Display for Lens {
         };
         f.write_str(label)
     }
-}
-
-// Minimal track state rendered by every lens
-#[derive(Debug, Clone, PartialEq)]
-pub struct TrackView {
-    pub id: ObjectId,
-    pub name: String,
-    pub muted: bool,
-    pub solo: bool,
-    pub armed: bool,
-    pub level: f32,
 }
 
 // The canonical result of one accepted Shape edit: what the model stored, and which stable
@@ -219,7 +209,7 @@ impl std::error::Error for DeviceParameterSnapshotError {}
 pub struct AppModel {
     transport: Transport,
     lens: Lens,
-    tracks: Vec<TrackView>,
+    tracks: TrackList,
     devices: Vec<DeviceControl>,
     selected_track: Option<ObjectId>,
     selected_device: Option<ObjectId>,
@@ -231,14 +221,14 @@ impl AppModel {
     // Create the deterministic first-launch state
     pub fn prototype() -> Self {
         let mut ids = IdGen::new(0x0047_4549_5354_5549);
-        let track = TrackView {
-            id: ids.next_id(),
-            name: "Pulse".into(),
-            muted: false,
-            solo: false,
-            armed: false,
-            level: 0.78,
-        };
+        let mut tracks = TrackList::new();
+        let track_id = ids.next_id();
+        tracks
+            .push(
+                Track::new(track_id, "Pulse", TrackInstrument::Pulse)
+                    .expect("the literal name is not blank"),
+            )
+            .expect("an empty list accepts one track");
         let devices = vec![
             DeviceControl::from_descriptors(
                 &mut ids,
@@ -266,8 +256,8 @@ impl AppModel {
         Self {
             transport: Transport::new(),
             lens: Lens::Arrange,
-            selected_track: Some(track.id),
-            tracks: vec![track],
+            selected_track: Some(track_id),
+            tracks,
             devices,
             selected_device,
             ids,
@@ -300,8 +290,13 @@ impl AppModel {
         self.lens = lens;
     }
 
-    pub fn tracks(&self) -> &[TrackView] {
+    // Borrow the ordered track collection
+    pub fn track_list(&self) -> &TrackList {
         &self.tracks
+    }
+
+    pub fn tracks(&self) -> &[Track] {
+        self.tracks.tracks()
     }
 
     pub fn selected_track_id(&self) -> Option<ObjectId> {
@@ -309,19 +304,96 @@ impl AppModel {
     }
 
     pub fn select_track(&mut self, id: ObjectId) {
-        if self.tracks.iter().any(|track| track.id == id) {
+        if self.tracks.get(id).is_some() {
             self.selected_track = Some(id);
         }
     }
 
-    pub fn selected_track(&self) -> Option<&TrackView> {
-        let id = self.selected_track?;
-        self.tracks.iter().find(|track| track.id == id)
+    pub fn selected_track(&self) -> Option<&Track> {
+        self.tracks.get(self.selected_track?)
     }
 
-    pub fn selected_track_mut(&mut self) -> Option<&mut TrackView> {
-        let id = self.selected_track?;
-        self.tracks.iter_mut().find(|track| track.id == id)
+    // Rename one track; a blank name leaves the model unchanged
+    pub fn rename_track(&mut self, id: ObjectId, name: &str) -> Result<(), TrackError> {
+        self.tracks
+            .get_mut(id)
+            .ok_or(TrackError::UnknownTrack(id))?
+            .set_name(name)
+    }
+
+    // Set one track's fader position. Returns the ids whose effective gain changed — exactly one
+    pub fn set_track_level(
+        &mut self,
+        id: ObjectId,
+        level: f32,
+    ) -> Result<Vec<ObjectId>, TrackError> {
+        self.tracks
+            .get_mut(id)
+            .ok_or(TrackError::UnknownTrack(id))?
+            .set_level(level);
+        Ok(vec![id])
+    }
+
+    // Mute one track. Returns the ids whose effective gain changed — exactly one
+    pub fn set_track_muted(
+        &mut self,
+        id: ObjectId,
+        muted: bool,
+    ) -> Result<Vec<ObjectId>, TrackError> {
+        self.tracks
+            .get_mut(id)
+            .ok_or(TrackError::UnknownTrack(id))?
+            .set_muted(muted);
+        Ok(vec![id])
+    }
+
+    // Solo one track. Returns EVERY track id, in list order, because effective_gain depends on
+    // any_soloed(): turning a solo on silences every other track and clearing the last solo
+    // restores them. Returning only the edited id produces a solo that silences nothing
+    pub fn set_track_soloed(
+        &mut self,
+        id: ObjectId,
+        soloed: bool,
+    ) -> Result<Vec<ObjectId>, TrackError> {
+        self.tracks
+            .get_mut(id)
+            .ok_or(TrackError::UnknownTrack(id))?
+            .set_soloed(soloed);
+        Ok(self.tracks.tracks().iter().map(Track::id).collect())
+    }
+
+    // Set the master fader. Publishes the master gain's own target, not a track's, so the
+    // returned track set is empty
+    pub fn set_master_level(&mut self, level: f32) -> Vec<ObjectId> {
+        self.tracks.set_master_level(level);
+        Vec::new()
+    }
+
+    // Set one track's instrument level. Returns the ids whose instrument level changed
+    pub fn set_track_instrument_level(
+        &mut self,
+        id: ObjectId,
+        level: f32,
+    ) -> Result<Vec<ObjectId>, TrackError> {
+        self.tracks
+            .get_mut(id)
+            .ok_or(TrackError::UnknownTrack(id))?
+            .set_instrument_level(level);
+        Ok(vec![id])
+    }
+
+    // Move one track to an absolute index; identity and every field survive (CORE-001)
+    pub fn reorder_track(&mut self, id: ObjectId, to_index: usize) -> Result<usize, TrackError> {
+        self.tracks.reorder(id, to_index)
+    }
+
+    // Remove one track, returning it whole so an undo can reinsert it unchanged
+    pub fn remove_track(&mut self, id: ObjectId) -> Result<Track, TrackError> {
+        let removed = self.tracks.remove(id)?;
+        if self.selected_track == Some(id) {
+            self.selected_track = self.tracks.tracks().first().map(Track::id);
+        }
+        Ok(removed)
     }
 
     pub fn devices(&self) -> &[DeviceControl] {
@@ -434,21 +506,11 @@ impl AppModel {
             .map(|_| ())
     }
 
-    pub fn add_track(&mut self, name: impl Into<String>) -> Result<ObjectId, &'static str> {
-        let name = name.into();
-        let name = name.trim();
-        if name.is_empty() {
-            return Err("track name must not be blank");
-        }
+    // Append a track and select it; the ID comes from the model's own generator (CORE-001)
+    pub fn add_track(&mut self, name: impl AsRef<str>) -> Result<ObjectId, TrackError> {
         let id = self.ids.next_id();
-        self.tracks.push(TrackView {
-            id,
-            name: name.into(),
-            muted: false,
-            solo: false,
-            armed: false,
-            level: 0.72,
-        });
+        let track = Track::new(id, name.as_ref(), TrackInstrument::Pulse)?;
+        self.tracks.push(track)?;
         self.selected_track = Some(id);
         Ok(id)
     }
@@ -468,7 +530,7 @@ impl AppModel {
             if self.is_playing() { "playing" } else { "stopped" },
             self.tracks.len(),
             self.selected_track()
-                .map(|track| track.name.as_str())
+                .map(Track::name)
                 .unwrap_or("none"),
             self.selected_device()
                 .map(|device| format!("{} ({})", device.name, device.key))

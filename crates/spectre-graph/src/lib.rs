@@ -12,7 +12,11 @@ use spectre_dsp::{AudioProcessor, DeviceIo, NoteEvent, ProcessContext, ProcessEr
 const CHANNELS_PER_BUS: usize = 2;
 
 // V1 flattened-channel bounds derived from the accepted device layouts
-const MAX_FLAT_INPUTS: usize = 4;
+// V1 flattened-channel bound. Raised from 4 to 32 by R4-4: a 16-track summing bus declares
+// 32 input channels, and PlanStep carries its input map as a fixed array of this width so the
+// render path needs no heap collection. Rationale row in
+// docs/01-requirements/requirements-ledger.md (PROD-003, decision 16)
+const MAX_FLAT_INPUTS: usize = 32;
 const FLAT_OUTPUTS: usize = 2;
 
 // Graph-node identity wrapping the project-stable object ID

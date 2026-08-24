@@ -5,13 +5,16 @@
 
 use serde::Serialize;
 use serde_json::Map;
-use spectre_core::{IdGen, TempoMap, Transport};
+use spectre_core::{IdGen, ObjectId, TempoMap, Transport};
 use spectre_dsp::{
     AudioProcessor, DeviceParameterSnapshot, DspParameter, Gain, NoteEvent, NoteEventKind,
     PulseInstrument, Saturator, Waveform, GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS,
 };
 use spectre_graph::{Connection, EditableGraph, NodeId, PlanNoteInput};
-use spectre_project::{from_bytes, ProjectDoc, ProjectEnvelope, SCHEMA_VERSION};
+use spectre_project::{
+    build_track_graph, from_bytes, track_device_factory, ProjectDoc, ProjectEnvelope, TrackList,
+    SCHEMA_VERSION,
+};
 use std::collections::{HashMap, HashSet};
 
 // Stable machine-readable report emitted by the offline harness
@@ -331,4 +334,59 @@ pub fn render_silence(sample_rate: f64, frames: usize) -> Result<RenderReport, S
             saturator_mix: 0.35,
         },
     )
+}
+
+// Hash and peak one rendered quantum with the walk render_plan already uses
+fn report_from(plan: &spectre_graph::CompiledPlan, frames: usize) -> Result<RenderReport, String> {
+    let output = plan.last_output().ok_or("no quantum has been rendered")?;
+    let mut peak = 0.0_f32;
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for sample in output[0].iter().chain(output[1].iter()) {
+        peak = peak.max(sample.abs());
+        for byte in sample.to_bits().to_le_bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    Ok(RenderReport {
+        frames,
+        channels: 2,
+        peak,
+        hash,
+    })
+}
+
+// Render a track list through the compiled plan and report the same FNV-1a hash shape
+// render_plan already produces. There is no second render path: this builds the same kind of
+// CompiledPlan and drives it through the same process call
+pub fn render_track_list(
+    sample_rate: f64,
+    frames: usize,
+    tracks: &TrackList,
+    seed: u64,
+    note_track: Option<ObjectId>,
+    events: &[NoteEvent],
+) -> Result<RenderReport, String> {
+    if frames < 2 {
+        return Err("render requires at least two frames".into());
+    }
+    let mut ids = IdGen::new(seed);
+    let (graph, nodes) = build_track_graph(tracks, &mut ids).map_err(|error| error.to_string())?;
+    let mut factory = track_device_factory(tracks, &nodes);
+    let mut plan = graph
+        .compile(nodes.master.node, frames, &mut factory)
+        .map_err(|error| error.to_string())?;
+
+    // Notes address the instrument node of the named track; an unknown track renders silence
+    // rather than failing, because an empty or unaddressed project is not an error state
+    let note_node = note_track
+        .and_then(|id| tracks.index_of(id))
+        .and_then(|index| nodes.note_node(index));
+    match note_node {
+        Some(node) => plan.process(sample_rate, frames, &[PlanNoteInput { node, events }]),
+        None => plan.process(sample_rate, frames, &[]),
+    }
+    .map_err(|error| error.to_string())?;
+
+    report_from(&plan, frames)
 }

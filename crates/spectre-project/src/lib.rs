@@ -8,6 +8,11 @@ use serde_json::{Map, Value};
 use spectre_core::{MeterMap, ObjectId, TempoMap, Transport};
 
 pub mod command;
+pub mod routing;
+pub mod track;
+
+pub use routing::{build_track_graph, track_device_factory, RoutingError, TrackPathNodes};
+pub use track::{Track, TrackError, TrackInstrument, TrackList, MAX_TRACKS};
 
 // Current schema version written by this build
 pub const SCHEMA_VERSION: u32 = 1;

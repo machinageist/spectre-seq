@@ -11,6 +11,8 @@ version.workspace = true
 
 [dependencies]
 spectre-core = { path = "../spectre-core" }
+spectre-dsp = { path = "../spectre-dsp" }
+spectre-graph = { path = "../spectre-graph" }
 serde.workspace = true
 serde_json.workspace = true
 

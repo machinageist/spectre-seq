@@ -468,3 +468,53 @@ fn model_snapshot_contains_nonfinite_edit_before_render() {
         )
     );
 }
+
+// R4-4 — the offline harness renders a track list deterministically and reuses the existing walk
+#[test]
+fn track_list_rendering_is_deterministic_and_silent_when_empty() {
+    use spectre_core::IdGen;
+    use spectre_dsp::{NoteEvent, NoteEventKind};
+    use spectre_project::{Track, TrackInstrument, TrackList};
+
+    const SEED: u64 = 0x004f_4646_5452_4b00;
+    let mut ids = IdGen::new(SEED);
+    let mut list = TrackList::new();
+    let first = ids.next_id();
+    list.push(Track::new(first, "one", TrackInstrument::Pulse).unwrap())
+        .unwrap();
+    list.push(Track::new(ids.next_id(), "two", TrackInstrument::Pulse).unwrap())
+        .unwrap();
+
+    let events = [NoteEvent {
+        frame_offset: 0,
+        sequence: 0,
+        kind: NoteEventKind::On {
+            id: 1,
+            channel: 0,
+            note: 45,
+            velocity: 0.8,
+        },
+    }];
+
+    let a = spectre_offline::render_track_list(48_000.0, 128, &list, SEED, Some(first), &events)
+        .unwrap();
+    let b = spectre_offline::render_track_list(48_000.0, 128, &list, SEED, Some(first), &events)
+        .unwrap();
+    assert_eq!(a.hash, b.hash, "the same list must render identically");
+    assert!(a.peak > 0.0, "a sounding track must produce audible output");
+    assert_eq!(a.frames, 128);
+    assert_eq!(a.channels, 2);
+
+    // An empty project is exact silence by construction, not an error state
+    let empty =
+        spectre_offline::render_track_list(48_000.0, 128, &TrackList::new(), SEED, None, &[])
+            .unwrap();
+    assert_eq!(empty.peak, 0.0);
+
+    // Muting the sounding track silences it without changing the plan's shape
+    list.get_mut(first).unwrap().set_muted(true);
+    let muted =
+        spectre_offline::render_track_list(48_000.0, 128, &list, SEED, Some(first), &events)
+            .unwrap();
+    assert_eq!(muted.peak, 0.0, "a muted track must contribute nothing");
+}

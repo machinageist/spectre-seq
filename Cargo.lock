@@ -2331,6 +2331,8 @@ dependencies = [
  "serde",
  "serde_json",
  "spectre-core",
+ "spectre-dsp",
+ "spectre-graph",
 ]
 
 [[package]]

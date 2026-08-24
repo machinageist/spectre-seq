@@ -357,8 +357,8 @@ fn prototype_devices_and_parameters_have_unique_nonzero_instance_ids() {
     let mut ids = HashSet::new();
 
     for track in model.tracks() {
-        assert_ne!(track.id.raw(), 0);
-        assert!(ids.insert(track.id));
+        assert_ne!(track.id().raw(), 0);
+        assert!(ids.insert(track.id()));
     }
     for device in model.devices() {
         assert_ne!(device.instance_id.raw(), 0);

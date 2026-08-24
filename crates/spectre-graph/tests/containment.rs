@@ -8,7 +8,7 @@
 use spectre_core::IdGen;
 use spectre_dsp::{
     AudioProcessor, DeviceClass, DeviceIo, Gain, NoteEvent, ProcessContext, ProcessError,
-    PulseInstrument, Waveform,
+    PulseInstrument, SumBus, Waveform,
 };
 use spectre_graph::{Connection, EditableGraph, NodeId, PlanNoteInput};
 
@@ -387,4 +387,87 @@ fn healthy_native_devices_report_no_containment_activity() {
 
     // The shipping devices must not trip containment during ordinary rendering
     assert_eq!(plan.containment(), Default::default());
+}
+
+// R4-4 test 12 — a contaminated track is silenced before it can reach the sum
+#[test]
+fn a_contaminated_track_is_silenced_before_it_reaches_the_sum() {
+    let mut ids = IdGen::new(0x0053_554d_4249_4e00);
+    let poisoned = NodeId::new(ids.next_id());
+    let clean = NodeId::new(ids.next_id());
+    let sum = NodeId::new(ids.next_id());
+    let master = NodeId::new(ids.next_id());
+
+    let mut graph = EditableGraph::new();
+    graph
+        .add_node(
+            poisoned,
+            PoisonSource {
+                poison: Poison::Nan,
+            }
+            .io(),
+        )
+        .unwrap();
+    graph
+        .add_node(
+            clean,
+            PoisonSource {
+                poison: Poison::Clean,
+            }
+            .io(),
+        )
+        .unwrap();
+    graph.add_node(sum, SumBus::new(2).unwrap().io()).unwrap();
+    graph
+        .add_node(master, Gain::new(1.0).unwrap().io())
+        .unwrap();
+    for (from, bus) in [(poisoned, 0), (clean, 1)] {
+        graph
+            .connect(Connection {
+                from,
+                from_bus: 0,
+                to: sum,
+                to_bus: bus,
+            })
+            .unwrap();
+    }
+    graph
+        .connect(Connection {
+            from: sum,
+            from_bus: 0,
+            to: master,
+            to_bus: 0,
+        })
+        .unwrap();
+
+    let mut plan = graph
+        .compile(master, 16, &mut |node| {
+            if node == poisoned {
+                Ok(Box::new(PoisonSource {
+                    poison: Poison::Nan,
+                }))
+            } else if node == clean {
+                Ok(Box::new(PoisonSource {
+                    poison: Poison::Clean,
+                }))
+            } else if node == sum {
+                Ok(Box::new(SumBus::new(2)?))
+            } else {
+                Ok(Box::new(Gain::new(1.0)?))
+            }
+        })
+        .unwrap();
+
+    plan.process(48_000.0, 16, &[]).unwrap();
+
+    // Containment silences the poisoned node whole before the sum sees it, so the clean track
+    // survives at its own value rather than the whole master going silent
+    let output = plan.last_output().unwrap();
+    for channel in output {
+        for sample in channel {
+            assert!(sample.is_finite());
+            assert_eq!(*sample, 0.5, "the clean track must reach master intact");
+        }
+    }
+    assert_eq!(plan.containment().contaminated_nodes, 1);
 }
