@@ -4,10 +4,12 @@
 // Notes: Tests pin process behavior before device implementation
 
 use spectre_dsp::{
-    AudioProcessor, DeviceClass, DeviceParameterKey, Gain, NoteEvent, NoteEventKind,
-    ProcessContext, PulseInstrument, Saturator, ToneSource, Waveform, GAIN_PARAMETERS,
+    AudioProcessor, DeviceClass, DeviceParameterKey, Filament, Gain, Gloam, NoteEvent,
+    NoteEventKind, ParameterError, ProcessContext, PulseInstrument, Saturator, ToneSource,
+    Waveform, FILAMENT_PARAMETERS, GAIN_PARAMETERS, GLOAM_PARAMETERS,
     NORMALIZED_ROUND_TRIP_MAX_ULPS, PULSE_PARAMETERS, SATURATOR_PARAMETERS, TONE_PARAMETERS,
 };
+use std::f64::consts::{PI, TAU};
 
 fn output(frames: usize) -> (Vec<f32>, Vec<f32>) {
     (vec![0.0; frames], vec![0.0; frames])
@@ -40,6 +42,8 @@ fn native_parameters() -> impl Iterator<Item = spectre_dsp::DspParameter> {
         .chain(GAIN_PARAMETERS)
         .chain(SATURATOR_PARAMETERS)
         .chain(TONE_PARAMETERS)
+        .chain(FILAMENT_PARAMETERS)
+        .chain(GLOAM_PARAMETERS)
 }
 
 fn next_up(value: f32) -> f32 {
@@ -200,7 +204,15 @@ fn device_layouts_match_the_v1_contract() {
     assert_eq!(instrument.io().audio_outputs, 2);
     assert!(instrument.io().accepts_notes);
 
-    for io in [gain.io(), saturator.io()] {
+    let filament = default_filament();
+    let gloam = default_gloam();
+
+    assert_eq!(filament.io().class, DeviceClass::Instrument);
+    assert_eq!(filament.io().audio_inputs, 0);
+    assert_eq!(filament.io().audio_outputs, 2);
+    assert!(filament.io().accepts_notes);
+
+    for io in [gain.io(), saturator.io(), gloam.io()] {
         assert_eq!(io.class, DeviceClass::Effect);
         assert_eq!(io.audio_inputs, 2);
         assert_eq!(io.audio_outputs, 2);
@@ -372,4 +384,577 @@ fn same_frame_note_off_must_precede_note_on() {
         },
     ];
     assert!(ProcessContext::new(48_000.0, 16, &events).is_err());
+}
+
+// Descriptor slots for the two R4-6 devices; mirrors of the private slots in each module
+const FILAMENT_LEAN: usize = 0;
+const FILAMENT_RISE_MS: usize = 1;
+const FILAMENT_FALL_MS: usize = 2;
+const FILAMENT_LEVEL: usize = 3;
+const GLOAM_DAMP_HZ: usize = 0;
+const GLOAM_DEPTH: usize = 1;
+const GLOAM_TRACK_MS: usize = 2;
+
+// One rate every assertion below is written against; not a bound, a fixture
+const FIXTURE_SAMPLE_RATE: f64 = 48_000.0;
+// The render quantum R4-1 requests, reused so block-boundary behavior is exercised as shipped
+const FIXTURE_QUANTUM_FRAMES: usize = 256;
+// Milliseconds-to-seconds conversion, matching the devices
+const SECONDS_PER_MILLISECOND: f64 = 0.001;
+// DEV-013: how long the silence search waits for Gloam's state to flush to exact zero
+const SILENCE_SETTLE_MAX_QUANTA: usize = 64;
+
+// Build one device at its declared defaults
+fn default_filament() -> Filament {
+    Filament::new(
+        FILAMENT_PARAMETERS[FILAMENT_LEAN].default(),
+        FILAMENT_PARAMETERS[FILAMENT_RISE_MS].default(),
+        FILAMENT_PARAMETERS[FILAMENT_FALL_MS].default(),
+        FILAMENT_PARAMETERS[FILAMENT_LEVEL].default(),
+    )
+    .unwrap()
+}
+
+// Build one effect at its declared defaults
+fn default_gloam() -> Gloam {
+    Gloam::new(
+        GLOAM_PARAMETERS[GLOAM_DAMP_HZ].default(),
+        GLOAM_PARAMETERS[GLOAM_DEPTH].default(),
+        GLOAM_PARAMETERS[GLOAM_TRACK_MS].default(),
+    )
+    .unwrap()
+}
+
+// Build one note-on event
+fn note_on(frame_offset: usize, sequence: u64, id: u32, note: u8, velocity: f32) -> NoteEvent {
+    NoteEvent {
+        frame_offset,
+        sequence,
+        kind: NoteEventKind::On {
+            id,
+            channel: 0,
+            note,
+            velocity,
+        },
+    }
+}
+
+// Build one note-off event
+fn note_off(frame_offset: usize, sequence: u64, id: u32, note: u8) -> NoteEvent {
+    NoteEvent {
+        frame_offset,
+        sequence,
+        kind: NoteEventKind::Off {
+            id,
+            channel: 0,
+            note,
+            velocity: 0.0,
+        },
+    }
+}
+
+// Render one instrument block and return both channels
+fn render_instrument(
+    device: &mut Filament,
+    frames: usize,
+    events: &[NoteEvent],
+) -> (Vec<f32>, Vec<f32>) {
+    let context = ProcessContext::new(FIXTURE_SAMPLE_RATE, frames, events).unwrap();
+    let (mut left, mut right) = output(frames);
+    device
+        .process(&context, &[], &mut [&mut left, &mut right])
+        .unwrap();
+    (left, right)
+}
+
+// Render one effect block over identical stereo input and return both channels
+fn render_effect(device: &mut Gloam, input: &[f32]) -> (Vec<f32>, Vec<f32>) {
+    let context = ProcessContext::new(FIXTURE_SAMPLE_RATE, input.len(), &[]).unwrap();
+    let (mut left, mut right) = output(input.len());
+    device
+        .process(&context, &[input, input], &mut [&mut left, &mut right])
+        .unwrap();
+    (left, right)
+}
+
+// Recompute the contour increment independently of the device under test
+fn reference_contour_step(time_ms: f32, sample_rate: f64) -> f32 {
+    (1.0 / (f64::from(time_ms) * SECONDS_PER_MILLISECOND * sample_rate).max(1.0)) as f32
+}
+
+// Recompute the equal-tempered note frequency independently of the device under test
+fn reference_note_hz(note: u8) -> f64 {
+    440.0 * 2.0_f64.powf((f64::from(note) - 69.0) / 12.0)
+}
+
+#[test]
+fn filament_is_an_exact_sine_at_the_default_lean() {
+    // lean = 0.5 makes the phase map the identity in exact binary arithmetic, so the device
+    // must agree with a plain sine bit for bit, not within a tolerance
+    let rise_ms = FILAMENT_PARAMETERS[FILAMENT_RISE_MS].minimum();
+    let mut device = Filament::new(
+        FILAMENT_PARAMETERS[FILAMENT_LEAN].default(),
+        rise_ms,
+        FILAMENT_PARAMETERS[FILAMENT_FALL_MS].default(),
+        FILAMENT_PARAMETERS[FILAMENT_LEVEL].maximum(),
+    )
+    .unwrap();
+    let frames = 4_096;
+    let events = [note_on(0, 0, 1, 69, 1.0)];
+    let (left, right) = render_instrument(&mut device, frames, &events);
+
+    let step = reference_contour_step(rise_ms, FIXTURE_SAMPLE_RATE);
+    let increment = reference_note_hz(69) / FIXTURE_SAMPLE_RATE;
+    let mut phase = 0.0_f64;
+    let mut contour = 0.0_f32;
+    for (frame, sample) in left.iter().enumerate() {
+        contour = (contour + step).min(1.0);
+        let expected = (phase * TAU).sin() as f32 * contour;
+        assert_eq!(sample.to_bits(), expected.to_bits(), "frame {frame}");
+        phase = (phase + increment).fract();
+    }
+    assert_eq!(left, right);
+    assert!(left.iter().any(|sample| *sample != 0.0));
+}
+
+#[test]
+fn filament_stays_finite_at_both_lean_endpoints() {
+    // Both endpoints put one branch of the phase map on a zero denominator unless the strict
+    // comparison and the else are written exactly as the contract states
+    let level = FILAMENT_PARAMETERS[FILAMENT_LEVEL].maximum();
+    for lean in [
+        FILAMENT_PARAMETERS[FILAMENT_LEAN].minimum(),
+        FILAMENT_PARAMETERS[FILAMENT_LEAN].maximum(),
+    ] {
+        let mut device = Filament::new(
+            lean,
+            FILAMENT_PARAMETERS[FILAMENT_RISE_MS].minimum(),
+            FILAMENT_PARAMETERS[FILAMENT_FALL_MS].default(),
+            level,
+        )
+        .unwrap();
+        let (left, right) = render_instrument(&mut device, 4_096, &[note_on(0, 0, 1, 69, 1.0)]);
+
+        for sample in left.iter().chain(right.iter()) {
+            assert!(sample.is_finite(), "lean {lean}");
+            assert!(sample.abs() <= level, "lean {lean}");
+        }
+        assert!(left.iter().any(|sample| *sample != 0.0), "lean {lean}");
+    }
+}
+
+#[test]
+fn filament_attacks_from_a_zero_crossing() {
+    // The only nonzero value the phase map can produce at phase 0 is sin(PI), which is f64's
+    // representation error for PI and nothing else; that exact value is the bound
+    let zero_crossing_bound = PI.sin().abs() as f32;
+    for lean in [
+        FILAMENT_PARAMETERS[FILAMENT_LEAN].minimum(),
+        FILAMENT_PARAMETERS[FILAMENT_LEAN].default(),
+        FILAMENT_PARAMETERS[FILAMENT_LEAN].maximum(),
+    ] {
+        let mut device = Filament::new(
+            lean,
+            FILAMENT_PARAMETERS[FILAMENT_RISE_MS].minimum(),
+            FILAMENT_PARAMETERS[FILAMENT_FALL_MS].default(),
+            FILAMENT_PARAMETERS[FILAMENT_LEVEL].maximum(),
+        )
+        .unwrap();
+        let (left, _) = render_instrument(&mut device, 64, &[note_on(0, 0, 1, 69, 1.0)]);
+
+        assert!(left[0].abs() <= zero_crossing_bound, "lean {lean}");
+    }
+}
+
+#[test]
+fn filament_release_reaches_exact_silence() {
+    // The shortest fall the descriptor allows must still land on exact positive zero, not on an
+    // exponential residue that would generate denormals forever
+    let fall_ms = FILAMENT_PARAMETERS[FILAMENT_FALL_MS].minimum();
+    let mut device = Filament::new(
+        FILAMENT_PARAMETERS[FILAMENT_LEAN].default(),
+        FILAMENT_PARAMETERS[FILAMENT_RISE_MS].minimum(),
+        fall_ms,
+        FILAMENT_PARAMETERS[FILAMENT_LEVEL].maximum(),
+    )
+    .unwrap();
+    let release_frame = 64;
+    let ramp_frames =
+        (f64::from(fall_ms) * SECONDS_PER_MILLISECOND * FIXTURE_SAMPLE_RATE).ceil() as usize + 2;
+    let events = [note_on(0, 0, 1, 69, 1.0), note_off(release_frame, 1, 1, 69)];
+    let (left, right) = render_instrument(&mut device, FIXTURE_QUANTUM_FRAMES, &events);
+
+    assert!(left[..release_frame].iter().any(|sample| *sample != 0.0));
+    for (frame, sample) in left.iter().enumerate().skip(release_frame + ramp_frames) {
+        assert_eq!(sample.to_bits(), 0.0_f32.to_bits(), "frame {frame}");
+        assert!(sample.is_sign_positive(), "frame {frame}");
+    }
+    assert_eq!(left, right);
+}
+
+#[test]
+fn filament_release_is_a_ramp_rather_than_a_step() {
+    // A release that zeroed the voice instead of the contour would show as one sample of full
+    // amplitude followed by silence; the ramp is what the shortest-fall rationale buys
+    let mut device = Filament::new(
+        FILAMENT_PARAMETERS[FILAMENT_LEAN].default(),
+        FILAMENT_PARAMETERS[FILAMENT_RISE_MS].minimum(),
+        FILAMENT_PARAMETERS[FILAMENT_FALL_MS].default(),
+        FILAMENT_PARAMETERS[FILAMENT_LEVEL].maximum(),
+    )
+    .unwrap();
+    let release_frame = 64;
+    let events = [note_on(0, 0, 1, 69, 1.0), note_off(release_frame, 1, 1, 69)];
+    let (left, _) = render_instrument(&mut device, FIXTURE_QUANTUM_FRAMES, &events);
+
+    let tail_peak = left[release_frame..]
+        .iter()
+        .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
+    assert!(tail_peak > 0.0);
+    assert!(left[release_frame..].iter().any(|sample| *sample != 0.0));
+}
+
+#[test]
+fn gloam_at_zero_depth_is_a_plain_one_pole() {
+    // At depth 0 the opening is exactly +0, so the per-sample coefficient is the stored f32 with
+    // no arithmetic standing between them; the reference is the same operations in the same order
+    let damp_hz = GLOAM_PARAMETERS[GLOAM_DAMP_HZ].default();
+    let mut device = Gloam::new(
+        damp_hz,
+        GLOAM_PARAMETERS[GLOAM_DEPTH].minimum(),
+        GLOAM_PARAMETERS[GLOAM_TRACK_MS].default(),
+    )
+    .unwrap();
+    let input = vec![1.0_f32; FIXTURE_QUANTUM_FRAMES];
+    let (left, right) = render_effect(&mut device, &input);
+
+    let coefficient = (1.0 - (-TAU * f64::from(damp_hz) / FIXTURE_SAMPLE_RATE).exp()) as f32;
+    let mut expected = 0.0_f32;
+    for frame in 0..FIXTURE_QUANTUM_FRAMES {
+        expected += coefficient * (input[frame] - expected);
+        assert_eq!(left[frame].to_bits(), expected.to_bits(), "frame {frame}");
+    }
+    assert_eq!(left, right);
+}
+
+#[test]
+fn gloam_contains_non_finite_input_without_latching() {
+    // The poison block is entirely non-finite: not one sample in it is finite. That is what makes
+    // the state assertion below provable, because every contained sample drives the recursion
+    // from zero by zero and leaves both state scalars exactly where a fresh device starts
+    let poison: Vec<f32> = (0..FIXTURE_QUANTUM_FRAMES)
+        .map(|frame| match frame % 3 {
+            0 => f32::NAN,
+            1 => f32::INFINITY,
+            _ => f32::NEG_INFINITY,
+        })
+        .collect();
+    assert!(poison.iter().all(|sample| !sample.is_finite()));
+    let clean: Vec<f32> = (0..FIXTURE_QUANTUM_FRAMES)
+        .map(|frame| ((frame as f32) * 0.01).sin())
+        .collect();
+
+    let mut poisoned = default_gloam();
+    let mut fresh = default_gloam();
+    let (poison_left, poison_right) = render_effect(&mut poisoned, &poison);
+    for sample in poison_left.iter().chain(poison_right.iter()) {
+        assert_eq!(sample.to_bits(), 0.0_f32.to_bits());
+    }
+
+    let (recovered_left, _) = render_effect(&mut poisoned, &clean);
+    let (reference_left, _) = render_effect(&mut fresh, &clean);
+    for sample in recovered_left.iter().chain(reference_left.iter()) {
+        assert!(sample.is_finite());
+    }
+    assert_eq!(recovered_left, reference_left);
+}
+
+#[test]
+fn gloam_state_reaches_exact_zero_after_silence() {
+    // DEV-013 bounds the search at 64 quanta; the default coefficient needs about four
+    let mut device = default_gloam();
+    let driven = vec![1.0_f32; FIXTURE_QUANTUM_FRAMES];
+    let silence = vec![0.0_f32; FIXTURE_QUANTUM_FRAMES];
+    render_effect(&mut device, &driven);
+
+    let mut settled = None;
+    for quantum in 0..SILENCE_SETTLE_MAX_QUANTA {
+        let (left, right) = render_effect(&mut device, &silence);
+        if left
+            .iter()
+            .chain(right.iter())
+            .all(|sample| sample.to_bits() == 0.0_f32.to_bits())
+        {
+            settled = Some(quantum);
+            break;
+        }
+    }
+    assert!(settled.is_some(), "state never reached exact zero");
+}
+
+#[test]
+fn gloam_never_exceeds_its_input_peak() {
+    // A one-pole whose coefficient stays inside [0, 1] is a convex combination of past inputs,
+    // so it cannot ring, cannot self-oscillate, and cannot raise the peak
+    let square: Vec<f32> = (0..FIXTURE_QUANTUM_FRAMES)
+        .map(|frame| if frame % 32 < 16 { 1.0 } else { -1.0 })
+        .collect();
+    let sine: Vec<f32> = (0..FIXTURE_QUANTUM_FRAMES)
+        .map(|frame| ((frame as f64) * TAU / 64.0).sin() as f32)
+        .collect();
+    let impulse: Vec<f32> = (0..FIXTURE_QUANTUM_FRAMES)
+        .map(|frame| if frame == 0 { 1.0 } else { 0.0 })
+        .collect();
+
+    for input in [&square, &sine, &impulse] {
+        let input_peak = input.iter().fold(0.0_f32, |peak, s| peak.max(s.abs()));
+        for depth in [
+            GLOAM_PARAMETERS[GLOAM_DEPTH].minimum(),
+            GLOAM_PARAMETERS[GLOAM_DEPTH].default(),
+            GLOAM_PARAMETERS[GLOAM_DEPTH].maximum(),
+        ] {
+            for damp_hz in [
+                GLOAM_PARAMETERS[GLOAM_DAMP_HZ].minimum(),
+                GLOAM_PARAMETERS[GLOAM_DAMP_HZ].maximum(),
+            ] {
+                let mut device =
+                    Gloam::new(damp_hz, depth, GLOAM_PARAMETERS[GLOAM_TRACK_MS].default()).unwrap();
+                let (left, right) = render_effect(&mut device, input);
+                let peak = left
+                    .iter()
+                    .chain(right.iter())
+                    .fold(0.0_f32, |peak, s| peak.max(s.abs()));
+                assert!(
+                    peak <= input_peak,
+                    "depth {depth} damp {damp_hz}: {peak} > {input_peak}"
+                );
+                assert!(left.iter().all(|sample| sample.is_finite()));
+            }
+        }
+    }
+}
+
+// Enumerate the values one descriptor must refuse: just outside each bound, and both non-finites
+fn out_of_range(parameter: spectre_dsp::DspParameter) -> [f32; 5] {
+    [
+        next_down(parameter.minimum()),
+        next_up(parameter.maximum()),
+        f32::NAN,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+    ]
+}
+
+#[test]
+fn new_devices_reject_out_of_range_construction() {
+    let filament_defaults = [
+        FILAMENT_PARAMETERS[FILAMENT_LEAN].default(),
+        FILAMENT_PARAMETERS[FILAMENT_RISE_MS].default(),
+        FILAMENT_PARAMETERS[FILAMENT_FALL_MS].default(),
+        FILAMENT_PARAMETERS[FILAMENT_LEVEL].default(),
+    ];
+    assert!(Filament::new(
+        filament_defaults[0],
+        filament_defaults[1],
+        filament_defaults[2],
+        filament_defaults[3]
+    )
+    .is_ok());
+    for slot in 0..FILAMENT_PARAMETERS.len() {
+        for bad in out_of_range(FILAMENT_PARAMETERS[slot]) {
+            let mut values = filament_defaults;
+            values[slot] = bad;
+            assert!(
+                Filament::new(values[0], values[1], values[2], values[3]).is_err(),
+                "{} accepted {bad}",
+                FILAMENT_PARAMETERS[slot].key.as_str()
+            );
+        }
+    }
+
+    let gloam_defaults = [
+        GLOAM_PARAMETERS[GLOAM_DAMP_HZ].default(),
+        GLOAM_PARAMETERS[GLOAM_DEPTH].default(),
+        GLOAM_PARAMETERS[GLOAM_TRACK_MS].default(),
+    ];
+    assert!(Gloam::new(gloam_defaults[0], gloam_defaults[1], gloam_defaults[2]).is_ok());
+    for slot in 0..GLOAM_PARAMETERS.len() {
+        for bad in out_of_range(GLOAM_PARAMETERS[slot]) {
+            let mut values = gloam_defaults;
+            values[slot] = bad;
+            assert!(
+                Gloam::new(values[0], values[1], values[2]).is_err(),
+                "{} accepted {bad}",
+                GLOAM_PARAMETERS[slot].key.as_str()
+            );
+        }
+    }
+}
+
+#[test]
+fn new_device_setters_clamp_and_refuse_unknown_keys() {
+    let lean = FILAMENT_PARAMETERS[FILAMENT_LEAN];
+    let mut filament = default_filament();
+    assert_eq!(filament.set_parameter(lean.key, lean.minimum()), Ok(()));
+    assert_eq!(filament.parameter_value(lean.key), Some(lean.minimum()));
+    assert_eq!(
+        filament.set_parameter(lean.key, next_up(lean.maximum())),
+        Ok(())
+    );
+    assert_eq!(filament.parameter_value(lean.key), Some(lean.maximum()));
+    assert_eq!(filament.set_parameter(lean.key, f32::NAN), Ok(()));
+    assert_eq!(filament.parameter_value(lean.key), Some(lean.default()));
+
+    let foreign = GLOAM_PARAMETERS[GLOAM_DAMP_HZ].key;
+    assert_eq!(
+        filament.set_parameter(foreign, 1_000.0),
+        Err(ParameterError::UnknownKey(foreign))
+    );
+    assert_eq!(filament.parameter_value(foreign), None);
+    for parameter in FILAMENT_PARAMETERS {
+        assert!(filament.parameter_value(parameter.key).is_some());
+    }
+
+    let depth = GLOAM_PARAMETERS[GLOAM_DEPTH];
+    let mut gloam = default_gloam();
+    assert_eq!(gloam.set_parameter(depth.key, depth.maximum()), Ok(()));
+    assert_eq!(gloam.parameter_value(depth.key), Some(depth.maximum()));
+    assert_eq!(
+        gloam.set_parameter(depth.key, next_down(depth.minimum())),
+        Ok(())
+    );
+    assert_eq!(gloam.parameter_value(depth.key), Some(depth.minimum()));
+    assert_eq!(gloam.set_parameter(depth.key, f32::INFINITY), Ok(()));
+    assert_eq!(gloam.parameter_value(depth.key), Some(depth.default()));
+
+    let foreign = FILAMENT_PARAMETERS[FILAMENT_LEAN].key;
+    assert_eq!(
+        gloam.set_parameter(foreign, 0.25),
+        Err(ParameterError::UnknownKey(foreign))
+    );
+    assert_eq!(gloam.parameter_value(foreign), None);
+    for parameter in GLOAM_PARAMETERS {
+        assert!(gloam.parameter_value(parameter.key).is_some());
+    }
+}
+
+#[test]
+fn new_device_setters_reach_the_rendered_signal() {
+    // A setter that clamped correctly but never reached the DSP would be a fake surface
+    let level = FILAMENT_PARAMETERS[FILAMENT_LEVEL];
+    let mut device = default_filament();
+    let events = [note_on(0, 0, 1, 69, 1.0)];
+    let (loud, _) = render_instrument(&mut device, FIXTURE_QUANTUM_FRAMES, &events);
+    let loud_peak = loud.iter().fold(0.0_f32, |peak, s| peak.max(s.abs()));
+
+    let mut device = default_filament();
+    device.set_parameter(level.key, level.minimum()).unwrap();
+    let (quiet, _) = render_instrument(&mut device, FIXTURE_QUANTUM_FRAMES, &events);
+
+    assert!(loud_peak > 0.0);
+    assert!(quiet.iter().all(|sample| *sample == 0.0));
+}
+
+#[test]
+fn filament_contour_minimum_is_at_least_eight_sample_periods() {
+    // Pins the descriptor, not the DSP: it fails if someone lowers the minimum and silently
+    // breaks the no-step guarantee. MIN_ENGINE_SAMPLE_RATE_HZ mirrors spectre_audio's
+    // MIN_SAMPLE_RATE, which spectre-dsp does not depend on and therefore cannot import
+    const MIN_ENGINE_SAMPLE_RATE_HZ: f32 = 8_000.0;
+    const MIN_CONTOUR_SAMPLE_PERIODS: f32 = 8.0;
+
+    for slot in [FILAMENT_RISE_MS, FILAMENT_FALL_MS] {
+        let minimum = FILAMENT_PARAMETERS[slot].minimum();
+        assert!(minimum >= 1.0);
+        assert!(
+            minimum * 0.001 * MIN_ENGINE_SAMPLE_RATE_HZ >= MIN_CONTOUR_SAMPLE_PERIODS,
+            "{}",
+            FILAMENT_PARAMETERS[slot].key.as_str()
+        );
+    }
+    let track_minimum = GLOAM_PARAMETERS[GLOAM_TRACK_MS].minimum();
+    assert!(track_minimum * 0.001 * MIN_ENGINE_SAMPLE_RATE_HZ >= MIN_CONTOUR_SAMPLE_PERIODS);
+}
+
+// Render Filament into Gloam over one quantum and return the effect's left channel
+fn render_voice_chain(
+    instrument: &mut Filament,
+    effect: &mut Gloam,
+    frames: usize,
+    events: &[NoteEvent],
+) -> Vec<f32> {
+    let (voice_left, voice_right) = render_instrument(instrument, frames, events);
+    let context = ProcessContext::new(FIXTURE_SAMPLE_RATE, frames, &[]).unwrap();
+    let (mut left, mut right) = output(frames);
+    effect
+        .process(
+            &context,
+            &[&voice_left, &voice_right],
+            &mut [&mut left, &mut right],
+        )
+        .unwrap();
+    left
+}
+
+#[test]
+fn voice_chain_renders_deterministically_and_returns_to_exact_silence() {
+    // The slice's success signal, as far as spectre-dsp can prove it on its own: identical
+    // inputs render identically, the chain is audible, and it settles to bit-exact positive zero
+    let events = [note_on(0, 0, 1, 69, 1.0), note_off(64, 1, 1, 69)];
+    let mut first = (default_filament(), default_gloam());
+    let mut second = (default_filament(), default_gloam());
+    let left_a = render_voice_chain(&mut first.0, &mut first.1, FIXTURE_QUANTUM_FRAMES, &events);
+    let left_b = render_voice_chain(
+        &mut second.0,
+        &mut second.1,
+        FIXTURE_QUANTUM_FRAMES,
+        &events,
+    );
+
+    assert_eq!(left_a, left_b);
+    assert!(left_a.iter().all(|sample| sample.is_finite()));
+    assert!(left_a.iter().any(|sample| *sample != 0.0));
+
+    let mut settled = None;
+    for quantum in 0..SILENCE_SETTLE_MAX_QUANTA {
+        let tail = render_voice_chain(&mut first.0, &mut first.1, FIXTURE_QUANTUM_FRAMES, &[]);
+        if tail
+            .iter()
+            .all(|sample| sample.to_bits() == 0.0_f32.to_bits())
+        {
+            settled = Some(quantum);
+            break;
+        }
+    }
+    assert!(settled.is_some(), "chain never reached exact silence");
+}
+
+#[test]
+fn voice_chain_output_stays_inside_unity() {
+    // Filament is bounded by level and Gloam cannot raise a peak, so the pair is bounded by 1
+    let level = FILAMENT_PARAMETERS[FILAMENT_LEVEL].maximum();
+    let mut instrument = Filament::new(
+        FILAMENT_PARAMETERS[FILAMENT_LEAN].minimum(),
+        FILAMENT_PARAMETERS[FILAMENT_RISE_MS].minimum(),
+        FILAMENT_PARAMETERS[FILAMENT_FALL_MS].minimum(),
+        level,
+    )
+    .unwrap();
+    let mut effect = Gloam::new(
+        GLOAM_PARAMETERS[GLOAM_DAMP_HZ].maximum(),
+        GLOAM_PARAMETERS[GLOAM_DEPTH].maximum(),
+        GLOAM_PARAMETERS[GLOAM_TRACK_MS].minimum(),
+    )
+    .unwrap();
+    let left = render_voice_chain(
+        &mut instrument,
+        &mut effect,
+        FIXTURE_QUANTUM_FRAMES,
+        &[note_on(0, 0, 1, 127, 1.0)],
+    );
+
+    for sample in left {
+        assert!(sample.is_finite());
+        assert!(sample.abs() <= level);
+    }
 }

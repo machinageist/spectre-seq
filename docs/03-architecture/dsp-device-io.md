@@ -104,6 +104,13 @@ The first original vertical slice contains:
 3. `Gain`: stereo linear gain with click-resistant smoothing.
 4. `Saturator`: stereo soft saturation with drive and wet/dry mix.
 
+The alpha's own voice, added at R4 slice 6 under decision 15's deliberately-small scope:
+
+5. `Filament`: monophonic phase-warped voice behind a linear amplitude contour, with lean, rise, fall, and level controls.
+6. `Gloam`: stereo one-pole damping whose corner opens with the signal's own level, with damp, depth, and track controls.
+
+Both are original clean-room DSP. Their numeric bounds are DEV-001..DEV-013 in the requirements ledger, each with its own rationale and none derived from a reference product.
+
 These devices prove the contract. They do not define the eventual flagship instrument or effect catalog.
 
 ## Acceptance checklist
