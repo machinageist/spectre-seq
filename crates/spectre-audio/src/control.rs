@@ -7,6 +7,7 @@
 //   defect, surfaced off-thread, not silent loss. Retired render state travels back to the app
 //   thread on a reclaim lane so the audio thread never runs a destructor.
 
+use crate::clip::{ClipSchedule, SCHEDULE_LANE_CAPACITY};
 use crate::spsc::{bounded, Consumer, Producer};
 use spectre_core::{ObjectId, TransportCommand};
 use spectre_dsp::NoteEvent;
@@ -51,6 +52,10 @@ pub enum ControlError {
     // Strict-FIFO lane overflowed; this is a defect, not a normal outcome
     NoteLaneFull,
     TransportLaneFull,
+    // Baked-schedule lane overflowed. Reaching it means the render thread is stopped or the app
+    // thread has a defect: at 48 kHz / 256 frames the render thread drains at most 187.5 per
+    // second, so four unconsumed publishes is not a fast editor
+    ScheduleLaneFull,
 }
 
 impl std::fmt::Display for ControlError {
@@ -78,6 +83,7 @@ impl std::fmt::Display for ControlError {
             ),
             Self::NoteLaneFull => write!(f, "note lane overflowed"),
             Self::TransportLaneFull => write!(f, "transport lane overflowed"),
+            Self::ScheduleLaneFull => write!(f, "schedule lane overflowed"),
         }
     }
 }
@@ -171,6 +177,7 @@ pub struct ControlTelemetry {
     note_overflows: AtomicU64,
     transport_overflows: AtomicU64,
     reclaim_overflows: AtomicU64,
+    schedule_overflows: AtomicU64,
 }
 
 impl ControlTelemetry {
@@ -188,6 +195,11 @@ impl ControlTelemetry {
     pub fn reclaim_overflows(&self) -> u64 {
         self.reclaim_overflows.load(Ordering::Relaxed)
     }
+
+    // Count baked schedules the render thread had not consumed when the app thread published
+    pub fn schedule_overflows(&self) -> u64 {
+        self.schedule_overflows.load(Ordering::Relaxed)
+    }
 }
 
 // App-thread sending half of the whole control transport
@@ -197,6 +209,9 @@ pub struct ControlSender {
     transport: Producer<TransportCommand>,
     // Retired render state arrives here and is dropped on the app thread
     reclaim: Consumer<RetiredState>,
+    // Baked schedules travel to the render thread here. Strict FIFO with counted overflow, the
+    // same policy decision 21 gives notes and transport
+    schedules: Producer<Box<ClipSchedule>>,
     telemetry: Arc<ControlTelemetry>,
 }
 
@@ -206,6 +221,7 @@ pub struct ControlReceiver {
     notes: Consumer<NoteEvent>,
     transport: Consumer<TransportCommand>,
     reclaim: Producer<RetiredState>,
+    schedules: Consumer<Box<ClipSchedule>>,
     telemetry: Arc<ControlTelemetry>,
 }
 
@@ -239,6 +255,9 @@ pub fn control_channel(
     let (note_tx, note_rx) = bounded::<NoteEvent>(note_capacity);
     let (transport_tx, transport_rx) = bounded::<TransportCommand>(transport_capacity);
     let (reclaim_tx, reclaim_rx) = bounded::<RetiredState>(DEFAULT_RECLAIM_CAPACITY);
+    // Passed through unchanged: at 3 the request and the delivered capacity() are equal, so the
+    // lane admits exactly SCHEDULE_LANE_CAPACITY schedules and refuses the next
+    let (schedule_tx, schedule_rx) = bounded::<Box<ClipSchedule>>(SCHEDULE_LANE_CAPACITY);
 
     let sender = ControlSender {
         parameters: ParameterWriter {
@@ -247,6 +266,7 @@ pub fn control_channel(
         notes: note_tx,
         transport: transport_tx,
         reclaim: reclaim_rx,
+        schedules: schedule_tx,
         telemetry: Arc::clone(&telemetry),
     };
     let receiver = ControlReceiver {
@@ -257,6 +277,7 @@ pub fn control_channel(
         notes: note_rx,
         transport: transport_rx,
         reclaim: reclaim_tx,
+        schedules: schedule_rx,
         telemetry,
     };
     Ok((sender, receiver))
@@ -294,6 +315,29 @@ impl ControlSender {
         }
     }
 
+    // Publish a baked schedule. Overflow is a counted app-thread defect and the schedule comes
+    // back to the caller rather than being dropped, so nothing is lost silently
+    pub fn send_schedule(
+        &mut self,
+        schedule: Box<ClipSchedule>,
+    ) -> Result<(), (ControlError, Box<ClipSchedule>)> {
+        match self.schedules.push(schedule) {
+            Ok(()) => Ok(()),
+            Err(rejected) => {
+                self.telemetry
+                    .schedule_overflows
+                    .fetch_add(1, Ordering::Relaxed);
+                Err((ControlError::ScheduleLaneFull, rejected))
+            }
+        }
+    }
+
+    // Report the depth the schedule lane actually delivers, so a test can pin the constant
+    // against the primitive rather than against arithmetic
+    pub fn schedule_lane_capacity(&self) -> usize {
+        self.schedules.capacity()
+    }
+
     // Drop retired render state on the app thread, returning how many were reclaimed
     pub fn reclaim(&mut self) -> usize {
         let mut count = 0;
@@ -329,6 +373,11 @@ impl ControlReceiver {
     // Take the next queued transport command
     pub fn next_transport(&mut self) -> Option<TransportCommand> {
         self.transport.pop()
+    }
+
+    // Take the next queued schedule, or None. Callback-safe: a pop, no allocation
+    pub fn next_schedule(&mut self) -> Option<Box<ClipSchedule>> {
+        self.schedules.pop()
     }
 
     // Hand retired state to the app thread instead of dropping it here.

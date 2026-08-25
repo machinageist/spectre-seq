@@ -6,6 +6,7 @@
 //   is callback-reachable and inherits RT-001. No CompiledPlan execution lives here yet.
 
 pub mod bridge;
+pub mod clip;
 pub mod control;
 pub mod midi;
 pub mod null;

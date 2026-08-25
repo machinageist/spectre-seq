@@ -142,7 +142,7 @@ impl Track {
 }
 
 // Ordered track collection plus the master bus level
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackList {
     tracks: Vec<Track>,
     master_level: f32,
@@ -152,6 +152,14 @@ pub struct TrackList {
     // not inherit a stale revision and R4-7 persists nothing about it
     #[serde(skip)]
     structure_revision: u64,
+}
+
+// Equality is over document content only, for the reason TrackClips states: structure_revision
+// is #[serde(skip)], so including it would make a reloaded list compare unequal to its original
+impl PartialEq for TrackList {
+    fn eq(&self, other: &Self) -> bool {
+        self.tracks == other.tracks && self.master_level == other.master_level
+    }
 }
 
 impl Default for TrackList {

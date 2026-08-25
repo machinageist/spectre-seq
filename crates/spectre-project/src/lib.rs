@@ -7,10 +7,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use spectre_core::{MeterMap, ObjectId, TempoMap, Transport};
 
+pub mod clip;
 pub mod command;
 pub mod routing;
 pub mod track;
 
+pub use clip::{
+    ClipError, ClipNote, ClipPlacement, MidiClip, TrackClips, MAX_CLIPS_PER_TRACK,
+    MAX_CLIP_LENGTH_TICKS, MAX_NOTES_PER_CLIP,
+};
 pub use routing::{build_track_graph, track_device_factory, RoutingError, TrackPathNodes};
 pub use track::{Track, TrackError, TrackInstrument, TrackList, MAX_TRACKS};
 

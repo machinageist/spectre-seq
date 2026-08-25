@@ -7,9 +7,10 @@
 //   panics. Note scratch is preallocated and pushes stay inside its capacity, so notes that do
 //   not fit stay queued for the next block rather than being dropped.
 
+use crate::clip::{contract_order, ClipBlockOutcome, ClipPlayer, CLIP_SEQUENCE_BAND};
 use crate::control::ControlReceiver;
 use crate::RenderBlock;
-use spectre_core::{ObjectId, Transport};
+use spectre_core::{ObjectId, SampleDuration, SampleTime, Transport};
 use spectre_dsp::NoteEvent;
 use spectre_graph::{CompiledPlan, NodeId, PlanNoteInput};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -37,6 +38,11 @@ pub struct BridgeTelemetry {
     // Headroom as f32 bits: 1.0 means the block cost nothing, 0.0 means it consumed its budget
     last_headroom_bits: AtomicU32,
     worst_headroom_bits: AtomicU32,
+    // R4-5 clip playback
+    clip_events_refused: AtomicU64,
+    loop_segments_refused: AtomicU64,
+    schedules_installed: AtomicU64,
+    schedules_held: AtomicU64,
 }
 
 impl Default for BridgeTelemetry {
@@ -56,6 +62,10 @@ impl Default for BridgeTelemetry {
             xruns: AtomicU64::new(0),
             last_headroom_bits: AtomicU32::new(f32::INFINITY.to_bits()),
             worst_headroom_bits: AtomicU32::new(f32::INFINITY.to_bits()),
+            clip_events_refused: AtomicU64::new(0),
+            loop_segments_refused: AtomicU64::new(0),
+            schedules_installed: AtomicU64::new(0),
+            schedules_held: AtomicU64::new(0),
         }
     }
 }
@@ -121,6 +131,26 @@ impl BridgeTelemetry {
     pub fn worst_headroom(&self) -> f32 {
         f32::from_bits(self.worst_headroom_bits.load(Ordering::Relaxed))
     }
+
+    // Count blocks whose clip events would have exceeded CLIP_EVENT_RESERVE
+    pub fn clip_events_refused(&self) -> u64 {
+        self.clip_events_refused.load(Ordering::Relaxed)
+    }
+
+    // Count blocks that spanned more than MAX_BLOCK_SEGMENTS
+    pub fn loop_segments_refused(&self) -> u64 {
+        self.loop_segments_refused.load(Ordering::Relaxed)
+    }
+
+    // Count schedules the render thread installed
+    pub fn schedules_installed(&self) -> u64 {
+        self.schedules_installed.load(Ordering::Relaxed)
+    }
+
+    // Count retired schedules the reclaim lane refused, which the render thread must keep holding
+    pub fn schedules_held(&self) -> u64 {
+        self.schedules_held.load(Ordering::Relaxed)
+    }
 }
 
 // Owns the compiled plan and drives it from the audio callback
@@ -137,6 +167,13 @@ pub struct RenderBridge {
     // Built on the app thread before the stream opens; immutable for the bridge's life, so no
     // retired route table is ever handed to the reclaim lane
     routes: crate::route::ParameterRoutes,
+    // Clip playback for the single note node. None means this bridge behaves exactly as it did
+    // before R4-5, which is what keeps every existing caller of `new` correct
+    player: Option<ClipPlayer>,
+    // A retired schedule the reclaim lane refused. Held rather than dropped: running its
+    // destructor here would deallocate on the audio thread and violate RT-001. Typed as the
+    // lane's own opaque box, because the render thread never needs to look inside it again
+    held: Option<crate::control::RetiredState>,
 }
 
 impl RenderBridge {
@@ -177,7 +214,16 @@ impl RenderBridge {
             transport: Transport::default(),
             telemetry: Arc::new(BridgeTelemetry::default()),
             routes,
+            player: None,
+            held: None,
         }
+    }
+
+    // Attach clip playback to the bridge's single note node. Consuming rather than mutating, so a
+    // bridge without a player cannot acquire one after the stream has started
+    pub fn with_clip_player(mut self, player: ClipPlayer) -> Self {
+        self.player = Some(player);
+        self
     }
 
     // Share the telemetry handle with the app thread
@@ -204,8 +250,35 @@ impl RenderBridge {
             return;
         }
 
+        // Step 3: install a pending schedule before the transport moves, so the block that
+        // installs it is also the block that releases what the outgoing one left sounding
+        self.install_pending_schedule();
+        // Step 4: the position before commands are applied, so a Seek is detectable as a
+        // discontinuity rather than inferred after the fact
+        let position_before = self.transport.position;
         self.apply_transport();
+
+        // Steps 6 and 7: clip events first, into the cleared scratch
+        self.notes.clear();
+        self.emit_clip_block(position_before, frames);
+        // Step 8: lane events append to what the player wrote; clearing here would discard it
         self.collect_notes();
+        // Steps 9 and 10 apply only when a player is attached, so a bridge without one behaves
+        // exactly as it did before this slice. That is not a convenience: R4-1's accepted
+        // evidence pins that a Play and a Stop landing in one block are refused into counted
+        // silence, and that refusal comes from the lane's own order. Sorting them would put the
+        // all-notes-off before the note-on by rank and leave the note sounding after Stop — a
+        // stuck note where there was a clean refusal. The merge rule exists for a second
+        // producer, and with no second producer there is nothing to merge
+        if self.player.is_some() {
+            // Step 9: one array, sorted once, by the same tuple ProcessContext::new validates.
+            // sort_unstable_by does not allocate, and the key is a total order because `sequence`
+            // is unique within the block, so an unstable sort is still deterministic
+            self.notes.sort_unstable_by(contract_order);
+            // Step 10: the playhead moves before the plan runs, so a plan error costs that
+            // block's material with the playhead already past it — a gap, not a re-emitted stutter
+            self.transport.advance(SampleDuration::new(frames as u64));
+        }
 
         // Parameter application runs once per block, before `process`, so the whole block sees
         // one coherent parameter set. Borrows are split by field before the call, so the closure
@@ -300,9 +373,67 @@ impl RenderBridge {
         }
     }
 
-    // Move queued notes into the block scratch, leaving any excess queued
+    // Take one queued schedule, if any, and hand the retired one to the reclaim lane.
+    // Callback-safe: a pop, a pointer swap, and a push. Nothing is dropped here
+    fn install_pending_schedule(&mut self) {
+        let Some(player) = self.player.as_mut() else {
+            return;
+        };
+        // A schedule held from a previous block goes first: the reclaim lane may have room now,
+        // and holding two would need a second slot this bridge does not have
+        if let Some(held) = self.held.take() {
+            if let Err(returned) = self.control.retire(held) {
+                self.held = Some(returned);
+                return;
+            }
+        }
+        let Some(next) = self.control.next_schedule() else {
+            return;
+        };
+        let retired = player.install(next);
+        self.telemetry
+            .schedules_installed
+            .fetch_add(1, Ordering::Relaxed);
+        if let Err(returned) = self.control.retire(retired) {
+            self.telemetry
+                .schedules_held
+                .fetch_add(1, Ordering::Relaxed);
+            self.held = Some(returned);
+        }
+    }
+
+    // Emit this block's clip events into the scratch, releasing everything first when the
+    // playhead moved discontinuously
+    fn emit_clip_block(&mut self, position_before: SampleTime, frames: usize) {
+        let Some(player) = self.player.as_mut() else {
+            return;
+        };
+        // Step 6: a Seek moves the position without the block having advanced it, so anything
+        // sounding belongs to material the playhead has left
+        if self.transport.position != position_before {
+            player.release_all();
+        }
+        let outcome =
+            player.emit_block(&self.transport, frames, &mut self.notes, CLIP_SEQUENCE_BAND);
+        match outcome {
+            ClipBlockOutcome::Complete => {}
+            ClipBlockOutcome::EventReserveExceeded => {
+                self.telemetry
+                    .clip_events_refused
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            ClipBlockOutcome::SegmentLimitExceeded => {
+                self.telemetry
+                    .loop_segments_refused
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    // Move queued notes into the block scratch, leaving any excess queued.
+    // Appends rather than clears: the clip player has already written this block's events, and
+    // clearing here would discard every one of them
     fn collect_notes(&mut self) {
-        self.notes.clear();
         while self.notes.len() < self.notes.capacity() {
             match self.control.next_note() {
                 Some(event) => self.notes.push(event),
