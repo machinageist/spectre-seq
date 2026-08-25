@@ -7,8 +7,9 @@
 
 use spectre_core::IdGen;
 use spectre_dsp::{
-    AudioProcessor, DeviceClass, DeviceIo, Gain, NoteEvent, ProcessContext, ProcessError,
-    PulseInstrument, SumBus, Waveform,
+    AudioProcessor, DeviceClass, DeviceIo, Filament, Gain, Gloam, NoteEvent, NoteEventKind,
+    ProcessContext, ProcessError, PulseInstrument, SumBus, Waveform, FILAMENT_PARAMETERS,
+    GLOAM_PARAMETERS,
 };
 use spectre_graph::{Connection, EditableGraph, NodeId, PlanNoteInput};
 
@@ -470,4 +471,90 @@ fn a_contaminated_track_is_silenced_before_it_reaches_the_sum() {
         }
     }
     assert_eq!(plan.containment().contaminated_nodes, 1);
+}
+
+// R4-6 — the alpha's own devices must not trip containment while sounding.
+// Several quanta rather than one: Gloam is recursive, so a value that only goes non-finite after
+// its state has accumulated would survive a single-block test
+#[test]
+fn filament_and_gloam_report_no_containment_activity() {
+    const QUANTA: usize = 8;
+
+    let mut ids = IdGen::new(0x0000_5254_3030_3306);
+    let filament = NodeId::new(ids.next_id());
+    let gloam = NodeId::new(ids.next_id());
+
+    let lean = FILAMENT_PARAMETERS[0].default();
+    let rise_ms = FILAMENT_PARAMETERS[1].default();
+    let fall_ms = FILAMENT_PARAMETERS[2].default();
+    let level = FILAMENT_PARAMETERS[3].default();
+    let damp_hz = GLOAM_PARAMETERS[0].default();
+    let depth = GLOAM_PARAMETERS[1].default();
+    let track_ms = GLOAM_PARAMETERS[2].default();
+
+    let mut graph = EditableGraph::new();
+    graph
+        .add_node(
+            filament,
+            Filament::new(lean, rise_ms, fall_ms, level).unwrap().io(),
+        )
+        .unwrap();
+    graph
+        .add_node(gloam, Gloam::new(damp_hz, depth, track_ms).unwrap().io())
+        .unwrap();
+    graph
+        .connect(Connection {
+            from: filament,
+            from_bus: 0,
+            to: gloam,
+            to_bus: 0,
+        })
+        .unwrap();
+    let mut plan = graph
+        .compile(gloam, FRAMES, &mut |node| {
+            if node == filament {
+                Ok(Box::new(Filament::new(lean, rise_ms, fall_ms, level)?)
+                    as Box<dyn AudioProcessor>)
+            } else {
+                Ok(Box::new(Gloam::new(damp_hz, depth, track_ms)?))
+            }
+        })
+        .unwrap();
+
+    let held = [NoteEvent {
+        frame_offset: 0,
+        sequence: 0,
+        kind: NoteEventKind::On {
+            id: 1,
+            channel: 0,
+            note: 45,
+            velocity: 0.8,
+        },
+    }];
+    let empty: [NoteEvent; 0] = [];
+    let mut peak = 0.0_f32;
+    for quantum in 0..QUANTA {
+        let events: &[NoteEvent] = if quantum == 0 { &held } else { &empty };
+        plan.process(
+            SAMPLE_RATE,
+            FRAMES,
+            &[PlanNoteInput {
+                node: filament,
+                events,
+            }],
+        )
+        .unwrap();
+        let output = plan.last_output().unwrap();
+        for sample in output[0].iter().chain(output[1].iter()) {
+            peak = peak.max(sample.abs());
+        }
+    }
+
+    assert_eq!(plan.containment().contaminated_nodes, 0);
+    assert!(plan.containment().last_contaminated.is_none());
+    // Without this, two silent buffers would satisfy every assertion above
+    assert!(
+        peak > 0.0,
+        "the voice chain must sound for the guard to mean anything"
+    );
 }

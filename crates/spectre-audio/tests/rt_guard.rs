@@ -17,7 +17,8 @@ use spectre_audio::null::{NullBackend, NULL_DEVICE_KEY};
 use spectre_audio::{AudioStream, DeviceId, RenderBlock, StreamConfig};
 use spectre_core::{IdGen, TransportCommand};
 use spectre_dsp::{
-    AudioProcessor, Gain, NoteEvent, NoteEventKind, PulseInstrument, Saturator, Waveform,
+    AudioProcessor, Filament, Gain, Gloam, NoteEvent, NoteEventKind, PulseInstrument, Saturator,
+    Waveform, FILAMENT_PARAMETERS, GLOAM_PARAMETERS,
 };
 use spectre_graph::{CompiledPlan, Connection, EditableGraph, NodeId};
 
@@ -282,6 +283,86 @@ fn plan_process_is_rt_clean_through_the_null_stream() {
         assert_eq!(
             violations, 0,
             "stream pump violated RT-001 on block {block}"
+        );
+    }
+}
+
+// Build the R4-6 voice chain at both devices' descriptor defaults
+fn voice_chain(frames: usize) -> (CompiledPlan, NodeId) {
+    let mut ids = IdGen::new(0x0000_5254_564f_4943);
+    let filament = NodeId::new(ids.next_id());
+    let gloam = NodeId::new(ids.next_id());
+
+    let lean = FILAMENT_PARAMETERS[0].default();
+    let rise_ms = FILAMENT_PARAMETERS[1].default();
+    let fall_ms = FILAMENT_PARAMETERS[2].default();
+    let level = FILAMENT_PARAMETERS[3].default();
+    let damp_hz = GLOAM_PARAMETERS[0].default();
+    let depth = GLOAM_PARAMETERS[1].default();
+    let track_ms = GLOAM_PARAMETERS[2].default();
+
+    let mut graph = EditableGraph::new();
+    graph
+        .add_node(
+            filament,
+            Filament::new(lean, rise_ms, fall_ms, level).unwrap().io(),
+        )
+        .unwrap();
+    graph
+        .add_node(gloam, Gloam::new(damp_hz, depth, track_ms).unwrap().io())
+        .unwrap();
+    graph
+        .connect(Connection {
+            from: filament,
+            from_bus: 0,
+            to: gloam,
+            to_bus: 0,
+        })
+        .unwrap();
+    let plan = graph
+        .compile(gloam, frames, &mut |node| {
+            if node == filament {
+                Ok(Box::new(Filament::new(lean, rise_ms, fall_ms, level)?)
+                    as Box<dyn AudioProcessor>)
+            } else {
+                Ok(Box::new(Gloam::new(damp_hz, depth, track_ms)?))
+            }
+        })
+        .unwrap();
+    (plan, filament)
+}
+
+// R4-6's RT-001 evidence: the two new devices driven by the real callback path, not called
+// directly. The positive control above is what makes a zero here a result rather than a
+// broken probe reporting success
+#[test]
+fn voice_chain_process_is_rt_clean_through_the_null_stream() {
+    let backend = NullBackend::new();
+    let config = StreamConfig::stereo(48_000, FRAMES).unwrap();
+    let (plan, note_node) = voice_chain(FRAMES);
+    let (mut sender, receiver) = control_channel(&[], 256, 32).unwrap();
+    let mut bridge = RenderBridge::new(plan, receiver, note_node, SAMPLE_RATE, 64);
+
+    let callback: spectre_audio::RenderCallback = Box::new(move |mut block: RenderBlock| {
+        bridge.render(&mut block);
+    });
+    let mut stream = backend
+        .open_null_output(&DeviceId::new(NULL_DEVICE_KEY), config, callback)
+        .unwrap();
+    stream.start().unwrap();
+
+    // One unguarded block first: the first callback may still be settling lazily initialized
+    // state that belongs to the harness rather than to either device
+    feed(&mut sender, 0);
+    stream.pump().unwrap();
+
+    for block in 1..8 {
+        feed(&mut sender, block * 8);
+        let (result, violations) = rt_section(|| stream.pump());
+        result.unwrap();
+        assert_eq!(
+            violations, 0,
+            "the voice chain violated RT-001 on block {block}"
         );
     }
 }

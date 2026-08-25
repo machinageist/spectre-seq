@@ -8,7 +8,10 @@ use spectre_app::{
     OPEN_IN_SHAPE_ACTION_LABEL, SHAPE_EMPTY_MESSAGE,
 };
 use spectre_core::ObjectId;
-use spectre_dsp::{DeviceParameterKey, GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS};
+use spectre_dsp::{
+    DeviceParameterKey, FILAMENT_PARAMETERS, GAIN_PARAMETERS, GLOAM_PARAMETERS, PULSE_PARAMETERS,
+    SATURATOR_PARAMETERS,
+};
 use std::collections::HashSet;
 
 #[test]
@@ -78,7 +81,7 @@ fn build_presentation_has_one_correct_action_per_existing_device() {
     let presentation = model.build_presentation();
     let cards: Vec<_> = presentation.cards().collect();
 
-    assert_eq!(cards.len(), 3);
+    assert_eq!(cards.len(), 5);
     assert_eq!(cards.len(), model.devices().len());
     for (card, device) in cards.iter().zip(model.devices()) {
         assert!(std::ptr::eq(card.device(), device));
@@ -344,11 +347,14 @@ fn offline_snapshot_is_selection_independent_and_attributes_focused_edits() {
 fn prototype_device_controls_derive_from_backend_descriptors() {
     let model = AppModel::prototype();
     let devices = model.devices();
-    assert_eq!(devices.len(), 3);
+    assert_eq!(devices.len(), 5);
     assert_eq!(devices[0].parameters[0].descriptor, PULSE_PARAMETERS[0]);
     assert_eq!(devices[1].parameters[0].descriptor, GAIN_PARAMETERS[0]);
     assert_eq!(devices[2].parameters[0].descriptor, SATURATOR_PARAMETERS[0]);
     assert_eq!(devices[2].parameters[1].descriptor, SATURATOR_PARAMETERS[1]);
+    // R4-6 appends; the three above must keep both their slots and their descriptors
+    assert_eq!(devices[3].parameters[0].descriptor, FILAMENT_PARAMETERS[0]);
+    assert_eq!(devices[4].parameters[0].descriptor, GLOAM_PARAMETERS[0]);
 }
 
 #[test]
@@ -609,4 +615,68 @@ fn editing_a_parameter_reports_the_clamped_value_and_its_stable_identities() {
 
     assert!(model.edit_device_parameter("gain", "nope", 0.5).is_err());
     assert!(model.edit_device_parameter("nope", "gain", 0.5).is_err());
+}
+
+// R4-6 test 1 — both new devices reach the Build surface with their own descriptors intact
+#[test]
+fn prototype_exposes_the_two_new_devices() {
+    let model = AppModel::prototype();
+
+    for (key, name, descriptors) in [
+        ("filament", "Filament", FILAMENT_PARAMETERS.as_slice()),
+        ("gloam", "Gloam", GLOAM_PARAMETERS.as_slice()),
+    ] {
+        let device = model
+            .devices()
+            .iter()
+            .find(|device| device.key == key)
+            .unwrap_or_else(|| panic!("{key} must appear in the prototype device list"));
+        assert_eq!(device.name, name);
+        assert_eq!(device.parameters.len(), descriptors.len());
+        for (control, descriptor) in device.parameters.iter().zip(descriptors) {
+            assert_eq!(control.descriptor, *descriptor);
+            // A device whose controls did not start at their own defaults would be a surface
+            // showing values the device does not hold
+            assert_eq!(control.value, descriptor.default());
+            assert_ne!(control.instance_id.raw(), 0);
+        }
+    }
+}
+
+// R4-6 test 2 — the offline fixture's arity is a contract, not an accident.
+// `DeviceValues::from_snapshot` refuses any snapshot whose length is not four, so this fails the
+// moment someone changes `device_parameter_snapshot` to iterate `self.devices`
+#[test]
+fn snapshot_arity_is_unchanged_by_new_devices() {
+    let model = AppModel::prototype();
+    let snapshot = model.device_parameter_snapshot().unwrap();
+
+    assert_eq!(snapshot.len(), 4);
+    assert!(
+        model.devices().len() > 4,
+        "the guard is vacuous unless the model carries more devices than the fixture"
+    );
+    for entry in &snapshot {
+        assert_ne!(entry.device_key(), "filament");
+        assert_ne!(entry.device_key(), "gloam");
+    }
+}
+
+// R4-6 test 3 — the existing drill-in works against a device that did not exist when it was
+// written. The lookup is asserted first: a wrong id leaves lens and selection untouched, and the
+// two assertions below would then report a focus failure instead of the lookup failure
+#[test]
+fn opening_a_new_device_focuses_shape() {
+    let mut model = AppModel::prototype();
+    model.select_lens(Lens::Build);
+    let filament_id = model
+        .devices()
+        .iter()
+        .find(|device| device.key == "filament")
+        .unwrap()
+        .instance_id;
+
+    assert_eq!(model.open_device_in_shape(filament_id), Ok(()));
+    assert_eq!(model.lens(), Lens::Shape);
+    assert_eq!(model.selected_device_id(), Some(filament_id));
 }

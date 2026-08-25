@@ -8,7 +8,7 @@ Notes: Only active-milestone slices belong here
 # Next
 
 - **Status:** accepted
-- **Last verified:** 2026-08-24
+- **Last verified:** 2026-08-25
 - **Scope:** immediately actionable R4 slices; closed R2 and R3 queues retained as exit records
 - **Decision authority:** Jeff
 - **Upstream sources:** `STATUS.md`, `../06-plans/current-milestone.md`
@@ -16,7 +16,7 @@ Notes: Only active-milestone slices belong here
 - **Supersedes:** the R3 slice queue, closed 2026-08-09
 - **Superseded by:** none
 - **Open decisions:** none blocking R4 start; decision 23 leaves Linux device qualification as debt to discharge here
-- **Known gaps:** neither slice 1 nor slice 2 has run its manual protocol; later milestones are intentionally not decomposed here
+- **Known gaps:** none of slices 1, 2, 4, or 6 has run its manual protocol; slice 6's two devices are not reachable from a track until slice 5 or 7 adds a `TrackInstrument` variant for them; later milestones are intentionally not decomposed here
 
 ## Next slices
 
@@ -25,7 +25,7 @@ Notes: Only active-milestone slices belong here
 3. Discharge decision 23's Linux debt: run `cargo test -p spectre-audio --test lifecycle_health -- --ignored --nocapture` on real Linux hardware and record it in the milestone's qualification table. One command; it only needs the box.
 4. ~~Introduce the track model with a track-to-master signal path, keeping the graph compilation contract intact~~ — landed 2026-08-24. `spectre-project` gains `track.rs` (ordered `TrackList` with stable identity, `MAX_TRACKS`, mute/solo/level, and a session-only `structure_revision`) and `routing.rs` (`build_track_graph` → instrument → track gain → sum → master, with node identities allocated in a fixed order so a rebuild from the same list and seed produces the same graph). `spectre-dsp` gains `SumBus`, which accumulates in `f64` and rounds once at store; the crate now depends on `spectre-dsp` and `spectre-graph`, keeping the dependency direction acyclic. `MAX_FLAT_INPUTS` rises 4 → 32, a widening that leaves every other graph rule untouched. `effective_gain` is defined **once**, on `TrackList`, and used by the builder, the offline harness, and the app, so the three cannot disagree about what a fader position means. **The binding rule: mixer state travels, structure does not** — level, mute, and solo publish on the parameter lane and never rebuild the plan, while add/remove/reorder advance `structure_revision` and the transport bar reads `PLAN STALE` until the user rebuilds. A solo edit publishes **every** track's gain, because solo is defined across the whole list; publishing only the edited id would produce a solo that silences nothing. 20 new tests. **Not claimed:** a glitch-free hot swap (the rebuild is a stream restart with an audible gap), per-track note routing (R4-5), and persistence of the list (R4-7, which also closes CORE-001's other half).
 5. Add MIDI clips that play through a track, reusing the existing bounded event-ordering contract and MIDI ingress rather than a second event path.
-6. Ship one small original synth and one original effect as the alpha's voice, per decision 15's deliberately-small scope.
+6. ~~Ship one small original synth and one original effect as the alpha's voice, per decision 15's deliberately-small scope~~ — landed 2026-08-25 as `crates/spectre-dsp/src/filament.rs` and `gloam.rs`. `Filament` is one voice, one oscillator, no modulation: a phase-warped sine whose `lean` control moves the map's breakpoint, behind a linear amplitude contour with `rise_ms`/`fall_ms`. `Gloam` is one pole per channel, whose corner opens with the signal's own magnitude follower. Both implement `AudioProcessor::set_parameter`, so every control is live rather than a fake surface. Thirteen `DEV` rows carry every numeric bound with its own derivation — the two range midpoints are computed, not chosen, and `gloam.damp_hz` reuses `TONE_PARAMETERS[0]`'s already-accepted audible band rather than declaring a second one. **No new render path:** `render_voice_chain` compiles the pair into the same `CompiledPlan` and returns through the same FNV-1a fold, which `render_plan` now shares instead of carrying its own copy. 25 new tests, including one that drives the pair through the null backend's callback and records zero allocations. **Not claimed:** neither device is selectable on a track — `TrackInstrument` still has one variant — so a Shape edit to either is stored and reported as not having reached live audio. Slice 5 or 7 closes that. **Not resolved:** D-R3; §4.3 states both devices' behavior without touching it.
 7. Implement CORE-004's atomic save and reload over the accepted persistence contract, and land CORE-001's reorder evidence on the first persisted collection.
 8. Add offline bounce and prove it matches the live path's computation, extending the hash-equivalence approach the callback bridge already uses.
 9. Write and run the end-to-end fixture and the manual QA protocol that R4's exit requires.

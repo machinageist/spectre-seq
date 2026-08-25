@@ -8,7 +8,7 @@ Notes: One row per requirement that has moved past proposed; grows with each sli
 # Traceability
 
 - **Status:** verified
-- **Last verified:** 2026-08-09
+- **Last verified:** 2026-08-25
 - **Scope:** requirements with implementation or verification evidence
 - **Decision authority:** Jeff
 - **Upstream sources:** `requirements-ledger.md`; `../02-reference-research/*observations*.md`
@@ -16,7 +16,7 @@ Notes: One row per requirement that has moved past proposed; grows with each sli
 - **Supersedes:** none
 - **Superseded by:** none
 - **Open decisions:** none
-- **Known gaps:** RT-001..003 hold under a live macOS driver as of 2026-08-09. Linux device qualification has never run and is decision-23 debt carried to R4; no Linux support is claimed. GRAPH-002 has only the implicit-cycle seed and did not close at R2 exit
+- **Known gaps:** RT-001..003 hold under a live macOS driver as of 2026-08-09. Linux device qualification has never run and is decision-23 debt carried to R4; no Linux support is claimed. GRAPH-002 has only the implicit-cycle seed and did not close at R2 exit. This table is behind the code: R4 slices 1, 2, and 4 landed on 2026-08-24 without rows here, and only slice 6's row below was added at its landing
 
 Chain: provenance → requirement → implementation → evidence (repository-root workspace, 2026-08-09).
 
@@ -36,6 +36,7 @@ Chain: provenance → requirement → implementation → evidence (repository-ro
 | Interaction prototype | `crates/spectre-app/`, `./spectre` | 27 app-model tests, including stable deterministic Pulse focus, atomic Build → Shape selection, invalid-ID rollback, lens/edit continuity, descriptor/parameter identity, focus-independent snapshot attribution, nonzero unique project-instance identity, canonical descriptor clamping, exact signed-zero/subnormal and non-finite containment, renderer-neutral presentation, and recoverable UI error reporting; one process smoke test; state-rich selected-device feedback report | prototype |
 | DSP device I/O | `docs/03-architecture/dsp-device-io.md`, `crates/spectre-dsp/src/io.rs` | layout, semantic event-order, bounded-capacity, overlap identity, buffer-shape, finite-output, deterministic-source, and sample-offset tests | implemented |
 | Native device seed | `crates/spectre-dsp/` | Pulse instrument, ToneSource, Gain, Saturator; twelve device tests, including numeric mapping and boundary policy | implemented |
+| DEV-001..013 (R4-6 native device bounds) | `crates/spectre-dsp/src/filament.rs`, `gloam.rs`; `spectre_offline::render_voice_chain` | 30 device tests in `tests/devices.rs` and 3 in `tests/device_rt.rs`; `filament_and_gloam_report_no_containment_activity`; `voice_chain_renders_deterministically` and `..._exact_silence_without_events`; `voice_chain_process_is_rt_clean_through_the_null_stream`, falsified by a deliberate allocation before being trusted | implemented; ledger rows `proposed` pending Jeff's acceptance |
 | Native render fixture | `spectre_offline::render_vertical_slice` via `spectre-graph` plan | repeated render equality; bit-identical to a hand-wired chain; exact-silence gate; impulse sample-exactness; allocation-free steady-state quanta (counting allocator); FNV hash determinism | verified |
 | Backend-derived device UI | `spectre_app::{DeviceControl, AppModel::open_device_in_shape}`, Build and Shape lenses, `spectre_dsp::DeviceParameterSnapshot` | one labeled Build action per existing device; selected-only Shape controls retain descriptor labels, units, ranges, defaults, reset/setter behavior, and stable device/parameter `ObjectId`s; fail-closed focus transition; renderer-neutral private-field DTO with instance/key getters and canonical clamping; app export stays selection-independent and preserves edited-value attribution and exact signed-zero/subnormal bits | prototype (offline-integrated) |
 | Runtime parameter seam (decision 22) | `docs/03-architecture/dsp-device-io.md` § "Runtime parameter seam" | accepted R3 design review: callback-safe single-value application keyed by static parameter key, app-thread validation and clamping against existing descriptors, fail-closed unknown keys, block-boundary application before `process`, device-owned smoothing; implementation lands R4, sample-accurate automation stays PROD-002 at R9 | accepted (design) |

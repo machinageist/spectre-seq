@@ -7,8 +7,9 @@ use serde::Serialize;
 use serde_json::Map;
 use spectre_core::{IdGen, ObjectId, TempoMap, Transport};
 use spectre_dsp::{
-    AudioProcessor, DeviceParameterSnapshot, DspParameter, Gain, NoteEvent, NoteEventKind,
-    PulseInstrument, Saturator, Waveform, GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS,
+    AudioProcessor, DeviceParameterSnapshot, DspParameter, Filament, Gain, Gloam, NoteEvent,
+    NoteEventKind, PulseInstrument, Saturator, Waveform, FILAMENT_PARAMETERS, GAIN_PARAMETERS,
+    GLOAM_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS,
 };
 use spectre_graph::{Connection, EditableGraph, NodeId, PlanNoteInput};
 use spectre_project::{
@@ -269,22 +270,7 @@ fn render_plan(
     )
     .map_err(|error| error.to_string())?;
 
-    let output = plan.last_output().expect("quantum just rendered");
-    let mut peak = 0.0_f32;
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-    for sample in output[0].iter().chain(output[1].iter()) {
-        peak = peak.max(sample.abs());
-        for byte in sample.to_bits().to_le_bytes() {
-            hash ^= u64::from(byte);
-            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-        }
-    }
-    Ok(RenderReport {
-        frames,
-        channels: 2,
-        peak,
-        hash,
-    })
+    report_from(&plan, frames)
 }
 
 // Render PulseInstrument -> Gain -> Saturator through the compiled graph plan
@@ -336,7 +322,9 @@ pub fn render_silence(sample_rate: f64, frames: usize) -> Result<RenderReport, S
     )
 }
 
-// Hash and peak one rendered quantum with the walk render_plan already uses
+// Hash and peak one rendered quantum. The single definition of the equivalence fold: every
+// render entry point in this crate returns through here, so live/offline hash comparisons cannot
+// drift by one path acquiring its own walk
 fn report_from(plan: &spectre_graph::CompiledPlan, frames: usize) -> Result<RenderReport, String> {
     let output = plan.last_output().ok_or("no quantum has been rendered")?;
     let mut peak = 0.0_f32;
@@ -389,4 +377,77 @@ pub fn render_track_list(
     .map_err(|error| error.to_string())?;
 
     report_from(&plan, frames)
+}
+
+// Render Filament -> Gloam through the compiled graph plan at both devices' descriptor defaults.
+// Its own chain rather than an extension of the fixture: the fixture's four values are the
+// offline contract spectre-app publishes, and appending to it would change that contract
+pub fn render_voice_chain(sample_rate: f64, frames: usize) -> Result<RenderReport, String> {
+    render_voice_chain_with(sample_rate, frames, &fixture_events(frames))
+}
+
+// The same chain driven by a caller-supplied event list, so silence is the same code path
+fn render_voice_chain_with(
+    sample_rate: f64,
+    frames: usize,
+    events: &[NoteEvent],
+) -> Result<RenderReport, String> {
+    if frames < 2 {
+        return Err("render requires at least two frames".into());
+    }
+    let mut ids = IdGen::new(0x0056_4f49_4345_0000);
+    let filament = NodeId::new(ids.next_id());
+    let gloam = NodeId::new(ids.next_id());
+
+    // Defaults come from the devices' own descriptors, so this harness declares no value of its own
+    let lean = FILAMENT_PARAMETERS[0].default();
+    let rise_ms = FILAMENT_PARAMETERS[1].default();
+    let fall_ms = FILAMENT_PARAMETERS[2].default();
+    let level = FILAMENT_PARAMETERS[3].default();
+    let damp_hz = GLOAM_PARAMETERS[0].default();
+    let depth = GLOAM_PARAMETERS[1].default();
+    let track_ms = GLOAM_PARAMETERS[2].default();
+
+    let mut graph = EditableGraph::new();
+    graph
+        .add_node(filament, Filament::new(lean, rise_ms, fall_ms, level)?.io())
+        .map_err(|error| error.to_string())?;
+    graph
+        .add_node(gloam, Gloam::new(damp_hz, depth, track_ms)?.io())
+        .map_err(|error| error.to_string())?;
+    graph
+        .connect(Connection {
+            from: filament,
+            from_bus: 0,
+            to: gloam,
+            to_bus: 0,
+        })
+        .map_err(|error| error.to_string())?;
+
+    let mut plan = graph
+        .compile(gloam, frames, &mut |node| {
+            if node == filament {
+                Ok(Box::new(Filament::new(lean, rise_ms, fall_ms, level)?)
+                    as Box<dyn AudioProcessor>)
+            } else {
+                Ok(Box::new(Gloam::new(damp_hz, depth, track_ms)?))
+            }
+        })
+        .map_err(|error| error.to_string())?;
+    plan.process(
+        sample_rate,
+        frames,
+        &[PlanNoteInput {
+            node: filament,
+            events,
+        }],
+    )
+    .map_err(|error| error.to_string())?;
+
+    report_from(&plan, frames)
+}
+
+// The same chain with no notes; silence must stay exact silence
+pub fn render_voice_chain_silence(sample_rate: f64, frames: usize) -> Result<RenderReport, String> {
+    render_voice_chain_with(sample_rate, frames, &[])
 }

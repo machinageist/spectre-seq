@@ -8,7 +8,8 @@ pub mod engine;
 
 use spectre_core::{IdGen, ObjectId, Transport, TransportCommand, TransportState};
 use spectre_dsp::{
-    DeviceParameterSnapshot, DspParameter, GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS,
+    DeviceParameterSnapshot, DspParameter, FILAMENT_PARAMETERS, GAIN_PARAMETERS, GLOAM_PARAMETERS,
+    PULSE_PARAMETERS, SATURATOR_PARAMETERS,
 };
 use spectre_project::{Track, TrackError, TrackInstrument, TrackList};
 
@@ -250,6 +251,23 @@ impl AppModel {
                 "Saturator",
                 "Effect · stereo in/out",
                 &SATURATOR_PARAMETERS,
+            ),
+            // Appended rather than inserted: prototype() allocates every identity from one
+            // seeded IdGen in declaration order, so a new device in the middle would renumber
+            // every device after it and break the offline fixture's stable IDs
+            DeviceControl::from_descriptors(
+                &mut ids,
+                "filament",
+                "Filament",
+                "Instrument · stereo out · note input",
+                &FILAMENT_PARAMETERS,
+            ),
+            DeviceControl::from_descriptors(
+                &mut ids,
+                "gloam",
+                "Gloam",
+                "Effect · stereo in/out",
+                &GLOAM_PARAMETERS,
             ),
         ];
         let selected_device = devices.first().map(|device| device.instance_id);

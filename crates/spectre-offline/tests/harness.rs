@@ -11,7 +11,7 @@ use spectre_dsp::{
 };
 use spectre_offline::{
     default_project, fixture_events, inspect_project, render_app_snapshot, render_silence,
-    render_vertical_slice, RenderReport,
+    render_vertical_slice, render_voice_chain, render_voice_chain_silence, RenderReport,
 };
 use spectre_project::to_bytes;
 
@@ -517,4 +517,28 @@ fn track_list_rendering_is_deterministic_and_silent_when_empty() {
         spectre_offline::render_track_list(48_000.0, 128, &list, SEED, Some(first), &events)
             .unwrap();
     assert_eq!(muted.peak, 0.0, "a muted track must contribute nothing");
+}
+
+// R4-6 — the alpha's own voice chain renders deterministically through the same plan and the
+// same FNV-1a fold every other entry point in this crate returns through
+#[test]
+fn voice_chain_renders_deterministically() {
+    let first = render_voice_chain(48_000.0, 4_096).unwrap();
+    let second = render_voice_chain(48_000.0, 4_096).unwrap();
+
+    assert_eq!(first, second);
+    assert_eq!(first.frames, 4_096);
+    assert_eq!(first.channels, 2);
+    // Without this two silent buffers would agree and the equality above would prove nothing
+    assert!(first.peak > 0.0, "the voice chain must sound");
+}
+
+// R4-6 — a recursive effect is where a stuck tail would show; silence must stay exact silence
+#[test]
+fn voice_chain_renders_exact_silence_without_events() {
+    let report = render_voice_chain_silence(48_000.0, 4_096).unwrap();
+
+    assert_eq!(report.peak, 0.0);
+    assert_eq!(report.frames, 4_096);
+    assert_eq!(report.channels, 2);
 }
