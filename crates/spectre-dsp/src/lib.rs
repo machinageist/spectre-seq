@@ -4,12 +4,16 @@
 // Notes: UI consumes backend parameter metadata after process contracts stabilize
 
 mod effect;
+mod filament;
+mod gloam;
 mod io;
 mod mix;
 mod parameter;
 mod source;
 
 pub use effect::{Gain, Saturator, GAIN_PARAMETERS, SATURATOR_PARAMETERS};
+pub use filament::{Filament, FILAMENT_PARAMETERS};
+pub use gloam::{Gloam, GLOAM_PARAMETERS};
 pub use io::{
     AudioProcessor, DeviceClass, DeviceIo, NoteEvent, NoteEventKind, ParameterError,
     ProcessContext, ProcessError, MAX_NOTE_EVENTS_PER_BLOCK,
