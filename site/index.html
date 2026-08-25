@@ -347,8 +347,13 @@ pre.cmd .c { color:var(--ink-3); }
           <div class="body">
             <p>A native <strong>egui</strong> interaction prototype (decision 8). It is a real UI over
               the real model — track state, device descriptors and parameter values are the backend's
-              own, not mock data — but it has <strong>no audio thread</strong>. The header reads
-              <code>ENGINE OFFLINE</code> and <code>CPU —</code> because both are literally true.</p>
+              own, not mock data. Since R4-1 it also owns a <strong>real audio thread</strong>: on its
+              first frame it compiles a plan from the app snapshot, opens the default device through
+              the backend seam at its own native rate, and moves the render bridge into the callback.
+              The transport bar reads <code>ENGINE RUNNING</code> only once a block has actually been
+              rendered — an opened stream that has not called back reads <code>ENGINE OPENED</code>.
+              What has <em>not</em> happened is a manual listening pass: no one has confirmed by ear
+              that sound leaves the speakers.</p>
             <p><strong>Four lenses</strong> over one project model, switched with keys <code>1</code>–<code>4</code>:</p>
             <ul>
               <li><strong>Arrange</strong> — the timeline placeholder; shows the compiled stereo path
@@ -366,18 +371,25 @@ pre.cmd .c { color:var(--ink-3); }
               select the lens. No shortcut map beyond that has been designed — the workflow research
               explicitly lists default keymaps among the conclusions its evidence cannot support, so
               none has been invented.</p>
-            <p><strong>Track list</strong> supports add, name, select, and per-track Mute / Solo / Arm /
-              Level. These edit the app model only; there is no track-to-master signal path yet — that
-              is slice R4-4. <strong>Browser</strong> (Instruments, Effects, Modulators, Samples,
-              Plugins) is present and deliberately disabled: "Catalog wiring arrives in later
+            <p><strong>Track list</strong> supports add, name, select, and per-track Mute / Solo /
+              Level, and since R4-4 those edits reach the render thread: level, mute, and solo publish
+              an effective gain on the parameter lane, while add, remove, and reorder mark the plan
+              <code>PLAN STALE</code> and offer a rebuild rather than recompiling on the callback. The
+              Arm toggle is a disabled button that says recording arrives at R7, because there is no
+              recording path to arm for. <strong>Browser</strong> (Instruments, Effects, Modulators,
+              Samples, Plugins) is present and deliberately disabled: "Catalog wiring arrives in later
               milestones."</p>
+            <p><strong>Clips</strong> exist in the model as of R4-5 — create, select, activate, and an
+              accessible label carrying name, position, length, note count, and state — but
+              <strong>no clip lane or inspector is drawn yet</strong>. The surface is model-only, and
+              the drawing is R4-9's.</p>
             <p>App parameter edits can be transferred as an owned snapshot into deterministic offline
               rendering, independently of focus. The complete four-parameter fixture is validated —
               exact membership, no duplicates, no aliases, no unknown identities — before any value is
               allowed to construct a processor.</p>
             <dl class="kv">
-              <dt>Tests</dt><dd>28 — 27 model, 1 process smoke</dd>
-              <dt>Source</dt><dd>crates/spectre-app/src/{lib.rs, main.rs} · 993 lines</dd>
+              <dt>Tests</dt><dd>56 — 36 model, 18 live-engine, 2 process smoke</dd>
+              <dt>Source</dt><dd>crates/spectre-app/src/{lib.rs, main.rs, engine.rs} · 2 386 lines</dd>
             </dl>
           </div>
         </details>
@@ -420,7 +432,7 @@ pre.cmd .c { color:var(--ink-3); }
               it as the last contaminated node, so one poisoned sample cannot leak the rest of the
               block.</p>
             <dl class="kv">
-              <dt>Tests</dt><dd>7 RT guards · 7 containment injections · 18 transport</dd>
+              <dt>Tests</dt><dd>8 RT guards · 9 containment injections · 18 transport</dd>
               <dt>Status</dt><dd>RT-001/002 accepted · RT-003 accepted and implemented 2026-08-09</dd>
             </dl>
           </div>
@@ -460,13 +472,13 @@ pre.cmd .c { color:var(--ink-3); }
 
         <details class="entry">
           <summary>
-            <span class="nm">spectre-dsp — the four shipped devices</span>
-            <span class="chip ok">12 tests</span>
-            <span class="path">ToneSource · PulseInstrument · Gain · Saturator</span>
+            <span class="nm">spectre-dsp — the six shipped devices</span>
+            <span class="chip ok">38 tests</span>
+            <span class="path">ToneSource · PulseInstrument · Gain · Saturator · Filament · Gloam</span>
           </summary>
           <div class="body">
             <p>The planar-buffer processing contract, bounded note events, and Spectre's original v1
-              device set. All four satisfy the <code>Send</code> bound the callback bridge requires, and
+              device set. All six satisfy the <code>Send</code> bound the callback bridge requires, and
               none of them trips RT-003 containment during ordinary rendering.</p>
             <ul>
               <li><strong>ToneSource</strong> — a deterministic tone generator; the reference source for
@@ -478,12 +490,27 @@ pre.cmd .c { color:var(--ink-3); }
                 shipped Gain holds no smoothing state.</em> That conflict is open as decision D-R3 and
                 is deliberately unresolved by any agent.</li>
               <li><strong>Saturator</strong> — drive and mix; the effect end of the fixture.</li>
+              <li><strong>Filament</strong> <span class="chip ok">R4-6</span> — the alpha's own voice.
+                One monophonic oscillator whose <em>lean</em> control moves the breakpoint of a phase
+                map, behind a linear amplitude contour. At the default lean of 0.5 the map is the
+                identity and the output is a bit-exact sine, which is what the default is derived from
+                rather than chosen.</li>
+              <li><strong>Gloam</strong> <span class="chip ok">R4-6</span> — one pole per channel,
+                whose corner opens with the signal's own magnitude follower. First order deliberately:
+                one pole is the highest order whose stability needs no argument beyond "the coefficient
+                is in [0, 1]", and a second would introduce resonance, and resonance introduces a Q
+                limit with nothing behind it.</li>
+              <li><strong>SumBus</strong> <span class="chip ok">R4-4</span> — the mix point. Accumulates
+                in <code>f64</code> and rounds once at the store. No limiter, no clip, no
+                normalization: summing sixteen tracks can exceed unity and R4 lets it.</li>
             </ul>
-            <p>Parameters are baked in at construction. There is no callback-safe way to change them on
-              a live plan — the gap decision 22 tracks and slice R4-2 closes.</p>
+            <p>Since R4-2 every device answers a <strong>required</strong>
+              <code>set_parameter</code> on the process trait — required rather than defaulted, so a
+              device added later must answer the seam instead of silently ignoring every edit made to
+              it.</p>
             <dl class="kv">
-              <dt>Fixture</dt><dd>Pulse → Gain → Saturator</dd>
-              <dt>Source</dt><dd>710 lines src · 375 lines tests</dd>
+              <dt>Fixtures</dt><dd>Pulse → Gain → Saturator · Filament → Gloam</dd>
+              <dt>Source</dt><dd>crates/spectre-dsp/src · 8 modules</dd>
             </dl>
           </div>
         </details>
@@ -491,7 +518,7 @@ pre.cmd .c { color:var(--ink-3); }
         <details class="entry">
           <summary>
             <span class="nm">spectre-graph</span>
-            <span class="chip ok">16 tests</span>
+            <span class="chip ok">21 tests</span>
             <span class="path">EditableGraph → CompiledPlan</span>
           </summary>
           <div class="body">
@@ -515,12 +542,12 @@ pre.cmd .c { color:var(--ink-3); }
         <details class="entry">
           <summary>
             <span class="nm">spectre-audio</span>
-            <span class="chip warn">built, not wired</span>
-            <span class="path">backend seam · transport · bridge · MIDI · telemetry</span>
+            <span class="chip ok">98 tests · wired</span>
+            <span class="path">backend seam · transport · bridge · MIDI · clips · telemetry</span>
           </summary>
           <div class="body">
-            <p>The complete live shell R3 delivered — and the thing nothing launches. It is the largest
-              tested crate in the workspace and no user-facing path reaches it.</p>
+            <p>The complete live shell R3 delivered, and since R4-1 the thing <code>./spectre</code>
+              actually launches. It is the largest tested crate in the workspace.</p>
             <p><strong>Backend seam (decision 19).</strong> <code>AudioBackend</code> owns device
               enumeration and stream construction; <code>AudioStream</code> owns the
               Stopped/Running/Closed lifecycle. <code>StreamConfig</code> validates sample rate, channel
@@ -547,7 +574,7 @@ pre.cmd .c { color:var(--ink-3); }
               starts at infinity so the first block establishes the real minimum — a zero default would
               have looked indistinguishable from a saturated callback.</p>
             <dl class="kv">
-              <dt>Tests</dt><dd>68 passing · 1 ignored (hardware drill)</dd>
+              <dt>Tests</dt><dd>98 passing · 1 ignored (hardware drill)</dd>
               <dt>Modules</dt><dd>lib · bridge · control · spsc · midi · null · cpal_backend</dd>
               <dt>Source</dt><dd>1,581 lines src · 2,174 lines tests</dd>
             </dl>
@@ -556,9 +583,63 @@ pre.cmd .c { color:var(--ink-3); }
 
         <details class="entry">
           <summary>
+            <span class="nm">Clip playback and the merge rule</span>
+            <span class="chip ok">R4-5 · 43 tests</span>
+            <span class="path">bake · schedule · player · one sort</span>
+          </summary>
+          <div class="body">
+            <p>A clip is a repeatable phrase written once. It is the smallest object that turns a
+              signal chain into a sequencer, and R4's exit list contains exactly one clip row.</p>
+            <p><strong>Two domains, one conversion.</strong> Clips live in the musical tick domain on
+              the track model — <code>MidiClip</code> holds notes, <code>ClipPlacement</code> puts one
+              on a timeline, <code>TrackClips</code> keeps a track's placements ordered and
+              non-overlapping. <code>ClipSchedule::bake</code> resolves them to absolute sample
+              positions through <code>TempoMap::ticks_to_samples</code> and nowhere else, so no second
+              time conversion exists to drift from the first.</p>
+            <p><strong>Non-overlapping is an invariant, not a preference.</strong> Every R4 instrument
+              is monophonic — a second attack replaces the first — so overlapping placements would
+              produce a defined but musically wrong result. Supporting them properly needs polyphony,
+              which is a later milestone's decision. Refusing the overlap keeps the model honest about
+              what the engine can actually do.</p>
+            <p><strong>The merge rule is the feature.</strong> Two producers now feed one note node,
+              and the bridge used to push lane events without sorting — correct only because the MIDI
+              ingress sorted before its events entered the lane. Adding a second producer breaks that
+              in two independent ways: interleaving, and key collision, since the plan's validator
+              rejects <code>order &lt;= previous</code> and equality is a rejection rather than a tie.
+              So clip and lane events are collected into one array and sorted <em>once</em>, by the
+              same tuple the validator checks. <code>contract_order</code> is that key's single
+              definition and both the player and the bridge call it; there is no second rank function
+              and no second sort key.</p>
+            <p><strong>Sequence uniqueness is by band, not by renumbering.</strong> Clips take
+              <code>1 &lt;&lt; 63</code> upward; ingress numbers from zero. The bands cannot meet — 
+              reaching bit 63 would take 2⁶³ admitted messages, about 292,000 years at a sustained
+              million per second. The user-visible consequence is deliberate: at an identical frame
+              offset and identical rank, a live-performance event resolves before a clip event. The
+              thing the player just did wins the tie.</p>
+            <p><strong>Two limits stated rather than hidden.</strong> The 512-event per-block reserve
+              clears the densest <em>monophonic</em> block Spectre's own tempo and tick bounds admit,
+              with 2.5× margin — but it does not bound polyphony, because notes stacked on one tick
+              are representable. Density is bounded by counted refusal into an all-notes-off, never by
+              a partial event set that could leave a hung note. And the two-segment loop bound is
+              stated against the <em>granted</em> block, a driver property, with the condition that
+              would require rederiving it written into the ledger row.</p>
+            <p><strong>A bridge with no clip player behaves exactly as before,</strong> and that is
+              load-bearing. R4-1's evidence pins that a Play and a Stop landing in one block are
+              refused into counted silence, and the refusal comes from the lane's own order. Sorting
+              that pair would put the all-notes-off before the note-on by rank and leave the note
+              sounding after Stop — a stuck note where there was a clean refusal.</p>
+            <dl class="kv">
+              <dt>Not drawn</dt><dd>No clip lane or inspector yet — the surface is model-only</dd>
+              <dt>Falsified</dt><dd>Restoring the scratch clear fails 5 tests; removing the sort fails 3</dd>
+            </dl>
+          </div>
+        </details>
+
+        <details class="entry">
+          <summary>
             <span class="nm">spectre-project</span>
-            <span class="chip ok">18 tests</span>
-            <span class="path">versioned envelope · commands · undo</span>
+            <span class="chip ok">38 tests</span>
+            <span class="path">versioned envelope · commands · undo · tracks · clips</span>
           </summary>
           <div class="body">
             <p>A versioned JSON envelope (decision 3 — inspectable, and it preserves unknown fields), with
@@ -579,7 +660,7 @@ pre.cmd .c { color:var(--ink-3); }
         <details class="entry">
           <summary>
             <span class="nm">spectre-offline</span>
-            <span class="chip ok">21 tests</span>
+            <span class="chip ok">24 tests</span>
             <span class="path">deterministic render harness</span>
           </summary>
           <div class="body">
@@ -754,15 +835,15 @@ const ATLAS = {
 
   meta: {
     milestone: "R4",
-    gate: "230 / 0 / 1",
-    verified: "2026-08-24"
+    gate: "342 / 0 / 2",
+    verified: "2026-08-25"
   },
 
   strip: [
     { lbl:"Active milestone", v:"R4", tone:"warn", sub:"Credible Alpha · opened 2026-08-09" },
-    { lbl:"Workspace gate",   v:"256 pass", tone:"ok", sub:"0 failed · 2 ignored (hardware drills)" },
-    { lbl:"R4 specs cleared", v:"8 / 9", tone:"ok", sub:"one awaiting re-verification" },
-    { lbl:"R4 implemented",   v:"2 / 9", tone:"warn", sub:"live audio and the parameter seam" }
+    { lbl:"Workspace gate",   v:"342 pass", tone:"ok", sub:"0 failed · 2 ignored (hardware drills)" },
+    { lbl:"R4 specs cleared", v:"8 / 9", tone:"ok", sub:"R4-7 in remediation 3" },
+    { lbl:"R4 implemented",   v:"5 / 9", tone:"ok", sub:"live audio, parameter seam, tracks, clips, devices" }
   ],
 
   roadmap: [
@@ -811,7 +892,7 @@ const ATLAS = {
     { id:"R4-1", name:"Live audio wiring", group:"pass",
       goal:"Wire ./spectre to the qualified backend so Play produces sound through the existing compiled plan. No new render path, no new DSP.",
       spec:{ state:"pass", score:"2.950", iters:2 }, impl:1, implState:"review",
-      flag:"<b>Built 2026-08-24.</b> Implementation review FAILED at 2.581 — not on score, but on three criteria scoring 1 against a limit of two; the three Priority 1 findings are fixed and it awaits re-review." },
+      flag:"<b>Built 2026-08-24.</b> Implementation review FAILED at 2.581 — not on score, but on three criteria scoring 1 against a limit of two. All three Priority 1 findings are fixed; it awaits re-review." },
     { id:"R4-2", name:"Runtime parameter seam", group:"blocked",
       goal:"Implement decision 22's parameter seam on AudioProcessor, then consume the RT-002 lane the bridge already drains. A Shape edit must change live audio.",
       spec:{ state:"pass", score:"2.833", iters:1 }, impl:1, implState:"built",
@@ -822,20 +903,20 @@ const ATLAS = {
       flag:"<b>Hardware-blocked.</b> Spec is written and passing; a container or VM cannot satisfy it." },
     { id:"R4-4", name:"Track model", group:"pass",
       goal:"Introduce the track model with a track-to-master signal path, keeping the graph compilation contract intact.",
-      spec:{ state:"pass", score:"2.964", iters:2 }, impl:0,
-      flag:"Its author independently refused a false claim it had been briefed with." },
+      spec:{ state:"pass", score:"2.964", iters:2 }, impl:1, implState:"built",
+      flag:"<b>Built 2026-08-24.</b> An ordered TrackList summing into a master bus, with one definition of what a fader position means. The binding rule: mixer state travels on the parameter lane, structure does not — add, remove, and reorder mark the plan stale rather than recompiling on the callback." },
     { id:"R4-5", name:"MIDI clips", group:"pass",
       goal:"Add MIDI clips that play through a track, reusing the bounded event-ordering contract and the existing MIDI ingress rather than a second event path.",
-      spec:{ state:"pass", score:"2.914", iters:2 }, impl:0,
-      flag:"Review found a control lane whose real capacity is not what its documentation says." },
+      spec:{ state:"pass", score:"2.914", iters:2 }, impl:1, implState:"built",
+      flag:"<b>Built 2026-08-25.</b> The slice's content is the merge rule: two producers now feed one note node, merged into one array and sorted once by the same tuple the plan validates. Both central tests were falsified before being trusted. <b>Not drawn yet:</b> the clip lane and inspector are model-only." },
     { id:"R4-6", name:"First devices", group:"pass",
       goal:"Ship one small original synth and one original effect as the alpha's voice, per decision 15's deliberately-small scope.",
-      spec:{ state:"pass", score:"2.931", iters:2 }, impl:0,
-      flag:"The tightest exposure to the copied-limits rule in the run, cleanly handled." },
+      spec:{ state:"pass", score:"2.931", iters:2 }, impl:1, implState:"built",
+      flag:"<b>Built 2026-08-25.</b> Filament, a one-voice phase-warped instrument, and Gloam, a one-pole damper whose corner opens with the signal. Thirteen ledger rows derive every bound. <b>Not selectable on a track yet</b> — TrackInstrument still has one variant." },
     { id:"R4-7", name:"Project persistence", group:"work",
       goal:"Implement CORE-004's atomic save and reload over the accepted persistence contract, and land CORE-001's reorder evidence on the first persisted collection.",
-      spec:{ state:"pass", score:"—", iters:2 }, impl:0,
-      flag:"<b>Remediated 2026-08-24</b> after failing the feasibility rule at 2.850. Iteration 2 awaits blind re-verification; it raised a new question about unknown-field preservation." },
+      spec:{ state:"pass", score:"—", iters:3 }, impl:0,
+      flag:"<b>Failed the feasibility rule twice</b> — at 2.850, then again at 2.681 on a narrower cause: line pins that had gone stale under the commits landing beneath it. Remediation 3 is re-baselining every citation onto current HEAD and citing by symbol instead of line." },
     { id:"R4-8", name:"Offline bounce", group:"pass",
       goal:"Add offline bounce and prove it matches the live path's computation, extending the hash-equivalence approach the callback bridge already uses.",
       spec:{ state:"pass", score:"2.967", iters:4 }, impl:0,
