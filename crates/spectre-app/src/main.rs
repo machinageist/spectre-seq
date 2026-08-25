@@ -834,9 +834,10 @@ fn smoke_test() {
     // own engine, not written as a literal, so the assertion in tests/smoke_cli.rs actually fails
     // if startup is wired into the headless path — which would break CI on a device-less host
     println!(
-        "Spectre prototype ready lens={} tracks={} transport={} selected_device={} engine={}",
+        "Spectre prototype ready lens={} tracks={} clips={} transport={} selected_device={} engine={}",
         model.lens(),
         model.tracks().len(),
+        model.track_list().placement_count(),
         if model.is_playing() {
             "playing"
         } else {

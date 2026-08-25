@@ -43,6 +43,8 @@ pub struct BridgeTelemetry {
     loop_segments_refused: AtomicU64,
     schedules_installed: AtomicU64,
     schedules_held: AtomicU64,
+    // Note events the most recent block merged, from both producers together
+    last_block_events: AtomicU64,
 }
 
 impl Default for BridgeTelemetry {
@@ -66,6 +68,7 @@ impl Default for BridgeTelemetry {
             loop_segments_refused: AtomicU64::new(0),
             schedules_installed: AtomicU64::new(0),
             schedules_held: AtomicU64::new(0),
+            last_block_events: AtomicU64::new(0),
         }
     }
 }
@@ -150,6 +153,12 @@ impl BridgeTelemetry {
     // Count retired schedules the reclaim lane refused, which the render thread must keep holding
     pub fn schedules_held(&self) -> u64 {
         self.schedules_held.load(Ordering::Relaxed)
+    }
+
+    // Note events the most recent block merged from both producers. Published through an atomic
+    // rather than exposed as a borrow of the scratch, so reading it off-thread is not a race
+    pub fn last_block_events(&self) -> u64 {
+        self.last_block_events.load(Ordering::Relaxed)
     }
 }
 
@@ -275,6 +284,9 @@ impl RenderBridge {
             // sort_unstable_by does not allocate, and the key is a total order because `sequence`
             // is unique within the block, so an unstable sort is still deterministic
             self.notes.sort_unstable_by(contract_order);
+            self.telemetry
+                .last_block_events
+                .store(self.notes.len() as u64, Ordering::Relaxed);
             // Step 10: the playhead moves before the plan runs, so a plan error costs that
             // block's material with the playhead already past it — a gap, not a re-emitted stutter
             self.transport.advance(SampleDuration::new(frames as u64));

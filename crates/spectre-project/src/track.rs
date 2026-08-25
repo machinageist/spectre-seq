@@ -4,6 +4,7 @@
 // Notes: App-thread only, never callback-reachable. Levels are carried by the accepted device
 //   descriptors rather than a new fader law, so no numeric range is invented here.
 
+use crate::clip::{ClipError, MidiClip, TrackClips};
 use serde::{Deserialize, Serialize};
 use spectre_core::ObjectId;
 use spectre_dsp::{GAIN_PARAMETERS, PULSE_PARAMETERS};
@@ -62,6 +63,10 @@ pub struct Track {
     level: f32,
     muted: bool,
     soloed: bool,
+    // Clip placements on this track's timeline. Held here rather than in a parallel app-side
+    // table so R4-7 persists one thing: the track model already travels into the document whole
+    #[serde(default)]
+    clips: TrackClips,
 }
 
 impl Track {
@@ -81,7 +86,16 @@ impl Track {
             level: GAIN_PARAMETERS[0].default(),
             muted: false,
             soloed: false,
+            clips: TrackClips::new(),
         })
+    }
+
+    pub fn clips(&self) -> &TrackClips {
+        &self.clips
+    }
+
+    pub fn clips_mut(&mut self) -> &mut TrackClips {
+        &mut self.clips
     }
 
     pub fn id(&self) -> ObjectId {
@@ -145,6 +159,10 @@ impl Track {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackList {
     tracks: Vec<Track>,
+    // Project-scoped clip table. A clip is placed by identity and may be placed more than once,
+    // so the material lives here once and the placements reference it
+    #[serde(default)]
+    clips: Vec<MidiClip>,
     master_level: f32,
     // Advances on every edit that changes the compiled graph's shape: push, insert, remove,
     // reorder, and instrument change. Level, mute, solo, and rename do not advance it, because
@@ -158,7 +176,9 @@ pub struct TrackList {
 // is #[serde(skip)], so including it would make a reloaded list compare unequal to its original
 impl PartialEq for TrackList {
     fn eq(&self, other: &Self) -> bool {
-        self.tracks == other.tracks && self.master_level == other.master_level
+        self.tracks == other.tracks
+            && self.clips == other.clips
+            && self.master_level == other.master_level
     }
 }
 
@@ -173,6 +193,7 @@ impl TrackList {
     pub fn new() -> Self {
         Self {
             tracks: Vec::new(),
+            clips: Vec::new(),
             master_level: GAIN_PARAMETERS[0].default(),
             structure_revision: 0,
         }
@@ -296,5 +317,32 @@ impl TrackList {
 
     pub fn structure_revision(&self) -> u64 {
         self.structure_revision
+    }
+
+    pub fn clips(&self) -> &[MidiClip] {
+        &self.clips
+    }
+
+    pub fn clip(&self, id: ObjectId) -> Option<&MidiClip> {
+        self.clips.iter().find(|clip| clip.id() == id)
+    }
+
+    pub fn clip_mut(&mut self, id: ObjectId) -> Option<&mut MidiClip> {
+        self.clips.iter_mut().find(|clip| clip.id() == id)
+    }
+
+    // Add clip material to the project. Refuses a duplicate identity, which CORE-001 requires;
+    // the clip's own length bound is enforced by MidiClip::new before it reaches here
+    pub fn add_clip(&mut self, clip: MidiClip) -> Result<(), ClipError> {
+        if self.clip(clip.id()).is_some() {
+            return Err(ClipError::DuplicateId(clip.id()));
+        }
+        self.clips.push(clip);
+        Ok(())
+    }
+
+    // Total placements across every track, which is what a bake would walk
+    pub fn placement_count(&self) -> usize {
+        self.tracks.iter().map(|track| track.clips().len()).sum()
     }
 }

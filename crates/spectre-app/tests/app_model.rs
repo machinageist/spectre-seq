@@ -5,13 +5,15 @@
 
 use spectre_app::{
     open_device_in_shape_from_ui, set_device_parameter_from_ui, AppModel, Lens, ShapePresentation,
-    OPEN_IN_SHAPE_ACTION_LABEL, SHAPE_EMPTY_MESSAGE,
+    CLIP_INSPECTOR_EMPTY_MESSAGE, CLIP_LANE_EMPTY_MESSAGE, OPEN_IN_SHAPE_ACTION_LABEL,
+    SHAPE_EMPTY_MESSAGE,
 };
-use spectre_core::ObjectId;
+use spectre_core::{BeatTicks, ObjectId};
 use spectre_dsp::{
     DeviceParameterKey, FILAMENT_PARAMETERS, GAIN_PARAMETERS, GLOAM_PARAMETERS, PULSE_PARAMETERS,
     SATURATOR_PARAMETERS,
 };
+use spectre_project::ClipError;
 use std::collections::HashSet;
 
 #[test]
@@ -679,4 +681,153 @@ fn opening_a_new_device_focuses_shape() {
     assert_eq!(model.open_device_in_shape(filament_id), Ok(()));
     assert_eq!(model.lens(), Lens::Shape);
     assert_eq!(model.selected_device_id(), Some(filament_id));
+}
+
+// R4-5 E-1 — a new clip takes selection without moving the user's track context
+#[test]
+fn creating_a_clip_selects_it_and_leaves_track_selection_intact() {
+    let mut model = AppModel::prototype();
+    let track = model.selected_track_id().unwrap();
+    let lens = model.lens();
+
+    let placement = model
+        .create_clip(track, "phrase", BeatTicks::from_beats(4), BeatTicks(0))
+        .unwrap();
+
+    assert_eq!(model.selected_clip(), Some(placement));
+    assert_eq!(model.selected_track_id(), Some(track));
+    assert_eq!(model.lens(), lens);
+    assert_eq!(model.clip_track(placement), Some(track));
+}
+
+// R4-5 E-2 — selecting a clip changes no lens, unlike open_device_in_shape which does deliberately
+#[test]
+fn selecting_a_clip_does_not_change_the_lens() {
+    let mut model = AppModel::prototype();
+    let track = model.selected_track_id().unwrap();
+    let first = model
+        .create_clip(track, "one", BeatTicks::from_beats(4), BeatTicks(0))
+        .unwrap();
+    let second = model
+        .create_clip(
+            track,
+            "two",
+            BeatTicks::from_beats(4),
+            BeatTicks::from_beats(4),
+        )
+        .unwrap();
+
+    model.select_lens(Lens::Arrange);
+    assert_eq!(model.select_clip(first), Ok(()));
+    assert_eq!(model.lens(), Lens::Arrange);
+    assert_eq!(model.selected_clip(), Some(first));
+
+    model.select_lens(Lens::Build);
+    assert_eq!(model.select_clip(second), Ok(()));
+    assert_eq!(
+        model.lens(),
+        Lens::Build,
+        "a clip is edited where it lives, not in a separate surface"
+    );
+}
+
+// R4-5 E-3 — a refused clip edit reports the specific error and rolls back completely
+#[test]
+fn an_invalid_clip_edit_reports_and_rolls_back() {
+    let mut model = AppModel::prototype();
+    let track = model.selected_track_id().unwrap();
+    model
+        .create_clip(track, "held", BeatTicks::from_beats(4), BeatTicks(0))
+        .unwrap();
+    let before_clips = model.track_list().placement_count();
+    let before_material = model.track_list().clips().len();
+    let before_selection = model.selected_clip();
+
+    // Overlaps the placement above
+    let refused = model.create_clip(
+        track,
+        "clashing",
+        BeatTicks::from_beats(4),
+        BeatTicks::from_beats(2),
+    );
+    assert!(matches!(
+        refused,
+        Err(ClipError::OverlappingPlacement { .. })
+    ));
+    assert_eq!(model.track_list().placement_count(), before_clips);
+    assert_eq!(
+        model.track_list().clips().len(),
+        before_material,
+        "a refused placement must not leave orphaned clip material behind"
+    );
+    assert_eq!(model.selected_clip(), before_selection);
+
+    // A blank name is refused before anything is minted
+    assert_eq!(
+        model.create_clip(
+            track,
+            "  ",
+            BeatTicks::from_beats(4),
+            BeatTicks::from_beats(8)
+        ),
+        Err(ClipError::BlankName)
+    );
+    assert_eq!(model.track_list().clips().len(), before_material);
+
+    // And an unknown placement cannot be selected
+    let stranger = model
+        .create_clip(
+            track,
+            "temp",
+            BeatTicks::from_beats(1),
+            BeatTicks::from_beats(16),
+        )
+        .unwrap();
+    model.select_clip(stranger).unwrap();
+    assert!(model.select_clip(track).is_err());
+    assert_eq!(model.selected_clip(), Some(stranger));
+}
+
+// R4-5 E-4 — the empty lane states the fact rather than advertising
+#[test]
+fn the_empty_clip_lane_reports_no_clips() {
+    let model = AppModel::prototype();
+    let track = model.selected_track_id().unwrap();
+
+    assert_eq!(model.track_list().placement_count(), 0);
+    assert_eq!(CLIP_LANE_EMPTY_MESSAGE, "No clips on this track.");
+    assert_eq!(
+        CLIP_INSPECTOR_EMPTY_MESSAGE,
+        "No clip selected. Select a clip in Arrange to edit its notes."
+    );
+    assert_eq!(model.selected_clip(), None);
+    assert!(model.track_list().get(track).unwrap().clips().is_empty());
+}
+
+// R4-5 E-5 — every clip row exposes a label carrying its whole state
+#[test]
+fn every_clip_row_exposes_a_non_empty_accessible_label() {
+    let mut model = AppModel::prototype();
+    let track = model.selected_track_id().unwrap();
+    let placement = model
+        .create_clip(
+            track,
+            "phrase",
+            BeatTicks::from_beats(4),
+            BeatTicks::from_beats(8),
+        )
+        .unwrap();
+
+    let label = model.clip_label(placement).unwrap();
+    for fragment in ["phrase", "8.000", "4.000", "0 notes", "active"] {
+        assert!(
+            label.contains(fragment),
+            "the label must carry {fragment}; it was {label:?}"
+        );
+    }
+
+    // Deactivating must be legible in the label, not only in a color
+    model.set_clip_active(placement, false).unwrap();
+    assert!(model.clip_label(placement).unwrap().contains("inactive"));
+    assert_eq!(model.clip_label(track), None);
 }

@@ -6,12 +6,14 @@
 
 pub mod engine;
 
-use spectre_core::{IdGen, ObjectId, Transport, TransportCommand, TransportState};
+use spectre_core::{BeatTicks, IdGen, ObjectId, Transport, TransportCommand, TransportState};
 use spectre_dsp::{
     DeviceParameterSnapshot, DspParameter, FILAMENT_PARAMETERS, GAIN_PARAMETERS, GLOAM_PARAMETERS,
     PULSE_PARAMETERS, SATURATOR_PARAMETERS,
 };
-use spectre_project::{Track, TrackError, TrackInstrument, TrackList};
+use spectre_project::{
+    ClipError, ClipPlacement, MidiClip, Track, TrackError, TrackInstrument, TrackList,
+};
 
 // Persistent workspace lenses over one project selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,6 +97,11 @@ impl DeviceControl {
 
 pub const OPEN_IN_SHAPE_ACTION_LABEL: &str = "Open in Shape";
 pub const SHAPE_EMPTY_MESSAGE: &str = "No device selected. Open a device from Build to shape it.";
+// A truthful empty surface: it states the fact and names the command as text, and does not draw
+// a populated-looking lane. The vision's release bar prohibits fake surfaces
+pub const CLIP_LANE_EMPTY_MESSAGE: &str = "No clips on this track.";
+pub const CLIP_INSPECTOR_EMPTY_MESSAGE: &str =
+    "No clip selected. Select a clip in Arrange to edit its notes.";
 
 // Borrow Build card content and its direct Shape action from the app model
 #[derive(Debug, Clone, Copy)]
@@ -214,6 +221,9 @@ pub struct AppModel {
     devices: Vec<DeviceControl>,
     selected_track: Option<ObjectId>,
     selected_device: Option<ObjectId>,
+    // Session-only, never persisted, and deliberately independent of track selection: selecting
+    // a clip must not move the user's track context
+    selected_clip: Option<ObjectId>,
     ids: IdGen,
     feedback: String,
 }
@@ -275,6 +285,7 @@ impl AppModel {
             transport: Transport::new(),
             lens: Lens::Arrange,
             selected_track: Some(track_id),
+            selected_clip: None,
             tracks,
             devices,
             selected_device,
@@ -329,6 +340,100 @@ impl AppModel {
 
     pub fn selected_track(&self) -> Option<&Track> {
         self.tracks.get(self.selected_track?)
+    }
+
+    pub fn selected_clip(&self) -> Option<ObjectId> {
+        self.selected_clip
+    }
+
+    // Create clip material and place it on one track, selecting the placement.
+    // Track selection is untouched: a new clip must not move the user's context
+    pub fn create_clip(
+        &mut self,
+        track: ObjectId,
+        name: &str,
+        length: BeatTicks,
+        start: BeatTicks,
+    ) -> Result<ObjectId, ClipError> {
+        if self.tracks.get(track).is_none() {
+            return Err(ClipError::UnknownClip(track));
+        }
+        let clip_id = self.ids.next_id();
+        let clip = MidiClip::new(clip_id, name, length)?;
+        let placement_id = self.ids.next_id();
+        let placement = ClipPlacement::new(placement_id, clip_id, start)?;
+
+        // Placement first: it is the edit that can be refused by an overlap, and a refused
+        // placement must not leave orphaned clip material behind
+        self.tracks
+            .get_mut(track)
+            .expect("presence checked above")
+            .clips_mut()
+            .insert(placement, length)?;
+        self.tracks.add_clip(clip).expect("the id was just minted");
+        self.selected_clip = Some(placement_id);
+        Ok(placement_id)
+    }
+
+    // Select an existing placement. Unlike open_device_in_shape this changes no lens, because a
+    // clip is edited where it lives rather than in a separate surface
+    pub fn select_clip(&mut self, placement: ObjectId) -> Result<(), ClipError> {
+        if self.clip_track(placement).is_none() {
+            return Err(ClipError::UnknownPlacement(placement));
+        }
+        self.selected_clip = Some(placement);
+        Ok(())
+    }
+
+    // Which track holds one placement
+    pub fn clip_track(&self, placement: ObjectId) -> Option<ObjectId> {
+        self.tracks
+            .tracks()
+            .iter()
+            .find(|track| track.clips().get(placement).is_some())
+            .map(|track| track.id())
+    }
+
+    // Activate or deactivate one placement. A deactivated placement contributes no notes to a
+    // bake, which is how it goes silent without being deleted
+    pub fn set_clip_active(&mut self, placement: ObjectId, active: bool) -> Result<(), ClipError> {
+        let track = self
+            .clip_track(placement)
+            .ok_or(ClipError::UnknownPlacement(placement))?;
+        self.tracks
+            .get_mut(track)
+            .expect("clip_track returned a track in the list")
+            .clips_mut()
+            .get_mut(placement)
+            .expect("clip_track found the placement on this track")
+            .set_active(active);
+        Ok(())
+    }
+
+    // One accessible label for a placement: name, position, length, note count, and active state.
+    // Built from the model rather than from a view, so no second description of a clip exists
+    pub fn clip_label(&self, placement: ObjectId) -> Option<String> {
+        let track = self.tracks.get(self.clip_track(placement)?)?;
+        let index = track
+            .clips()
+            .placements()
+            .iter()
+            .position(|entry| entry.id() == placement)?;
+        let entry = &track.clips().placements()[index];
+        let length = track.clips().length_at(index)?;
+        let clip = self.tracks.clip(entry.clip())?;
+        Some(format!(
+            "{}, starts at beat {:.3}, {:.3} beats long, {} notes, {}",
+            clip.name(),
+            entry.start().as_beats_f64(),
+            length.as_beats_f64(),
+            clip.note_count(),
+            if entry.is_active() {
+                "active"
+            } else {
+                "inactive"
+            },
+        ))
     }
 
     // Rename one track; a blank name leaves the model unchanged

@@ -291,6 +291,30 @@ pub fn render_vertical_slice(sample_rate: f64, frames: usize) -> Result<RenderRe
     )
 }
 
+// Render the fixture chain driven by caller-supplied note events.
+// Exists so a live render of one event list can be compared against the offline render of the
+// same list without either side owning a second render path or a second hash walk
+pub fn render_fixture_events(
+    sample_rate: f64,
+    frames: usize,
+    events: &[NoteEvent],
+) -> Result<RenderReport, String> {
+    if frames < 2 {
+        return Err("render requires at least two frames".into());
+    }
+    render_plan(
+        sample_rate,
+        frames,
+        events,
+        DeviceValues {
+            pulse_level: 0.3,
+            gain: 0.7,
+            saturator_drive: 2.5,
+            saturator_mix: 0.35,
+        },
+    )
+}
+
 // Apply an immutable app-thread snapshot while constructing the compiled-plan processors
 pub fn render_app_snapshot(
     sample_rate: f64,
