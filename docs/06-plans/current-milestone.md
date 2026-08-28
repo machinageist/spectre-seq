@@ -8,14 +8,14 @@ Notes: Exactly one milestone is active; the roadmap owns ordering
 # Current Milestone — R4 Credible Alpha
 
 - **Status:** accepted
-- **Last verified:** 2026-08-24
+- **Last verified:** 2026-08-28
 - **Scope:** track to master, MIDI clip, a small original synth/effect, minimal UI, save/reload, bounce
 - **Decision authority:** Jeff
 - **Upstream sources:** `rebuild-roadmap.md`, product seeds, decisions 8/13/14/22, CORE-004
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
 - **Supersedes:** the R3 live-shell milestone, exited 2026-08-09
 - **Open decisions:** none new at intake; decisions 13 and 17 gate later milestones
-- **Known gaps:** slices 1 and 2 landed 2026-08-24; the other seven are unimplemented. Neither landed slice has run its manual protocol
+- **Known gaps:** eight of nine slices are implemented; **slice 3 is hardware-blocked** and needs a Linux host. **No slice has run its manual protocol** — the protocol now exists at `../05-quality/r4-qa-protocol.md` and `../05-quality/r4-qa-records.md` is at its empty state. Two of the ten exit rows are therefore open, and **D-R4 asks Jeff what exiting R4 means while the Linux row cannot close here**
 
 ## Inherited debt
 
@@ -23,8 +23,8 @@ R4 carries four obligations from earlier milestones. None is optional and none s
 
 1. **Linux device qualification (decision 23).** R3 exited on macOS hardware alone. No Linux audio device has ever been opened. Discharge with `cargo test -p spectre-audio --test lifecycle_health -- --ignored --nocapture` on real Linux hardware. Until then no Linux support claim is authorized, and decision 1's co-first-class commitment remains undischarged.
 2. ~~**Runtime parameter seam (decision 22).**~~ **Discharged 2026-08-24 by slice 2.** The RT-002 parameter lane is now consumed end to end: `AudioProcessor::set_parameter`, `CompiledPlan::set_parameter`, and a render-side route table applied once per block before `process`. `parameters_pending` stays zero in a correctly wired build and a Shape edit changes rendered output. **One thing this did not settle:** the accepted contract asserts twice that `Gain` smooths and the shipped `Gain` does not. Slice 2 refused to resolve that by assertion — adding smoothing would break the bit-exact live/offline hash equality — so it stands as D-R3 for Jeff.
-3. **CORE-004 atomic save.** The API design is accepted in `../03-architecture/project-persistence.md`; the filesystem implementation lands here, with crash qualification at R5.
-4. **CORE-001 reorder evidence.** Explicitly gated on the first persisted collection, which R4 introduces.
+3. ~~**CORE-004 atomic save.**~~ **Discharged 2026-08-28 by slice 7.** `crates/spectre-project/src/fs.rs` implements the accepted contract's eight ordered steps; the destination is never deleted, truncated, or moved aside first, and the only non-`Unchanged` failure is the parent-directory sync after a successful replacement. Six of the seven save stages are fault-injected through a private seam; `EncodeSnapshot` is deliberately uncovered, because a validated envelope cannot fail to encode with the current encoder and the test could not fail. **Crash qualification remains R5's** and is not claimed anywhere.
+4. ~~**CORE-001 reorder evidence.**~~ **Discharged 2026-08-28 by slice 7.** `reorder_preserves_identity_across_save_and_reload` and `undone_reorder_reloads_in_the_original_order` prove identity and every field survive a reorder *through a real file*, and survive an undo after it. Migration evidence remains gated on the first schema migration, at R5.
 
 ## Wiring gap — closed 2026-08-24
 
