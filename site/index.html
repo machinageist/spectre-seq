@@ -380,16 +380,26 @@ pre.cmd .c { color:var(--ink-3); }
               Samples, Plugins) is present and deliberately disabled: "Catalog wiring arrives in later
               milestones."</p>
             <p><strong>Clips</strong> exist in the model as of R4-5 — create, select, activate, and an
-              accessible label carrying name, position, length, note count, and state — but
-              <strong>no clip lane or inspector is drawn yet</strong>. The surface is model-only, and
-              the drawing is R4-9's.</p>
+              accessible label carrying name, position, length, note count, and state — and since R4-9
+              they <strong>play</strong>: the shell bakes each track's clips before the stream opens and
+              Play sends the transport command alone, so the project's material replaces the audition
+              note rather than merging with it. <strong>No clip lane or inspector is drawn yet</strong>,
+              so the editing surface is still model-only.</p>
+            <p><strong>Persistence</strong> arrived with R4-7. A PROJECT block in the track panel takes a
+              path and offers Save and Open; the dirty marker is <em>derived</em> by comparing the bytes
+              a save would write against the bytes last written, rather than set by hand at each mutation
+              site — a flag maintained at call sites is a flag someone forgets at the next one. One press
+              of Open never discards unsaved work; a second one does, in place, with no modal.</p>
+            <p><strong>Bounce</strong> arrived with R4-8, as a second right-hand panel that coexists with
+              the inspector. Its pre-render checks are pure functions the shell draws from, so the
+              button-disabled rules are a regression gate rather than a manual check.</p>
             <p>App parameter edits can be transferred as an owned snapshot into deterministic offline
               rendering, independently of focus. The complete four-parameter fixture is validated —
               exact membership, no duplicates, no aliases, no unknown identities — before any value is
               allowed to construct a processor.</p>
             <dl class="kv">
-              <dt>Tests</dt><dd>56 — 36 model, 18 live-engine, 2 process smoke</dd>
-              <dt>Source</dt><dd>crates/spectre-app/src/{lib.rs, main.rs, engine.rs} · 2 386 lines</dd>
+              <dt>Tests</dt><dd>78 — model, live-engine, project I/O, bounce panel, process smoke</dd>
+              <dt>Source</dt><dd>crates/spectre-app/src/{lib.rs, main.rs, engine.rs, project.rs, bounce_panel.rs} · 3 392 lines</dd>
             </dl>
           </div>
         </details>
@@ -628,8 +638,15 @@ pre.cmd .c { color:var(--ink-3); }
               refused into counted silence, and the refusal comes from the lane's own order. Sorting
               that pair would put the all-notes-off before the note-on by rank and leave the note
               sounding after Stop — a stuck note where there was a clean refusal.</p>
+            <p><strong>Which is why Play stopped auditioning once clips landed in the shell.</strong>
+              With a player attached, the project's own material <em>replaces</em> the audition note
+              rather than merging with it. The test that proves this had to put Play and Stop in
+              <em>one block</em> to fire at all — separated across blocks, the merge never conflicts
+              and the assertion passes either way. Writing it that way immediately caught a real
+              defect in the test harness, which had been auditioning over its own clips.</p>
             <dl class="kv">
               <dt>Not drawn</dt><dd>No clip lane or inspector yet — the surface is model-only</dd>
+              <dt>Live</dt><dd>Every instrument track plays its own clips, one clip voice per track</dd>
               <dt>Falsified</dt><dd>Restoring the scratch clear fails 5 tests; removing the sort fails 3</dd>
             </dl>
           </div>
@@ -638,8 +655,8 @@ pre.cmd .c { color:var(--ink-3); }
         <details class="entry">
           <summary>
             <span class="nm">spectre-project</span>
-            <span class="chip ok">38 tests</span>
-            <span class="path">versioned envelope · commands · undo · tracks · clips</span>
+            <span class="chip ok">74 tests</span>
+            <span class="path">schema 2 · atomic save · commands · undo · tracks · clips</span>
           </summary>
           <div class="body">
             <p>A versioned JSON envelope (decision 3 — inspectable, and it preserves unknown fields), with
@@ -648,11 +665,26 @@ pre.cmd .c { color:var(--ink-3); }
             <p>Atomic command transactions with grouped edits and bounded undo/redo, per decision 13 —
               command-pattern, not state-snapshot diffing.</p>
             <p>Checked-in R1 fixtures cover exact rewrite and round trip, schema and semantic rejection,
-              and newer-schema field preservation. What does <em>not</em> exist yet is any filesystem
-              write path: <code>CORE-004</code>'s atomic save is an accepted API design, and the
-              implementation is slice R4-7.</p>
+              and newer-schema field preservation. <strong>Since R4-7 the crate also owns the
+              filesystem.</strong> <code>save_project_atomic</code> validates, encodes, creates a hidden
+              sibling with <code>O_CREAT|O_EXCL</code>, writes, <code>fsync</code>s the file, releases
+              the handle, <code>rename(2)</code>s, and <code>fsync</code>s the parent directory — and
+              the destination is never deleted, truncated, or moved aside first.</p>
+            <p><strong>Six of seven save stages are fault-injected through a private seam; the seventh
+              is uncovered on purpose.</strong> A validated envelope cannot fail to encode with the
+              current encoder, so an <code>EncodeSnapshot</code> test could not fail. The variant exists
+              because the accepted contract requires the distinction; that it is unreachable today is
+              stated rather than papered over with a green check.</p>
+            <p><strong>The validator went public and gained four rules, because deserialization bypasses
+              every constructor.</strong> <code>Track</code>'s mutators clamp and its constructor refuses
+              a blank name, but <code>#[derive(Deserialize)]</code> calls none of them — so a hand-edited
+              file could carry a blank name, an out-of-range level, duplicate IDs, or too many tracks.
+              No new number was introduced: every bound re-checked is an already-accepted one, on a path
+              that skipped it.</p>
             <dl class="kv">
-              <dt>Source</dt><dd>403 lines src · 255 lines tests</dd>
+              <dt>Source</dt><dd>2,538 lines src · 1,725 lines tests</dd>
+              <dt>Not claimed</dt><dd>Autosave, journaling, recovery, crash durability — all R5</dd>
+              <dt>Not closed</dt><dd>Unknown fields do not survive open → edit → save through the shell</dd>
             </dl>
           </div>
         </details>
@@ -660,8 +692,8 @@ pre.cmd .c { color:var(--ink-3); }
         <details class="entry">
           <summary>
             <span class="nm">spectre-offline</span>
-            <span class="chip ok">24 tests</span>
-            <span class="path">deterministic render harness</span>
+            <span class="chip ok">61 tests</span>
+            <span class="path">render harness · bounce · WAV · e2e fixture</span>
           </summary>
           <div class="body">
             <p>Deterministic project inspection plus the Pulse → Gain → Saturator fixture rendered
@@ -672,8 +704,26 @@ pre.cmd .c { color:var(--ink-3); }
               Incomplete, duplicate, aliased, unknown, or mismatched input is rejected at the boundary.</p>
             <p>R2's exit gates live here: silence, impulse, allocation, and deterministic-hash tests, all
               on the unchanged compiled-plan process path.</p>
+            <p><strong>Since R4-8 the crate also bounces.</strong> A bounce compiles the plan once,
+              renders <em>n</em> frames in fixed-size quanta, folds every block into one frame-major
+              FNV-1a hash, and writes 32-bit float WAVE bytes that are a <em>copy</em> of the engine's
+              own buffers rather than a conversion — which is why the file's hash is a claim about the
+              file and not only about a buffer. Blocking is not a convenience: a single-pass three-minute
+              render would allocate roughly 207 MB of channel pool for a 69 MB result.</p>
+            <p><strong>Block size is part of a render, not a preference, and the workspace proves it
+              rather than asserting it.</strong> RT-003 containment silences a whole quantum, so a
+              <em>contaminated</em> render is not identical across block sizes — a test renders 512
+              frames with a poison at frame 300, once as one quantum and once as two, and frame 0 is
+              silence in the first and intact in the second.</p>
+            <p><strong>Since R4-9 it also holds the alpha's end-to-end fixture</strong> — one checked-in
+              project, three tracks running Filament into Gloam, one clip each, one muted — decoded from
+              disk, rendered, saved, reloaded, and rendered again. <strong>No checked-in golden hash:</strong>
+              device math routes through the platform's libm, so a cross-platform constant would encode
+              an open decision as a passing test on one platform and a red CI on the other. What is
+              asserted is equality between two computations on the same host in the same process.</p>
             <dl class="kv">
-              <dt>Source</dt><dd>366 lines src · 470 lines tests</dd>
+              <dt>Source</dt><dd>1,382 lines src · 1,957 lines tests</dd>
+              <dt>Found</dt><dd>The e2e fixture caught the bridge addressing one instrument out of three</dd>
             </dl>
           </div>
         </details>
@@ -685,7 +735,7 @@ pre.cmd .c { color:var(--ink-3); }
             <span class="path">the gate</span>
           </summary>
           <div class="body">
-            <p>The gate is three commands. All three are green as of 2026-08-24.</p>
+            <p>The gate is three commands. All three are green as of 2026-08-28, at 443 passing tests.</p>
             <pre class="cmd">cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace</pre>
@@ -835,15 +885,15 @@ const ATLAS = {
 
   meta: {
     milestone: "R4",
-    gate: "342 / 0 / 2",
-    verified: "2026-08-25"
+    gate: "443 / 0 / 2",
+    verified: "2026-08-28"
   },
 
   strip: [
     { lbl:"Active milestone", v:"R4", tone:"warn", sub:"Credible Alpha · opened 2026-08-09" },
-    { lbl:"Workspace gate",   v:"342 pass", tone:"ok", sub:"0 failed · 2 ignored (hardware drills)" },
-    { lbl:"R4 specs cleared", v:"8 / 9", tone:"ok", sub:"R4-7 in remediation 3" },
-    { lbl:"R4 implemented",   v:"5 / 9", tone:"ok", sub:"live audio, parameter seam, tracks, clips, devices" }
+    { lbl:"Workspace gate",   v:"443 pass", tone:"ok", sub:"0 failed · 2 ignored (hardware drills)" },
+    { lbl:"R4 specs cleared", v:"9 / 9", tone:"ok", sub:"R4-7 landed on a failed spec — see its card" },
+    { lbl:"R4 implemented",   v:"8 / 9", tone:"ok", sub:"only R4-3 remains, and it needs a Linux box" }
   ],
 
   roadmap: [
@@ -912,19 +962,19 @@ const ATLAS = {
     { id:"R4-6", name:"First devices", group:"pass",
       goal:"Ship one small original synth and one original effect as the alpha's voice, per decision 15's deliberately-small scope.",
       spec:{ state:"pass", score:"2.931", iters:2 }, impl:1, implState:"built",
-      flag:"<b>Built 2026-08-25.</b> Filament, a one-voice phase-warped instrument, and Gloam, a one-pole damper whose corner opens with the signal. Thirteen ledger rows derive every bound. <b>Not selectable on a track yet</b> — TrackInstrument still has one variant." },
-    { id:"R4-7", name:"Project persistence", group:"work",
+      flag:"<b>Built 2026-08-25.</b> Filament, a one-voice phase-warped instrument, and Gloam, a one-pole damper whose corner opens with the signal. Thirteen ledger rows derive every bound. <b>Reachable from a track since R4-9</b> added TrackInstrument::Filament — before that the synth rendered in the harness but was in no plan ./spectre ran." },
+    { id:"R4-7", name:"Project persistence", group:"pass",
       goal:"Implement CORE-004's atomic save and reload over the accepted persistence contract, and land CORE-001's reorder evidence on the first persisted collection.",
-      spec:{ state:"pass", score:"—", iters:3 }, impl:0,
-      flag:"<b>Failed the feasibility rule twice</b> — at 2.850, then again at 2.681 on a narrower cause: line pins that had gone stale under the commits landing beneath it. Remediation 3 is re-baselining every citation onto current HEAD and citing by symbol instead of line." },
+      spec:{ state:"fail", score:"2.681", iters:2 }, impl:1, implState:"built",
+      flag:"<b>Built 2026-08-28 on a spec that FAILED its blind review</b>, and that is a decision rather than an oversight. The failure was the feasibility rule — line pins gone stale under the commits landing beneath it — while the same reviewer recorded that all six remediations verify against source. Written against the substance, checked at HEAD as each claim was used. <b>Two places the substance itself was wrong are recorded, not absorbed:</b> AppModel needed two fields the spec said it would not, and the schema-2 fields needed skip_serializing_if or the R1 fixture stops round-tripping byte-identically." },
     { id:"R4-8", name:"Offline bounce", group:"pass",
       goal:"Add offline bounce and prove it matches the live path's computation, extending the hash-equivalence approach the callback bridge already uses.",
-      spec:{ state:"pass", score:"2.967", iters:4 }, impl:0,
-      flag:"Four iterations. Caught a 48× arithmetic error, then a remediation that broke its own compile." },
-    { id:"R4-9", name:"End-to-end and QA", group:"pass",
+      spec:{ state:"pass", score:"2.967", iters:4 }, impl:1, implState:"built",
+      flag:"<b>Built 2026-08-28.</b> Sixteen blocks through the bridge and a sixteen-block bounce produce one hash, and the --bounce CLI prints that number from a separate process. The refactor de-duplicates the <i>specimen</i> and deliberately not the <i>instrument</i>: three hand-written FNV folds stay, because one instrument compared against itself is not verification. <b>Not claimed:</b> cross-machine bit-reproducibility — device math routes through the platform's libm." },
+    { id:"R4-9", name:"End-to-end and QA", group:"work",
       goal:"Write and run the end-to-end fixture and the manual QA protocol that R4's exit requires.",
-      spec:{ state:"pass", score:"2.845", iters:1 }, impl:0,
-      flag:"Raised <b>D-R4</b>: what does R4's exit mean while the Linux row cannot close?" }
+      spec:{ state:"pass", score:"2.845", iters:1 }, impl:1, implState:"built",
+      flag:"<b>Fixture built 2026-08-28; the protocol has never been run.</b> One checked-in project — three tracks, Filament into Gloam, one clip each, one muted — decoded from disk, rendered, saved, reloaded, rendered again, with 16 assertions. <b>It found the gap it exists for:</b> RenderBridge carried one note node, so a three-track project played one track live while the offline path played all three. Now closed. Still raises <b>D-R4</b>: what does R4's exit mean while the Linux row cannot close?" }
   ],
 
   requirements: [
@@ -977,9 +1027,11 @@ const ATLAS = {
 
   open: [
     { id:"D-R2", q:"Can the Serum 2 extraction be accepted? It claims a 354-page official user guide as its primary source, but no ledger records were written for it.", blocks:"All 250 Serum 2 observation records" },
-    { id:"D-R3", q:"An accepted architecture document asserts twice that Gain smooths. The shipped Gain is a single f32 with an instantaneous setter. Which one is wrong?", blocks:"R4-2 implementation" },
+    { id:"D-R3", q:"An accepted architecture document asserts twice that Gain smooths. The shipped Gain is a single f32 with an instantaneous setter. Which one is wrong?", blocks:"Nothing — R4-2 shipped without resolving it, deliberately: smoothing would break the bit-exact live/offline hash equality" },
     { id:"D-R4", q:"What does R4's exit mean while the Linux row cannot close? Its exit is a ten-row conjunction whose own text says none is optional.", blocks:"The definition of finishing R4" },
-    { id:"R4-7 Q2", q:"A schema bump may disturb an acceptance test belonging to CORE-003 — a verified requirement. Landing the slice without answering this would quietly downgrade it.", blocks:"R4-7 landing" },
+    { id:"R4-7 Q2", q:"A schema bump may disturb an acceptance test belonging to CORE-003 — a verified requirement.", blocks:"Answered by the implementation: the schema-2 fields are skip_serializing_if empty, so an R1 file still round-trips byte-identically and the accepted test passes unchanged" },
+    { id:"D-R5", q:"Specs pin line numbers that are true at one commit, and this run implemented past those commits — so R4-7 failed its review on citation drift while every remediation verified against source. Freeze the gauntlet while implementation runs, or cite by symbol and quoted literal?", blocks:"Nothing today; it decides how the next milestone's loop is run" },
+    { id:"D-R6", q:"Cross-machine bit-reproducibility is not claimed, because tanh and powf route through the platform's libm. Pin a portable math implementation, or keep the claim scoped to one process and one build?", blocks:"Any checked-in golden hash, and the e2e fixture's per-platform record" },
     { id:"D-R1", q:"Logic Pro has zero citable observation records and Serum 2 has two, yet both are named benchmarks. Accept the uneven evidence, or fill it?", blocks:"Nothing — specs cite what exists and name the gaps" },
     { id:"D-MM2", q:"Does Spectre build a mixing and mastering suite at all?", blocks:"The entire mixing/mastering workstream" },
     { id:"D-MM3", q:"Where would it sit? No mastering milestone exists on the roadmap; R6 is the mixer and R11 is the effect catalog.", blocks:"Roadmap placement" },
@@ -987,13 +1039,13 @@ const ATLAS = {
   ],
 
   crates: [
-    { n:"spectre-core",    t:67, src:1624, tst:888  },
-    { n:"spectre-audio",   t:68, src:1581, tst:2174, note:"+1 ignored" },
-    { n:"spectre-app",     t:28, src:993,  tst:593  },
-    { n:"spectre-offline", t:21, src:366,  tst:470  },
-    { n:"spectre-project", t:18, src:403,  tst:255  },
-    { n:"spectre-graph",   t:16, src:545,  tst:830  },
-    { n:"spectre-dsp",     t:12, src:710,  tst:375  }
+    { n:"spectre-audio",   t:103, src:2536, tst:3629, note:"+1 ignored" },
+    { n:"spectre-app",     t:78,  src:3392, tst:2185, note:"+1 ignored" },
+    { n:"spectre-project", t:74,  src:2538, tst:1725 },
+    { n:"spectre-core",    t:67,  src:1631, tst:888  },
+    { n:"spectre-offline", t:61,  src:1382, tst:1957 },
+    { n:"spectre-dsp",     t:38,  src:1315, tst:1345 },
+    { n:"spectre-graph",   t:22,  src:590,  tst:1265 }
   ],
 
   resstrip: [
