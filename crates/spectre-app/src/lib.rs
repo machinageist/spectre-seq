@@ -4,6 +4,7 @@
 // Notes: UI state delegates transport truth to spectre-core; the live engine lives in
 //   engine.rs and AppModel stays renderer-neutral and audio-free
 
+pub mod bounce_panel;
 pub mod engine;
 
 use spectre_core::{BeatTicks, IdGen, ObjectId, Transport, TransportCommand, TransportState};

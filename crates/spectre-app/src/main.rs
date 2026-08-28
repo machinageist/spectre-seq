@@ -6,6 +6,7 @@
 //   Persistence wiring remains out of scope until R4-7.
 
 use eframe::egui::{self, Color32, CornerRadius, RichText, Stroke, Vec2};
+use spectre_app::bounce_panel::{duration_label, validate_request, BouncePanel, BounceState};
 use spectre_app::engine::{
     apply_parameter_edit, engine_status_field, EngineHealth, EngineState, EngineUnavailable,
     LiveEngine,
@@ -46,6 +47,10 @@ struct SpectrePrototype {
     // The track-list revision the running engine was built from. While this differs from the
     // model's, the app states that the edit is not audible rather than pretending it is
     engine_revision: u64,
+    // Offline bounce state. Owned by the shell, not by AppModel, for the same reason the engine
+    // is: the model gains no render dependency and no thread-affine field
+    bounce: BouncePanel,
+    bounce_open: bool,
 }
 
 impl Default for SpectrePrototype {
@@ -59,6 +64,8 @@ impl Default for SpectrePrototype {
             engine_unavailable: EngineUnavailable::NotAttempted,
             engine_attempted: false,
             engine_revision: 0,
+            bounce: BouncePanel::default(),
+            bounce_open: false,
         }
     }
 }
@@ -191,6 +198,7 @@ impl SpectrePrototype {
         let mut toggle = false;
         let mut retry = false;
         let mut rebuild = false;
+        let mut open_bounce = false;
         let stale = self.engine_is_stale();
         egui::TopBottomPanel::top("transport")
             .exact_height(62.0)
@@ -217,6 +225,13 @@ impl SpectrePrototype {
                         .on_disabled_hover_text(
                             "Recording arrives at R7; no capture path exists yet.",
                         );
+                    if ui
+                        .selectable_label(self.bounce_open, "Bounce…")
+                        .on_hover_text("Render this signal path offline to a 32-bit float WAV")
+                        .clicked()
+                    {
+                        open_bounce = true;
+                    }
                     ui.separator();
                     // Tempo and meter are the model's defaults; position is not derived from the
                     // render thread yet, so it reads as unknown rather than as a frozen 001
@@ -319,6 +334,9 @@ impl SpectrePrototype {
         }
         if rebuild {
             self.rebuild_engine();
+        }
+        if open_bounce {
+            self.bounce_open = !self.bounce_open;
         }
     }
 
@@ -702,6 +720,159 @@ impl SpectrePrototype {
         }
     }
 
+    // The bounce panel. Its geometry, its rate, and its block size all come from the running
+    // engine when there is one, so the offline render is configured the way the live path is
+    fn bounce_panel(&mut self, ctx: &egui::Context) {
+        if !self.bounce_open {
+            return;
+        }
+        // The engine's own rate and block size when a stream is open; the corpus fallback with
+        // its reason shown otherwise. A bounce never invents a rate
+        let (sample_rate, block_frames, from_engine) = match self.engine.as_ref() {
+            Some(engine) => {
+                let config = engine.config();
+                (f64::from(config.sample_rate), config.buffer_frames, true)
+            }
+            None => {
+                let fallback = spectre_offline::bounce::fallback_config(self.bounce.frames);
+                (fallback.sample_rate, fallback.block_frames, false)
+            }
+        };
+        let ceiling = spectre_offline::bounce::max_frames(sample_rate);
+        let mut start = false;
+        let mut cancel = false;
+
+        egui::SidePanel::right("bounce")
+            .resizable(true)
+            .default_width(320.0)
+            .min_width(260.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(PANEL)
+                    .inner_margin(egui::Margin::same(14)),
+            )
+            .show(ctx, |ui| {
+                ui.label(RichText::new("BOUNCE").small().strong().color(ACCENT));
+                ui.label("Destination");
+                ui.text_edit_singleline(&mut self.bounce.destination);
+
+                ui.label("Length (samples)");
+                ui.horizontal(|ui| {
+                    let mut frames = self.bounce.frames.to_string();
+                    if ui.text_edit_singleline(&mut frames).changed() {
+                        self.bounce.frames = frames.trim().parse().unwrap_or(0);
+                    }
+                    ui.label(
+                        RichText::new(duration_label(self.bounce.frames, sample_rate)).color(MUTED),
+                    );
+                });
+
+                ui.label(RichText::new(format!("Sample rate  {sample_rate:.0} Hz")).color(MUTED))
+                    .on_hover_text(if from_engine {
+                        "Taken from the running engine, so the bounce matches what you hear"
+                    } else {
+                        "No engine is running; the workspace's own render rate is used"
+                    });
+                ui.label(RichText::new(format!("Block size  {block_frames}")).color(MUTED))
+                    .on_hover_text(if from_engine {
+                        "The device's own buffer size. Containment is scoped to the block, so \
+                         this number is part of the render, not a preference"
+                    } else {
+                        "No engine is running; the workspace's own block size is used"
+                    });
+
+                let running_engine = self.engine.is_some();
+                ui.add_enabled(
+                    running_engine,
+                    egui::Checkbox::new(
+                        &mut self.bounce.compare_against_live,
+                        "Compare against the live engine",
+                    ),
+                )
+                .on_disabled_hover_text("No engine is running");
+
+                ui.separator();
+                let request =
+                    validate_request(&self.bounce.destination, self.bounce.frames, ceiling);
+                match self.bounce.state() {
+                    BounceState::Running => {
+                        cancel = ui.button("Cancel").clicked();
+                        let (done, total) = self.bounce.progress();
+                        ui.label(format!("Rendering block {done} of {total}"));
+                    }
+                    _ => {
+                        let response =
+                            ui.add_enabled(request.is_ok(), egui::Button::new("Start bounce"));
+                        start = response.clicked();
+                        if let Err(error) = &request {
+                            ui.label(RichText::new(error.to_string()).color(ACCENT));
+                        }
+                    }
+                }
+
+                ui.separator();
+                match self.bounce.report() {
+                    None if self.bounce.message.is_empty() => {
+                        ui.label(RichText::new(
+                            "No render yet. A bounce renders this project's signal path offline \
+                             and writes a 32-bit float WAV.",
+                        )
+                        .color(MUTED));
+                        // Saying less than this would be a fake surface: ProjectDoc carries no
+                        // devices, so a bounce today renders the built-in fixture
+                        ui.label(
+                            RichText::new(
+                                "This project holds no tracks or clips yet; a bounce renders the \
+                             built-in device fixture.",
+                            )
+                            .color(MUTED),
+                        );
+                    }
+                    None => {
+                        ui.label(RichText::new(&self.bounce.message).color(ACCENT));
+                    }
+                    Some(report) => {
+                        ui.label(&self.bounce.message);
+                        for line in [
+                            format!("frames  {}", report.frames),
+                            format!("blocks  {}", report.blocks),
+                            format!("peak  {:.6}", report.peak),
+                            format!("hash  0x{:016x}", report.hash),
+                            format!("contained  {}", report.contaminated_nodes),
+                            format!("denormals flushed  {}", report.denormals_flushed),
+                        ] {
+                            ui.label(RichText::new(line).monospace().color(MUTED));
+                        }
+                    }
+                }
+            });
+
+        if cancel {
+            self.bounce.cancel();
+        }
+        if start {
+            let config = spectre_offline::bounce::BounceConfig {
+                sample_rate,
+                frames: self.bounce.frames,
+                block_frames,
+                // One checkbox governs both: the per-block log exists only to localize a
+                // comparison mismatch, so it is kept exactly when a comparison is being made
+                log_block_hashes: self.bounce.compare_against_live,
+            };
+            // The shell's own device values, not the fixture's literals: what the user hears
+            // in Shape is what the bounce renders
+            match self.model.device_parameter_snapshot() {
+                Err(error) => self.bounce.message = error.to_string(),
+                Ok(values) => {
+                    let events = spectre_offline::fixture_events(self.bounce.frames).to_vec();
+                    if let Err(error) = self.bounce.start(config, values, events) {
+                        self.bounce.message = error.to_string();
+                    }
+                }
+            }
+        }
+    }
+
     fn workspace(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default()
             .frame(
@@ -748,10 +919,14 @@ impl eframe::App for SpectrePrototype {
                 self.model.select_lens(lens);
             }
         }
+        // Collect a finished render on the app thread; never blocks, so a long bounce does not
+        // freeze the window
+        self.bounce.poll();
         self.transport(ctx);
         self.lenses(ctx);
         self.track_list(ctx);
         self.inspector(ctx);
+        self.bounce_panel(ctx);
         self.workspace(ctx);
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
     }
@@ -834,7 +1009,7 @@ fn smoke_test() {
     // own engine, not written as a literal, so the assertion in tests/smoke_cli.rs actually fails
     // if startup is wired into the headless path — which would break CI on a device-less host
     println!(
-        "Spectre prototype ready lens={} tracks={} clips={} transport={} selected_device={} engine={}",
+        "Spectre prototype ready lens={} tracks={} clips={} transport={} selected_device={} engine={} bounce={}",
         model.lens(),
         model.tracks().len(),
         model.track_list().placement_count(),
@@ -844,7 +1019,10 @@ fn smoke_test() {
             "stopped"
         },
         selected_device,
-        engine_status_field(shell.engine.as_ref())
+        engine_status_field(shell.engine.as_ref()),
+        // Derived from the shell's own panel, not written as a literal, so this fails if a
+        // render is ever started from the headless path
+        shell.bounce.state().as_str()
     );
 }
 

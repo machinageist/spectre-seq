@@ -10,81 +10,30 @@ use spectre_audio::bridge::{RenderBridge, DEFAULT_NOTE_SCRATCH};
 use spectre_audio::control::{control_channel, ParameterTarget};
 use spectre_audio::RenderBlock;
 use spectre_core::{IdGen, TransportCommand, TransportState};
-use spectre_dsp::{
-    AudioProcessor, Gain, NoteEvent, NoteEventKind, PulseInstrument, Saturator, Waveform,
-};
-use spectre_graph::{CompiledPlan, Connection, EditableGraph, NodeId};
+use spectre_dsp::{NoteEvent, NoteEventKind};
+use spectre_graph::{CompiledPlan, NodeId};
 use spectre_offline::{fixture_events, render_vertical_slice};
 
 const SAMPLE_RATE: f64 = 48_000.0;
 const FRAMES: usize = 512;
 const CHANNELS: u16 = 2;
 
-// Fixture device values, matching the offline harness exactly
-const PULSE_LEVEL: f32 = 0.3;
-const GAIN: f32 = 0.7;
-const SATURATOR_DRIVE: f32 = 2.5;
-const SATURATOR_MIX: f32 = 0.35;
-
-// Seed the offline harness uses, so node identities match
-const FIXTURE_SEED: u64 = 0x0000_5245_4e44_4552;
-
-// Rebuild the offline fixture chain and return the plan with its note node
+// The fixture chain, from its single definition in spectre-offline. Not rebuilt here: two
+// independently maintained specimens are drift, not verification, and drift between them would
+// fire this file's live/offline mismatch for a reason that has nothing to do with the engine
 fn fixture_plan(frames: usize) -> (CompiledPlan, NodeId) {
-    let mut ids = IdGen::new(FIXTURE_SEED);
-    let pulse = NodeId::new(ids.next_id());
-    let gain = NodeId::new(ids.next_id());
-    let saturator = NodeId::new(ids.next_id());
-
-    let mut graph = EditableGraph::new();
-    graph
-        .add_node(
-            pulse,
-            PulseInstrument::new(Waveform::Saw, PULSE_LEVEL)
-                .unwrap()
-                .io(),
-        )
-        .unwrap();
-    graph.add_node(gain, Gain::new(GAIN).unwrap().io()).unwrap();
-    graph
-        .add_node(
-            saturator,
-            Saturator::new(SATURATOR_DRIVE, SATURATOR_MIX).unwrap().io(),
-        )
-        .unwrap();
-    for (from, to) in [(pulse, gain), (gain, saturator)] {
-        graph
-            .connect(Connection {
-                from,
-                from_bus: 0,
-                to,
-                to_bus: 0,
-            })
-            .unwrap();
-    }
-    let plan = graph
-        .compile(saturator, frames, &mut |node| {
-            if node == pulse {
-                Ok(Box::new(PulseInstrument::new(Waveform::Saw, PULSE_LEVEL)?))
-            } else if node == gain {
-                Ok(Box::new(Gain::new(GAIN)?))
-            } else {
-                Ok(Box::new(Saturator::new(SATURATOR_DRIVE, SATURATOR_MIX)?))
-            }
-        })
-        .unwrap();
-    (plan, pulse)
+    spectre_offline::fixture::compile_fixture_plan(frames).unwrap()
 }
 
 // Hash deinterleaved output the way the offline harness hashes its planar output
 fn hash_interleaved(samples: &[f32], channels: usize, frames: usize) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let mut hash = spectre_offline::hash::FNV_OFFSET_BASIS;
     for channel in 0..channels {
         for frame in 0..frames {
             let sample = samples[frame * channels + channel];
             for byte in sample.to_bits().to_le_bytes() {
                 hash ^= u64::from(byte);
-                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+                hash = hash.wrapping_mul(spectre_offline::hash::FNV_PRIME);
             }
         }
     }

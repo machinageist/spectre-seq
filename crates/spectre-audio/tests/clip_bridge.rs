@@ -13,27 +13,15 @@ use spectre_audio::bridge::RenderBridge;
 use spectre_audio::clip::{ClipPlayer, ClipSchedule, CLIP_EVENT_RESERVE, SCHEDULE_LANE_CAPACITY};
 use spectre_audio::control::{control_channel, ControlError, ControlSender};
 use spectre_audio::RenderBlock;
-use spectre_core::{
-    BeatTicks, IdGen, SampleRate, SampleTime, TempoMap, TransportCommand, TICKS_PER_BEAT,
-};
-use spectre_dsp::{
-    AudioProcessor, Gain, NoteEvent, NoteEventKind, PulseInstrument, Saturator, Waveform,
-    MAX_NOTE_EVENTS_PER_BLOCK,
-};
-use spectre_graph::{CompiledPlan, Connection, EditableGraph, NodeId};
+use spectre_core::{BeatTicks, SampleRate, SampleTime, TempoMap, TransportCommand, TICKS_PER_BEAT};
+use spectre_dsp::{NoteEvent, NoteEventKind, MAX_NOTE_EVENTS_PER_BLOCK};
+use spectre_graph::{CompiledPlan, NodeId};
 
 const SAMPLE_RATE: f64 = 48_000.0;
 const RATE_HZ: u32 = 48_000;
 const FRAMES: usize = 256;
 const CHANNELS: u16 = 2;
 const BEAT: i64 = TICKS_PER_BEAT;
-
-// Fixture device values and seed, matching the offline harness exactly
-const PULSE_LEVEL: f32 = 0.3;
-const GAIN: f32 = 0.7;
-const SATURATOR_DRIVE: f32 = 2.5;
-const SATURATOR_MIX: f32 = 0.35;
-const FIXTURE_SEED: u64 = 0x0000_5245_4e44_4552;
 
 thread_local! {
     static IN_RT_SECTION: Cell<bool> = const { Cell::new(false) };
@@ -69,62 +57,22 @@ fn rt_section<T>(body: impl FnOnce() -> T) -> (T, u64) {
     (value, VIOLATIONS.with(Cell::get) - start)
 }
 
-// Rebuild the offline fixture chain and return the plan with its note node
+// The fixture chain, from its single definition in spectre-offline. Not rebuilt here: two
+// independently maintained specimens are drift, not verification, and drift between them would
+// fire this file's live/offline mismatch for a reason that has nothing to do with the engine
 fn fixture_plan(frames: usize) -> (CompiledPlan, NodeId) {
-    let mut ids = IdGen::new(FIXTURE_SEED);
-    let pulse = NodeId::new(ids.next_id());
-    let gain = NodeId::new(ids.next_id());
-    let saturator = NodeId::new(ids.next_id());
-
-    let mut graph = EditableGraph::new();
-    graph
-        .add_node(
-            pulse,
-            PulseInstrument::new(Waveform::Saw, PULSE_LEVEL)
-                .unwrap()
-                .io(),
-        )
-        .unwrap();
-    graph.add_node(gain, Gain::new(GAIN).unwrap().io()).unwrap();
-    graph
-        .add_node(
-            saturator,
-            Saturator::new(SATURATOR_DRIVE, SATURATOR_MIX).unwrap().io(),
-        )
-        .unwrap();
-    for (from, to) in [(pulse, gain), (gain, saturator)] {
-        graph
-            .connect(Connection {
-                from,
-                from_bus: 0,
-                to,
-                to_bus: 0,
-            })
-            .unwrap();
-    }
-    let plan = graph
-        .compile(saturator, frames, &mut |node| {
-            if node == pulse {
-                Ok(Box::new(PulseInstrument::new(Waveform::Saw, PULSE_LEVEL)?))
-            } else if node == gain {
-                Ok(Box::new(Gain::new(GAIN)?))
-            } else {
-                Ok(Box::new(Saturator::new(SATURATOR_DRIVE, SATURATOR_MIX)?))
-            }
-        })
-        .unwrap();
-    (plan, pulse)
+    spectre_offline::fixture::compile_fixture_plan(frames).unwrap()
 }
 
 // The FNV-1a walk the offline harness uses, over an interleaved buffer
 fn hash_interleaved(samples: &[f32], channels: usize, frames: usize) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let mut hash = spectre_offline::hash::FNV_OFFSET_BASIS;
     for channel in 0..channels {
         for frame in 0..frames {
             let sample = samples[frame * channels + channel];
             for byte in sample.to_bits().to_le_bytes() {
                 hash ^= u64::from(byte);
-                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+                hash = hash.wrapping_mul(spectre_offline::hash::FNV_PRIME);
             }
         }
     }

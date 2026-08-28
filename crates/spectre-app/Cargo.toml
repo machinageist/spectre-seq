@@ -22,8 +22,9 @@ spectre-core = { path = "../spectre-core" }
 spectre-dsp = { path = "../spectre-dsp" }
 spectre-graph = { path = "../spectre-graph" }
 spectre-project = { path = "../spectre-project" }
+# Ordinary dependency as of R4-8's bounce panel. spectre-offline dev-depends on spectre-app in
+# return; Cargo permits a cycle that closes through a dev-dependency, verified here with
+# cargo metadata and a clean build rather than assumed
+spectre-offline = { path = "../spectre-offline" }
 serde.workspace = true
 serde_json.workspace = true
-
-[dev-dependencies]
-spectre-offline = { path = "../spectre-offline" }

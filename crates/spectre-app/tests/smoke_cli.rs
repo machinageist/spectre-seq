@@ -19,6 +19,11 @@ fn smoke_mode_reports_launchable_prototype() {
     assert!(stdout.contains("selected_device=Pulse(pulse)"));
     // The headless path must never open a device; this fails if engine startup is wired into it
     assert!(stdout.contains("engine=not-started"));
+    // R4-8 — nothing in the headless path starts a render either
+    assert!(
+        stdout.contains("bounce=idle"),
+        "smoke output was {stdout:?}"
+    );
 }
 
 // R4-5 E-6 — the headless launch still succeeds with clip state present in the model.

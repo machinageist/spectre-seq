@@ -7,15 +7,20 @@ use serde::Serialize;
 use serde_json::Map;
 use spectre_core::{IdGen, ObjectId, TempoMap, Transport};
 use spectre_dsp::{
-    AudioProcessor, DeviceParameterSnapshot, DspParameter, Filament, Gain, Gloam, NoteEvent,
-    NoteEventKind, PulseInstrument, Saturator, Waveform, FILAMENT_PARAMETERS, GAIN_PARAMETERS,
-    GLOAM_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS,
+    AudioProcessor, DeviceParameterSnapshot, DspParameter, Filament, Gloam, NoteEvent,
+    NoteEventKind, FILAMENT_PARAMETERS, GAIN_PARAMETERS, GLOAM_PARAMETERS, PULSE_PARAMETERS,
+    SATURATOR_PARAMETERS,
 };
 use spectre_graph::{Connection, EditableGraph, NodeId, PlanNoteInput};
 use spectre_project::{
     build_track_graph, from_bytes, track_device_factory, ProjectDoc, ProjectEnvelope, TrackList,
     SCHEMA_VERSION,
 };
+pub mod bounce;
+pub mod fixture;
+pub mod hash;
+pub mod wav;
+
 use std::collections::{HashMap, HashSet};
 
 // Stable machine-readable report emitted by the offline harness
@@ -38,11 +43,11 @@ pub struct RenderReport {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct DeviceValues {
-    pulse_level: f32,
-    gain: f32,
-    saturator_drive: f32,
-    saturator_mix: f32,
+pub(crate) struct DeviceValues {
+    pub(crate) pulse_level: f32,
+    pub(crate) gain: f32,
+    pub(crate) saturator_drive: f32,
+    pub(crate) saturator_mix: f32,
 }
 
 impl DeviceValues {
@@ -211,55 +216,7 @@ fn render_plan(
     events: &[NoteEvent],
     values: DeviceValues,
 ) -> Result<RenderReport, String> {
-    let mut ids = IdGen::new(0x0000_5245_4e44_4552);
-    let pulse = NodeId::new(ids.next_id());
-    let gain = NodeId::new(ids.next_id());
-    let saturator = NodeId::new(ids.next_id());
-
-    let mut graph = EditableGraph::new();
-    graph
-        .add_node(
-            pulse,
-            PulseInstrument::new(Waveform::Saw, values.pulse_level)?.io(),
-        )
-        .map_err(|error| error.to_string())?;
-    graph
-        .add_node(gain, Gain::new(values.gain)?.io())
-        .map_err(|error| error.to_string())?;
-    graph
-        .add_node(
-            saturator,
-            Saturator::new(values.saturator_drive, values.saturator_mix)?.io(),
-        )
-        .map_err(|error| error.to_string())?;
-    for (from, to) in [(pulse, gain), (gain, saturator)] {
-        graph
-            .connect(Connection {
-                from,
-                from_bus: 0,
-                to,
-                to_bus: 0,
-            })
-            .map_err(|error| error.to_string())?;
-    }
-
-    let mut plan = graph
-        .compile(saturator, frames, &mut |node| {
-            if node == pulse {
-                Ok(Box::new(PulseInstrument::new(
-                    Waveform::Saw,
-                    values.pulse_level,
-                )?))
-            } else if node == gain {
-                Ok(Box::new(Gain::new(values.gain)?))
-            } else {
-                Ok(Box::new(Saturator::new(
-                    values.saturator_drive,
-                    values.saturator_mix,
-                )?))
-            }
-        })
-        .map_err(|error| error.to_string())?;
+    let (mut plan, pulse) = fixture::compile_fixture_plan_with(frames, values)?;
     plan.process(
         sample_rate,
         frames,
@@ -283,10 +240,10 @@ pub fn render_vertical_slice(sample_rate: f64, frames: usize) -> Result<RenderRe
         frames,
         &fixture_events(frames),
         DeviceValues {
-            pulse_level: 0.3,
-            gain: 0.7,
-            saturator_drive: 2.5,
-            saturator_mix: 0.35,
+            pulse_level: fixture::FIXTURE_PULSE_LEVEL,
+            gain: fixture::FIXTURE_GAIN,
+            saturator_drive: fixture::FIXTURE_SATURATOR_DRIVE,
+            saturator_mix: fixture::FIXTURE_SATURATOR_MIX,
         },
     )
 }
@@ -307,10 +264,10 @@ pub fn render_fixture_events(
         frames,
         events,
         DeviceValues {
-            pulse_level: 0.3,
-            gain: 0.7,
-            saturator_drive: 2.5,
-            saturator_mix: 0.35,
+            pulse_level: fixture::FIXTURE_PULSE_LEVEL,
+            gain: fixture::FIXTURE_GAIN,
+            saturator_drive: fixture::FIXTURE_SATURATOR_DRIVE,
+            saturator_mix: fixture::FIXTURE_SATURATOR_MIX,
         },
     )
 }
@@ -338,10 +295,10 @@ pub fn render_silence(sample_rate: f64, frames: usize) -> Result<RenderReport, S
         frames,
         &[],
         DeviceValues {
-            pulse_level: 0.3,
-            gain: 0.7,
-            saturator_drive: 2.5,
-            saturator_mix: 0.35,
+            pulse_level: fixture::FIXTURE_PULSE_LEVEL,
+            gain: fixture::FIXTURE_GAIN,
+            saturator_drive: fixture::FIXTURE_SATURATOR_DRIVE,
+            saturator_mix: fixture::FIXTURE_SATURATOR_MIX,
         },
     )
 }
@@ -352,19 +309,14 @@ pub fn render_silence(sample_rate: f64, frames: usize) -> Result<RenderReport, S
 fn report_from(plan: &spectre_graph::CompiledPlan, frames: usize) -> Result<RenderReport, String> {
     let output = plan.last_output().ok_or("no quantum has been rendered")?;
     let mut peak = 0.0_f32;
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     for sample in output[0].iter().chain(output[1].iter()) {
         peak = peak.max(sample.abs());
-        for byte in sample.to_bits().to_le_bytes() {
-            hash ^= u64::from(byte);
-            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-        }
     }
     Ok(RenderReport {
         frames,
         channels: 2,
         peak,
-        hash,
+        hash: hash::hash_planar_quantum([output[0], output[1]]),
     })
 }
 

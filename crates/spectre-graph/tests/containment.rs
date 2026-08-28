@@ -11,7 +11,7 @@ use spectre_dsp::{
     ProcessContext, ProcessError, PulseInstrument, SumBus, Waveform, FILAMENT_PARAMETERS,
     GLOAM_PARAMETERS,
 };
-use spectre_graph::{Connection, EditableGraph, NodeId, PlanNoteInput};
+use spectre_graph::{Connection, ContainmentStats, EditableGraph, NodeId, PlanNoteInput};
 
 const FRAMES: usize = 64;
 const SAMPLE_RATE: f64 = 48_000.0;
@@ -557,4 +557,131 @@ fn filament_and_gloam_report_no_containment_activity() {
         peak > 0.0,
         "the voice chain must sound for the guard to mean anything"
     );
+}
+
+// R4 slice 8 evidence — containment is scoped to the quantum, so block size is audible
+// The existing PoisonEffect writes outputs[0][0], the first sample of *every* quantum, which
+// cannot express a fixed position on the timeline. This one counts frames across process calls
+struct PoisonAtFrame {
+    target: usize,
+    elapsed: usize,
+}
+
+impl AudioProcessor for PoisonAtFrame {
+    fn io(&self) -> DeviceIo {
+        DeviceIo {
+            class: DeviceClass::Effect,
+            audio_inputs: 2,
+            audio_outputs: 2,
+            accepts_notes: false,
+        }
+    }
+
+    // Test-only device with no descriptors, so every key is refused
+    fn set_parameter(
+        &mut self,
+        key: spectre_dsp::DeviceParameterKey,
+        _value: f32,
+    ) -> Result<(), spectre_dsp::ParameterError> {
+        Err(spectre_dsp::ParameterError::UnknownKey(key))
+    }
+
+    fn process(
+        &mut self,
+        context: &ProcessContext<'_>,
+        inputs: &[&[f32]],
+        outputs: &mut [&mut [f32]],
+    ) -> Result<(), ProcessError> {
+        let frames = context.frames();
+        for (channel, output) in outputs.iter_mut().enumerate() {
+            output[..frames].copy_from_slice(&inputs[channel][..frames]);
+        }
+        if self.target >= self.elapsed && self.target < self.elapsed + frames {
+            outputs[0][self.target - self.elapsed] = Poison::Nan.sample();
+        }
+        self.elapsed += frames;
+        Ok(())
+    }
+}
+
+// Render `total` clean frames through PoisonAtFrame in `block`-frame quanta, returning every
+// output sample in frame order across both channels and the containment tally
+fn render_poisoned_at(total: usize, block: usize, target: usize) -> (Vec<f32>, ContainmentStats) {
+    let mut ids = IdGen::new(0x0000_5254_3034_3308);
+    let source = NodeId::new(ids.next_id());
+    let effect = NodeId::new(ids.next_id());
+
+    let mut graph = EditableGraph::new();
+    graph
+        .add_node(
+            source,
+            PoisonSource {
+                poison: Poison::Clean,
+            }
+            .io(),
+        )
+        .unwrap();
+    graph
+        .add_node(effect, PoisonAtFrame { target, elapsed: 0 }.io())
+        .unwrap();
+    graph
+        .connect(Connection {
+            from: source,
+            from_bus: 0,
+            to: effect,
+            to_bus: 0,
+        })
+        .unwrap();
+
+    let mut plan = graph
+        .compile(effect, block, &mut |node| {
+            if node == source {
+                Ok(Box::new(PoisonSource {
+                    poison: Poison::Clean,
+                }))
+            } else {
+                Ok(Box::new(PoisonAtFrame { target, elapsed: 0 }))
+            }
+        })
+        .unwrap();
+
+    let mut samples = Vec::with_capacity(total * 2);
+    for _ in 0..total / block {
+        plan.process(SAMPLE_RATE, block, &[]).unwrap();
+        let output = plan.last_output().unwrap();
+        for (left, right) in output[0][..block].iter().zip(&output[1][..block]) {
+            samples.push(*left);
+            samples.push(*right);
+        }
+    }
+    (samples, plan.containment())
+}
+
+#[test]
+fn a_contaminated_render_is_not_identical_across_block_sizes() {
+    const TOTAL: usize = 512;
+    const TARGET: usize = 300;
+
+    let (one_quantum, one_stats) = render_poisoned_at(TOTAL, TOTAL, TARGET);
+    let (two_quanta, two_stats) = render_poisoned_at(TOTAL, TOTAL / 2, TARGET);
+
+    // Frame 0 is 300 frames before the poison and is silenced anyway in the single-quantum
+    // render, because containment is scoped to the quantum and the poison is inside it
+    assert_eq!(one_quantum[0], 0.0);
+    // The same frame survives when the quantum boundary falls between it and the poison
+    assert_eq!(two_quanta[0], 0.5);
+
+    // One node contaminated either way; what changes is how much audio went with it
+    assert_eq!(one_stats.contaminated_nodes, 1);
+    assert_eq!(two_stats.contaminated_nodes, 1);
+    assert_eq!(one_quantum.iter().filter(|s| **s == 0.5).count(), 0);
+    assert_eq!(
+        two_quanta.iter().filter(|s| **s == 0.5).count(),
+        TOTAL, // the first 256-frame quantum, both channels
+    );
+
+    // Same audio, same poison, different bytes — the whole reason a bounce must state its
+    // block size rather than choose one. This fails if CompiledPlan::process ever narrows
+    // containment from the quantum to the sample, which would be a good change to notice
+    assert_ne!(one_quantum, two_quanta);
 }
