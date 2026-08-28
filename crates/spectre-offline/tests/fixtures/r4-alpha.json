@@ -1,0 +1,168 @@
+{
+  "schema_version": 2,
+  "project": {
+    "id": 2266688672036147059,
+    "name": "R4 Alpha E2E",
+    "tempo_map": {
+      "segments": [
+        {
+          "start": 0,
+          "bpm": 120.0
+        }
+      ]
+    },
+    "transport": {
+      "state": "Stopped",
+      "position": 0,
+      "loop_region": null,
+      "loop_enabled": false
+    },
+    "id_gen_state": 12059193283811678574,
+    "tracks": {
+      "tracks": [
+        {
+          "id": 1793392437711611414,
+          "name": "Lead",
+          "instrument": "Filament",
+          "instrument_level": 0.2,
+          "level": 1.0,
+          "muted": false,
+          "soloed": false,
+          "clips": {
+            "placements": [
+              {
+                "id": 13600348413528300326,
+                "clip": 16985044029573204834,
+                "start": 0,
+                "active": true
+              }
+            ],
+            "lengths": [
+              160
+            ]
+          }
+        },
+        {
+          "id": 7823607858668198993,
+          "name": "Pad",
+          "instrument": "Filament",
+          "instrument_level": 0.2,
+          "level": 1.0,
+          "muted": false,
+          "soloed": false,
+          "clips": {
+            "placements": [
+              {
+                "id": 5919286695783216413,
+                "clip": 13567570723994808791,
+                "start": 0,
+                "active": true
+              }
+            ],
+            "lengths": [
+              160
+            ]
+          }
+        },
+        {
+          "id": 6012013544627686073,
+          "name": "Ref",
+          "instrument": "Filament",
+          "instrument_level": 0.2,
+          "level": 1.0,
+          "muted": true,
+          "soloed": false,
+          "clips": {
+            "placements": [
+              {
+                "id": 12310174904043063863,
+                "clip": 7223358381926764107,
+                "start": 0,
+                "active": true
+              }
+            ],
+            "lengths": [
+              160
+            ]
+          }
+        }
+      ],
+      "clips": [
+        {
+          "id": 16985044029573204834,
+          "name": "Lead",
+          "length": 160,
+          "notes": [
+            {
+              "start": 0,
+              "length": 128,
+              "channel": 0,
+              "note": 57,
+              "velocity": 0.8
+            }
+          ]
+        },
+        {
+          "id": 13567570723994808791,
+          "name": "Pad",
+          "length": 160,
+          "notes": [
+            {
+              "start": 0,
+              "length": 64,
+              "channel": 0,
+              "note": 60,
+              "velocity": 0.6
+            },
+            {
+              "start": 64,
+              "length": 64,
+              "channel": 0,
+              "note": 64,
+              "velocity": 0.6
+            }
+          ]
+        },
+        {
+          "id": 7223358381926764107,
+          "name": "Ref",
+          "length": 160,
+          "notes": [
+            {
+              "start": 0,
+              "length": 128,
+              "channel": 0,
+              "note": 57,
+              "velocity": 0.8
+            }
+          ]
+        }
+      ],
+      "master_level": 1.0
+    },
+    "devices": [
+      {
+        "id": 8457826556836439748,
+        "key": "filament",
+        "parameters": [
+          {
+            "id": 2703159618662721681,
+            "key": "lean",
+            "value": 0.72
+          }
+        ]
+      },
+      {
+        "id": 12192496309782323045,
+        "key": "gloam",
+        "parameters": [
+          {
+            "id": 8663878094645562793,
+            "key": "damp_hz",
+            "value": 0.44
+          }
+        ]
+      }
+    ]
+  }
+}

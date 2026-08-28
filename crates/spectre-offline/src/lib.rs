@@ -16,6 +16,7 @@ use spectre_project::{
     build_track_graph, from_bytes, track_device_factory, ProjectDoc, ProjectEnvelope, TrackList,
     ViewDoc, SCHEMA_VERSION,
 };
+pub mod alpha_fixture;
 pub mod bounce;
 pub mod fixture;
 pub mod hash;

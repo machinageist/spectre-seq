@@ -142,6 +142,20 @@ fn run() -> Result<(), String> {
     if arguments.iter().any(|argument| argument == "--bounce") {
         return run_bounce(&arguments);
     }
+    // Regenerate the checked-in R4 alpha fixture. The file is the artifact; this is what wrote
+    // it, so a schema change is a rerun rather than a hand edit
+    if arguments
+        .iter()
+        .any(|argument| argument == "--write-alpha-fixture")
+    {
+        let path =
+            value_of(&arguments, "--out")?.ok_or("--write-alpha-fixture needs --out <path>")?;
+        let bytes = spectre_project::to_bytes(&spectre_offline::alpha_fixture::alpha_project())
+            .map_err(|error| error.to_string())?;
+        fs::write(&path, &bytes).map_err(|error| format!("failed to write {path}: {error}"))?;
+        println!("wrote {} bytes to {path}", bytes.len());
+        return Ok(());
+    }
 
     let bytes = match arguments.first().map(String::as_str) {
         None | Some("--self-test") => {

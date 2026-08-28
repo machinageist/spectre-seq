@@ -22,6 +22,11 @@ pub const MAX_TRACKS: usize = 16;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackInstrument {
     Pulse,
+    // R4-9 made the R4-6 synth reachable from a track. Until then Filament rendered in the
+    // offline harness and appeared on the Build surface but was in no plan ./spectre ran, which
+    // is what NEXT.md slice 6 recorded as open. R4's exit row asks for one original synth in the
+    // product, not one that exists beside it
+    Filament,
 }
 
 // App-thread track failure; every variant leaves the model unmutated

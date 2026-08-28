@@ -86,14 +86,14 @@ VST3 hosting, recording, automation and modulation, session/live slots, mixer se
 
 - ~~`./spectre` opens the qualified backend and produces sound through the existing compiled plan, with no second render path~~ — **partially closed 2026-08-24.** The open path, the render, and the no-second-path claim are all evidenced; the app's own drill rendered 88 real driver blocks. Audible confirmation and the manual protocol are outstanding, so this row is `implemented`, not closed.
 - ~~Decision 22's parameter seam is implemented, so a UI edit changes live audio~~ — **closed 2026-08-24.** `a_shape_edit_changes_live_audio_and_nothing_stays_pending` asserts exactly this: the rendered hash changes and `parameters_pending` is 0.
-- A MIDI clip plays through a track into master.
-- One small original synth and one original effect ship as the alpha's voice.
-- Atomic save and reload round-trip a project containing tracks, clips, and device parameters (CORE-004 implementation, CORE-001 reorder evidence).
-- Offline bounce renders the same project deterministically and matches the live path's computation.
-- An end-to-end fixture plus a written manual QA protocol both pass.
+- ~~A MIDI clip plays through a track into master~~ — **partially closed 2026-08-28.** The clip model, the baked schedule, and the merge rule are evidenced; `crates/spectre-offline/tests/e2e_alpha.rs` renders three tracks' clips into master offline. **Open in the product:** `RenderBridge` carries one `note_node`, so a multi-track project plays one track live, and `./spectre` attaches no clip player to its audition path at all. `the_bridge_can_only_deliver_notes_to_one_instrument` pins the limit and fails the day it is lifted.
+- ~~One small original synth and one original effect ship as the alpha's voice~~ — **closed 2026-08-28.** `Filament` and `Gloam` landed at R4-6 with thirteen DEV ledger rows; R4-9 added `TrackInstrument::Filament`, so the synth is reachable from a track and is what the alpha fixture renders rather than a device that exists beside the product.
+- ~~Atomic save and reload round-trip a project containing tracks, clips, and device parameters (CORE-004 implementation, CORE-001 reorder evidence)~~ — **closed 2026-08-28.** Schema 2 persists tracks, clips, device parameters, the view context, and the ID generator's position; `save_reload_render_produces_the_same_hash` proves a round trip does not change what the composed project computes, and `track_ids_survive_reorder_across_a_save` closes CORE-001's persisted half. Crash durability is R5's and is not claimed.
+- ~~Offline bounce renders the same project deterministically and matches the live path's computation~~ — **closed 2026-08-28.** `a_multi_block_bounce_matches_the_live_path_block_for_block` renders sixteen blocks each way to one hash, and the `--bounce` CLI prints that number from a separate process. Scoped to one process and one build: cross-machine bit-reproducibility is not claimed, because device math routes through the platform's libm.
+- An end-to-end fixture plus a written manual QA protocol both pass — **half closed 2026-08-28.** The fixture exists and passes: `crates/spectre-offline/tests/fixtures/r4-alpha.json` with 15 assertions in `e2e_alpha.rs`. The protocol exists at `docs/05-quality/r4-qa-protocol.md`. **No run has been performed**, so `docs/05-quality/r4-qa-records.md` is at its empty state and this row stays open.
 - Linux device qualification runs, discharging decision 23's debt.
 - `cargo fmt`, strict Clippy, and the full workspace suite stay green.
-- Traceability and status match the implementation.
+- Traceability and status match the implementation — verified against R4 slices 1, 2, 4, 5, 6, 7, 8, and 9 as of 2026-08-28; rechecked by the QA protocol's manual row 15 at each run.
 
 ## R3 exit record
 

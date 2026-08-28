@@ -6,7 +6,15 @@
 
 use crate::track::{TrackInstrument, TrackList, MAX_TRACKS};
 use spectre_core::{IdGen, ObjectId};
-use spectre_dsp::{AudioProcessor, Gain, PulseInstrument, SumBus, Waveform};
+use spectre_dsp::{
+    AudioProcessor, Filament, Gain, PulseInstrument, SumBus, Waveform, FILAMENT_PARAMETERS,
+};
+
+// Descriptor positions in FILAMENT_PARAMETERS. Named rather than inlined, so a reordering of the
+// array cannot silently swap rise for fall
+const FILAMENT_LEAN: usize = 0;
+const FILAMENT_RISE: usize = 1;
+const FILAMENT_FALL: usize = 2;
 use spectre_graph::{Connection, EditableGraph, GraphError, NodeId};
 
 // One compiled gain node and the instance ID of its single automatable parameter
@@ -221,6 +229,18 @@ fn instrument_for(
     match instrument {
         TrackInstrument::Pulse => Ok(Box::new(
             PulseInstrument::new(Waveform::Saw, level).map_err(RoutingError::Device)?,
+        )),
+        // The three shaping controls take their own descriptor defaults; the track's own
+        // instrument level is the one value a track slot carries, so it is the one passed in.
+        // Per-device parameter state on a track slot is a later slice's, not this one's
+        TrackInstrument::Filament => Ok(Box::new(
+            Filament::new(
+                FILAMENT_PARAMETERS[FILAMENT_LEAN].default(),
+                FILAMENT_PARAMETERS[FILAMENT_RISE].default(),
+                FILAMENT_PARAMETERS[FILAMENT_FALL].default(),
+                level,
+            )
+            .map_err(RoutingError::Device)?,
         )),
     }
 }

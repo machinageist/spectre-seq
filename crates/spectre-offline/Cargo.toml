@@ -19,3 +19,6 @@ serde_json.workspace = true
 
 [dev-dependencies]
 spectre-app = { path = "../spectre-app" }
+# R4-9's end-to-end test drives the live bridge beside the offline render. Both directions of
+# this edge run through dev-dependencies only, which Cargo permits; verified with a clean build
+spectre-audio = { path = "../spectre-audio" }
