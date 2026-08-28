@@ -7,7 +7,7 @@ use serde_json::{json, Map};
 use spectre_core::{IdGen, TempoMap, Transport};
 use spectre_project::{
     command::{CommandError, EditHistory, ProjectCommand, Transaction},
-    ProjectDoc,
+    ProjectDoc, TrackList, ViewDoc,
 };
 
 fn project() -> ProjectDoc {
@@ -19,6 +19,10 @@ fn project() -> ProjectDoc {
         name: "Original".into(),
         tempo_map: TempoMap::constant(120.0).unwrap(),
         transport: Transport::new(),
+        id_gen_state: ids.state(),
+        tracks: TrackList::new(),
+        devices: Vec::new(),
+        view: ViewDoc::default(),
         unknown,
     }
 }

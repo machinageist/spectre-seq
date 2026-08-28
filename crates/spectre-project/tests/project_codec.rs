@@ -22,7 +22,11 @@ fn encoded_fixture_value(mut edit: impl FnMut(&mut Value)) -> Vec<u8> {
 fn canonical_fixture_decodes_with_representative_r1_state() {
     let envelope = from_bytes(GOLDEN).expect("canonical fixture must decode");
 
-    assert_eq!(envelope.schema_version, SCHEMA_VERSION);
+    // The fixture's own version, not the build's. These coincided until R4-7 bumped the schema
+    // to 2; comparing against SCHEMA_VERSION was only ever correct by accident, and asserting
+    // the literal is what makes this a test that the R1 file stays readable
+    assert_eq!(envelope.schema_version, 1);
+    assert!(envelope.schema_version < SCHEMA_VERSION);
     assert_eq!(envelope.project.id.raw(), 1_311_768_467_463_790_320);
     assert_eq!(envelope.project.name, "R1 Canonical Fixture");
     assert_eq!(envelope.project.tempo_map.segments().len(), 2);

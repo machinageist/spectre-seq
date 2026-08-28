@@ -14,7 +14,7 @@ use spectre_dsp::{
 use spectre_graph::{Connection, EditableGraph, NodeId, PlanNoteInput};
 use spectre_project::{
     build_track_graph, from_bytes, track_device_factory, ProjectDoc, ProjectEnvelope, TrackList,
-    SCHEMA_VERSION,
+    ViewDoc, SCHEMA_VERSION,
 };
 pub mod bounce;
 pub mod fixture;
@@ -165,6 +165,10 @@ pub fn default_project() -> ProjectEnvelope {
             name: "Untitled".into(),
             tempo_map: TempoMap::constant(120.0).expect("constant default tempo is valid"),
             transport: Transport::new(),
+            id_gen_state: ids.state(),
+            tracks: TrackList::new(),
+            devices: Vec::new(),
+            view: ViewDoc::default(),
             unknown: Map::new(),
         },
         unknown: Map::new(),

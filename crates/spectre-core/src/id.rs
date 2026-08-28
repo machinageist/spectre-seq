@@ -52,6 +52,13 @@ impl IdGen {
         Self { state: seed }
     }
 
+    // Expose the generator position so a reload resumes the sequence rather than restarting it.
+    // Without it, a reloaded project mints IDs the project already holds — a guaranteed CORE-001
+    // collision on the first add after every open, not a probabilistic one
+    pub fn state(&self) -> u64 {
+        self.state
+    }
+
     // Produce the next nonzero ID
     pub fn next_id(&mut self) -> ObjectId {
         loop {

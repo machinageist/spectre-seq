@@ -22,7 +22,9 @@ fn default_project_report_is_deterministic() {
     let second = inspect_project(&bytes).unwrap();
 
     assert_eq!(first, second);
-    assert_eq!(first.schema_version, 1);
+    // A literal on purpose, not SCHEMA_VERSION: a schema bump is a decision, and this assertion
+    // is where an unannounced one fails. R4-7 moved it from 1 to 2 deliberately
+    assert_eq!(first.schema_version, 2);
     assert_eq!(first.project_name, "Untitled");
     assert_eq!(first.tempo_segment_count, 1);
     assert_eq!(first.transport_position_samples, 0);
@@ -541,4 +543,53 @@ fn voice_chain_renders_exact_silence_without_events() {
     assert_eq!(report.peak, 0.0);
     assert_eq!(report.frames, 4_096);
     assert_eq!(report.channels, 2);
+}
+
+// R4 slice 7 — I16. A save/reload round trip must not change what the project computes.
+// Three separate guards against a vacuous pass: the model is EDITED away from its defaults
+// first, so an adopt that dropped the devices would render descriptor defaults and change the
+// hash; the target is a FRESH model, so the round trip is exercised rather than compared with
+// itself; and the nonzero peak plus the differs-from-default assertion together prove the two
+// renders are not agreeing because both are silent or both are the default chain
+#[test]
+fn a_save_reload_round_trip_does_not_change_what_the_project_renders() {
+    use spectre_app::project::{adopt, project_envelope};
+    use spectre_project::{from_bytes, to_bytes};
+
+    let unedited = AppModel::prototype();
+    let baseline = render_app_snapshot(
+        48_000.0,
+        256,
+        &unedited.device_parameter_snapshot().unwrap(),
+    )
+    .unwrap();
+
+    let mut model = AppModel::prototype();
+    model
+        .set_device_parameter("saturator", "drive", 6.0)
+        .unwrap();
+    model.set_device_parameter("gain", "gain", 0.5).unwrap();
+    let before =
+        render_app_snapshot(48_000.0, 256, &model.device_parameter_snapshot().unwrap()).unwrap();
+
+    // The edit actually changes the audio, so an equal hash below is a statement about the
+    // round trip rather than about two identical default chains
+    assert_ne!(before.hash, baseline.hash);
+    assert!(before.peak > 0.0);
+
+    let bytes = to_bytes(&project_envelope(&model, "Determinism")).unwrap();
+    let mut reloaded = AppModel::prototype();
+    adopt(&mut reloaded, from_bytes(&bytes).unwrap()).unwrap();
+
+    let after = render_app_snapshot(
+        48_000.0,
+        256,
+        &reloaded.device_parameter_snapshot().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        after.hash, before.hash,
+        "persistence must not change what the project computes"
+    );
+    assert_eq!(after.peak, before.peak);
 }

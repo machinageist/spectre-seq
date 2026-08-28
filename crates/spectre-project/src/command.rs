@@ -3,7 +3,8 @@
 // Description: Atomic project commands, grouped transactions, and bounded undo/redo history
 // Notes: App-thread project mutation seam; never callback-reachable
 
-use crate::ProjectDoc;
+use crate::{ProjectDoc, TrackError};
+use spectre_core::ObjectId;
 use std::collections::VecDeque;
 
 // Command and history failures
@@ -12,6 +13,9 @@ pub enum CommandError {
     EmptyTransaction,
     InvalidProjectName,
     ZeroHistoryCapacity,
+    // TrackList already refuses an absent id and an out-of-range index before it mutates
+    // anything, so the failure vocabulary is wrapped rather than reinvented
+    Track(TrackError),
 }
 
 impl std::fmt::Display for CommandError {
@@ -20,6 +24,7 @@ impl std::fmt::Display for CommandError {
             Self::EmptyTransaction => "transaction must contain at least one command",
             Self::InvalidProjectName => "project name must contain a non-whitespace character",
             Self::ZeroHistoryCapacity => "history capacity must be greater than zero",
+            Self::Track(error) => return write!(f, "{error}"),
         };
         f.write_str(message)
     }
@@ -30,6 +35,7 @@ impl std::error::Error for CommandError {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CommandKind {
     SetProjectName { name: String, validate: bool },
+    ReorderTrack { id: ObjectId, to_index: usize },
 }
 
 // One reversible project-model mutation
@@ -49,6 +55,14 @@ impl ProjectCommand {
         }
     }
 
+    // Move one track to an absolute index. Addressed by ObjectId, never by a from-index: a
+    // position can be stale, an identity cannot, and identity is what CORE-001 is about
+    pub fn reorder_tracks(id: ObjectId, to_index: usize) -> Self {
+        Self {
+            kind: CommandKind::ReorderTrack { id, to_index },
+        }
+    }
+
     fn apply(&self, project: &mut ProjectDoc) -> Result<Self, CommandError> {
         match &self.kind {
             CommandKind::SetProjectName { name, validate } => {
@@ -60,6 +74,22 @@ impl ProjectCommand {
                     kind: CommandKind::SetProjectName {
                         name: previous,
                         validate: false,
+                    },
+                })
+            }
+            // TrackList::reorder returns the index the track came from, so the inverse is exact
+            // by construction rather than by an argument about remove/insert symmetry. The
+            // refusal happens before any mutation, which is what preserves Transaction's
+            // all-or-nothing property
+            CommandKind::ReorderTrack { id, to_index } => {
+                let from = project
+                    .tracks
+                    .reorder(*id, *to_index)
+                    .map_err(CommandError::Track)?;
+                Ok(Self {
+                    kind: CommandKind::ReorderTrack {
+                        id: *id,
+                        to_index: from,
                     },
                 })
             }

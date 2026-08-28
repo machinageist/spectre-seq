@@ -11,6 +11,7 @@ use spectre_app::engine::{
     apply_parameter_edit, engine_status_field, EngineHealth, EngineState, EngineUnavailable,
     LiveEngine,
 };
+use spectre_app::project::{adopt, is_dirty, open_gate, project_envelope, OpenGate};
 use spectre_app::{open_device_in_shape_from_ui, AppModel, Lens};
 
 const BG: Color32 = Color32::from_rgb(15, 18, 24);
@@ -51,6 +52,19 @@ struct SpectrePrototype {
     // is: the model gains no render dependency and no thread-affine field
     bounce: BouncePanel,
     bounce_open: bool,
+    // A file path is shell state, not project state, so it lives here rather than on AppModel
+    project_path: String,
+    // Last save or load outcome, shown verbatim. Never summarized as "failed"
+    project_status: String,
+    // The bytes the destination holds, as of the last successful save or open. Dirty is DERIVED
+    // by comparing the current document against this rather than set by hand at each mutation
+    // site: a flag maintained at call sites is a flag someone forgets at the next one, and a
+    // marker that reads "Saved" over unsaved work is exactly the product-killing defect the
+    // project-safety pillar is about
+    saved_snapshot: Option<Vec<u8>>,
+    // One interaction of arming for the discard-and-open confirm. No modal: a modal blocks a
+    // workspace that has nothing wrong with it
+    discard_armed: bool,
 }
 
 impl Default for SpectrePrototype {
@@ -66,6 +80,10 @@ impl Default for SpectrePrototype {
             engine_revision: 0,
             bounce: BouncePanel::default(),
             bounce_open: false,
+            project_path: String::new(),
+            project_status: String::new(),
+            saved_snapshot: None,
+            discard_armed: false,
         }
     }
 }
@@ -199,6 +217,7 @@ impl SpectrePrototype {
         let mut retry = false;
         let mut rebuild = false;
         let mut open_bounce = false;
+        let project_dirty = self.project_dirty();
         let stale = self.engine_is_stale();
         egui::TopBottomPanel::top("transport")
             .exact_height(62.0)
@@ -210,6 +229,12 @@ impl SpectrePrototype {
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.label(RichText::new("SPECTRE").size(20.0).strong().color(ACCENT));
+                    // Leading side, beside the wordmark, where nothing else sits — so it cannot
+                    // collide with R4-1's engine cluster or R4-4's rebuild control on the right
+                    if project_dirty {
+                        ui.label(RichText::new("•  unsaved").color(WARM))
+                            .on_hover_text("This project has changes that are not in a file yet.");
+                    }
                     ui.add_space(14.0);
                     if ui
                         .button(if self.model.is_playing() {
@@ -370,6 +395,10 @@ impl SpectrePrototype {
     }
 
     fn track_list(&mut self, ctx: &egui::Context) {
+        // Both actions mutate self, so they are deferred out of the panel closure that borrows it
+        let mut save = false;
+        let mut open = false;
+        let dirty = self.project_dirty();
         egui::SidePanel::left("tracks")
             .resizable(true)
             .default_width(220.0)
@@ -418,12 +447,149 @@ impl SpectrePrototype {
                     }
                 });
                 ui.separator();
+                ui.label(RichText::new("PROJECT").small().strong().color(MUTED));
+                ui.add_sized(
+                    [ui.available_width(), 28.0],
+                    egui::TextEdit::singleline(&mut self.project_path)
+                        .hint_text("Project file path"),
+                );
+                let has_path = !self.project_path.trim().is_empty();
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(has_path, egui::Button::new("Save project"))
+                        .on_disabled_hover_text("Type a file path to save into.")
+                        .clicked()
+                    {
+                        save = true;
+                    }
+                    // The discard confirm replaces the button in place for one interaction, so
+                    // one press can never throw away unsaved work
+                    let open_label = if dirty && self.discard_armed {
+                        "Discard and open"
+                    } else {
+                        "Open project"
+                    };
+                    if ui
+                        .add_enabled(has_path, egui::Button::new(open_label))
+                        .on_disabled_hover_text("Type a file path to open.")
+                        .clicked()
+                    {
+                        open = true;
+                    }
+                });
+                let status = if self.project_status.is_empty() {
+                    // States a property the code has, in the same slice as the behavior
+                    "No project file yet. Type a path and save — Spectre replaces the file \
+                     atomically, so an interrupted save leaves the old file intact."
+                } else {
+                    self.project_status.as_str()
+                };
+                ui.label(RichText::new(status).color(MUTED));
+                // The word changes, not only the colour
+                let (marker, tint) = if dirty {
+                    ("Unsaved changes", WARM)
+                } else {
+                    ("Saved", MUTED)
+                };
+                ui.label(RichText::new(marker).color(tint));
+                ui.separator();
                 ui.label(RichText::new("BROWSER").small().strong().color(MUTED));
                 for item in ["Instruments", "Effects", "Modulators", "Samples", "Plugins"] {
                     ui.add_enabled(false, egui::Button::new(item))
                         .on_disabled_hover_text("Catalog wiring arrives in later milestones.");
                 }
             });
+        if save {
+            self.save_project();
+        }
+        if open {
+            self.open_project();
+        }
+    }
+
+    // The project name a save would write, taken from the path's own stem
+    fn project_name(&self) -> String {
+        std::path::Path::new(self.project_path.trim())
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Untitled".into())
+    }
+
+    // The bytes a save would write right now
+    fn current_project_bytes(&self) -> Option<Vec<u8>> {
+        spectre_project::to_bytes(&project_envelope(&self.model, &self.project_name())).ok()
+    }
+
+    // True when the document differs from what was last written. Before any save there is
+    // nothing on disk, so the answer is yes
+    fn project_dirty(&self) -> bool {
+        is_dirty(
+            self.saved_snapshot.as_deref(),
+            self.current_project_bytes().as_deref(),
+        )
+    }
+
+    // Build the snapshot, write it atomically, and report exactly what happened.
+    // Blocks the UI thread; it does not touch the audio thread, because the bridge is not on
+    // this path at all
+    fn save_project(&mut self) {
+        let path = std::path::PathBuf::from(self.project_path.trim());
+        let name = path
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Untitled".into());
+        let snapshot = project_envelope(&self.model, &name);
+        match spectre_project::save_project_atomic(&path, &snapshot) {
+            Ok(_) => {
+                self.saved_snapshot = spectre_project::to_bytes(&snapshot).ok();
+                self.discard_armed = false;
+                self.project_status = format!("Saved to {}", path.display());
+            }
+            Err(spectre_project::SaveError::Io {
+                stage: spectre_project::SaveStage::SyncParentDirectory,
+                ..
+            }) => {
+                // The replacement happened but its directory entry may not survive a power
+                // loss. The project stays dirty and no second replacement is attempted
+                self.project_status = format!(
+                    "{} is in place, but the directory entry may not survive a power loss. \
+                     Save again.",
+                    path.display()
+                );
+            }
+            Err(error) => {
+                self.project_status = format!(
+                    "{error}. Nothing was written. {} is unchanged.",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    // Load, then adopt — never the other way round. The live project stays whole until a load
+    // has fully succeeded and been accepted
+    fn open_project(&mut self) {
+        if open_gate(self.project_dirty(), self.discard_armed) == OpenGate::ArmDiscard {
+            self.discard_armed = true;
+            self.project_status = "Unsaved changes. Press again to discard them and open.".into();
+            return;
+        }
+        let path = std::path::PathBuf::from(self.project_path.trim());
+        match spectre_project::load_project(&path) {
+            Err(error) => self.project_status = error.to_string(),
+            Ok(envelope) => match adopt(&mut self.model, envelope) {
+                Err(error) => self.project_status = error.to_string(),
+                Ok(()) => {
+                    // What the file holds is now what the model holds, so the marker reads
+                    // saved without anyone asserting that it should
+                    self.saved_snapshot = self.current_project_bytes();
+                    self.discard_armed = false;
+                    self.project_status = format!("Opened {}", path.display());
+                    // The loaded list is a different graph shape, so the running engine is stale
+                    self.engine_revision = self.engine_revision.wrapping_sub(1);
+                }
+            },
+        }
     }
 
     fn inspector(&mut self, ctx: &egui::Context) {
@@ -1009,7 +1175,7 @@ fn smoke_test() {
     // own engine, not written as a literal, so the assertion in tests/smoke_cli.rs actually fails
     // if startup is wired into the headless path — which would break CI on a device-less host
     println!(
-        "Spectre prototype ready lens={} tracks={} clips={} transport={} selected_device={} engine={} bounce={}",
+        "Spectre prototype ready lens={} tracks={} clips={} transport={} selected_device={} engine={} bounce={} project={}",
         model.lens(),
         model.tracks().len(),
         model.track_list().placement_count(),
@@ -1022,7 +1188,13 @@ fn smoke_test() {
         engine_status_field(shell.engine.as_ref()),
         // Derived from the shell's own panel, not written as a literal, so this fails if a
         // render is ever started from the headless path
-        shell.bounce.state().as_str()
+        shell.bounce.state().as_str(),
+        // Read from the shell's own project state for the same reason: this must fail if the
+        // headless launch ever opens a file
+        match shell.saved_snapshot {
+            None => "none",
+            Some(_) => "loaded",
+        }
     );
 }
 

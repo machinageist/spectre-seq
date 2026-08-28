@@ -6,8 +6,11 @@
 
 pub mod bounce_panel;
 pub mod engine;
+pub mod project;
 
-use spectre_core::{BeatTicks, IdGen, ObjectId, Transport, TransportCommand, TransportState};
+use spectre_core::{
+    BeatTicks, IdGen, ObjectId, TempoMap, Transport, TransportCommand, TransportState,
+};
 use spectre_dsp::{
     DeviceParameterSnapshot, DspParameter, FILAMENT_PARAMETERS, GAIN_PARAMETERS, GLOAM_PARAMETERS,
     PULSE_PARAMETERS, SATURATOR_PARAMETERS,
@@ -40,6 +43,11 @@ impl std::fmt::Display for Lens {
         f.write_str(label)
     }
 }
+
+// The tempo the first-launch project carries. The transport bar has shown this number since R3
+// and calls it a fixed project default; naming it here is what lets the project persist it
+// rather than re-derive it. Not a limit, so it owes no PROD-003 row
+pub const PROTOTYPE_BPM: f64 = 120.0;
 
 // The canonical result of one accepted Shape edit: what the model stored, and which stable
 // identities name it. Public fields, matching ParameterControl, because this is an app-thread
@@ -216,6 +224,13 @@ impl std::error::Error for DeviceParameterSnapshotError {}
 // Single source of truth for prototype interactions
 #[derive(Debug)]
 pub struct AppModel {
+    // The project's own identity and tempo. R4-7 added both, deviating from its spec's claim
+    // that persistence adds no field: without them an app-built envelope has nothing to put in
+    // ProjectDoc.id or ProjectDoc.tempo_map, so every save would mint a new project identity and
+    // reset the tempo to the prototype's. A project ID that changes on every save makes
+    // CORE-001's project-level identity meaningless, which is worse than one field
+    project_id: ObjectId,
+    tempo_map: TempoMap,
     transport: Transport,
     lens: Lens,
     tracks: TrackList,
@@ -283,6 +298,8 @@ impl AppModel {
         ];
         let selected_device = devices.first().map(|device| device.instance_id);
         Self {
+            project_id: ids.next_id(),
+            tempo_map: TempoMap::constant(PROTOTYPE_BPM).expect("a constant tempo is valid"),
             transport: Transport::new(),
             lens: Lens::Arrange,
             selected_track: Some(track_id),
@@ -293,6 +310,24 @@ impl AppModel {
             ids,
             feedback: String::new(),
         }
+    }
+
+    // Stable identity of the open project, restored on load rather than re-minted on save
+    pub fn project_id(&self) -> ObjectId {
+        self.project_id
+    }
+
+    pub fn tempo_map(&self) -> &TempoMap {
+        &self.tempo_map
+    }
+
+    pub fn transport(&self) -> Transport {
+        self.transport
+    }
+
+    // Generator position, so a reload resumes the sequence rather than restarting it
+    pub fn id_gen_state(&self) -> u64 {
+        self.ids.state()
     }
 
     pub fn is_playing(&self) -> bool {
