@@ -96,11 +96,12 @@ const APP_GRAPH_SEED: u64 = 0x0053_5045_4354_5245;
 #[cfg(feature = "live-audio")]
 fn open_engine(model: &AppModel) -> Result<LiveEngine, EngineUnavailable> {
     let backend = spectre_audio::cpal_backend::CpalBackend::new();
-    // The note node is the selected track's instrument; every other track renders silence until
-    // R4-5 gives each track its own clip
+    // The selected track's instrument is the primary note node — the one the lane's live
+    // ingress reaches. Every other track with clip material gets its own clip voice
     spectre_app::engine::open_track_engine(
         &backend,
         model.track_list(),
+        model.tempo_map(),
         APP_GRAPH_SEED,
         model.selected_track_id(),
     )

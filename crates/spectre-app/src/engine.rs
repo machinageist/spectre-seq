@@ -6,6 +6,7 @@
 //   into the render closure at open. No DSP and no second render path are written here.
 
 use spectre_audio::bridge::{BridgeTelemetry, RenderBridge, DEFAULT_NOTE_SCRATCH};
+use spectre_audio::clip::{ClipPlayer, ClipSchedule, CLIP_EVENT_RESERVE};
 use spectre_audio::control::{
     control_channel, ControlError, ControlSender, ParameterTarget, DEFAULT_NOTE_CAPACITY,
     DEFAULT_TRANSPORT_CAPACITY,
@@ -155,6 +156,11 @@ pub struct EngineParts {
     // The plan nodes build_engine_parts allocated, exposed so routes can be built against them.
     // None for a track-list plan, whose node identities live in spectre-project's TrackPathNodes
     pub nodes: Option<FixtureNodes>,
+    // True when a clip player is attached to any note node. Play then sends the transport
+    // command alone: the project's own material REPLACES the audition note rather than merging
+    // with it, because merging two producers on one node would turn R4-1's clean Play/Stop
+    // refusal into a stuck note
+    pub has_clips: bool,
 }
 
 // The three plan nodes build_engine_parts allocates
@@ -331,6 +337,8 @@ pub fn build_engine_parts(
         plan_max_frames,
         targets: targets.into_boxed_slice(),
         nodes: Some(nodes),
+        // The fixture chain has no project clips; Play auditions, as it has since R4-1
+        has_clips: false,
     })
 }
 
@@ -369,6 +377,7 @@ pub fn open_with_parts(
         plan_max_frames: _,
         targets,
         nodes: _,
+        has_clips,
     } = parts;
 
     let mut stream = backend
@@ -389,6 +398,7 @@ pub fn open_with_parts(
         config,
     );
     engine.set_targets(targets);
+    engine.set_has_clips(has_clips);
     Ok(engine)
 }
 
@@ -407,6 +417,9 @@ pub struct LiveEngine<S: ?Sized = dyn AudioStream> {
     next_sequence: u64,
     // Registered lane targets, so a Shape edit can be addressed by stable identity
     targets: Box<[ParameterTarget]>,
+    // True when the render thread is playing the project's own clips. Play then sends the
+    // transport command alone, because the project's material replaces the audition note
+    has_clips: bool,
     // Box<S> is itself Sized even when S is not, so field order is unconstrained here
     stream: Box<S>,
 }
@@ -431,8 +444,20 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
             config,
             next_sequence: 0,
             targets: Box::new([]),
+            has_clips: false,
             stream,
         }
+    }
+
+    // Record whether the render thread is playing project clips. Separate from from_open_stream
+    // for the same reason set_targets is: R4-1's signature and its callers stay unchanged
+    pub fn set_has_clips(&mut self, has_clips: bool) {
+        self.has_clips = has_clips;
+    }
+
+    // Report whether Play will audition or play the project's own material
+    pub fn has_clips(&self) -> bool {
+        self.has_clips
     }
 
     // Record the lane targets the parts registered. Separate from from_open_stream so R4-1's
@@ -526,6 +551,13 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
     pub fn start_audition(&mut self) -> Result<(), AuditionError> {
         self.send_transport(TransportCommand::Play)
             .map_err(AuditionError::Transport)?;
+        // With clips attached the project's own material REPLACES the audition note rather than
+        // merging with it. Merging two producers on one node would put the all-notes-off before
+        // the note-on by rank and leave a note sounding after Stop — a stuck note where R4-1's
+        // evidence pins a clean refusal
+        if self.has_clips {
+            return Ok(());
+        }
         self.send_note(NoteEventKind::On {
             id: AUDITION_VOICE_ID,
             channel: AUDITION_CHANNEL,
@@ -539,6 +571,9 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
     // block, and Stop is sent even if the release was refused — a refused release plus a
     // stopped transport is recoverable, a running transport the UI thinks is stopped is not
     pub fn stop_audition(&mut self) -> Result<(), AuditionError> {
+        // The release is still sent when clips are playing: the clip player releases its own
+        // sounding notes on Stop, and an all-notes-off on the lane costs nothing and closes the
+        // case where a live note was played into the same node
         let note = self.send_note(NoteEventKind::AllNotesOff {
             channel: Some(AUDITION_CHANNEL),
         });
@@ -670,6 +705,7 @@ pub fn engine_status_field<S: AudioStream + ?Sized>(
 // renders from the same input.
 pub fn build_track_engine_parts(
     tracks: &spectre_project::TrackList,
+    tempo: &spectre_core::TempoMap,
     seed: u64,
     note_track: Option<spectre_core::ObjectId>,
     config: StreamConfig,
@@ -704,16 +740,15 @@ pub fn build_track_engine_parts(
     }
     let routes = ParameterRoutes::new(routes).map_err(EngineUnavailable::Route)?;
 
-    // The bridge drives one note node. R4-5 replaces this with clip playback per track
-    let note_node = note_track
-        .and_then(|id| tracks.index_of(id))
-        .and_then(|index| nodes.note_node(index))
-        .unwrap_or(nodes.master.node);
+    // The primary note node keeps the lane's live ingress. When the selected track is not a
+    // note node, the master takes the role so the lane still has a valid destination
+    let primary_index = note_track.and_then(|id| tracks.index_of(id)).unwrap_or(0);
+    let note_node = nodes.note_node(primary_index).unwrap_or(nodes.master.node);
 
     let (sender, receiver) =
         control_channel(&targets, DEFAULT_NOTE_CAPACITY, DEFAULT_TRANSPORT_CAPACITY)
             .map_err(EngineUnavailable::Control)?;
-    let bridge = RenderBridge::with_parameter_routes(
+    let mut bridge = RenderBridge::with_parameter_routes(
         plan,
         receiver,
         note_node,
@@ -721,6 +756,36 @@ pub fn build_track_engine_parts(
         DEFAULT_NOTE_SCRATCH,
         routes,
     );
+
+    // Clip playback, baked on the app thread before the stream opens. A project with no clip
+    // placements attaches no player at all, so an empty project behaves exactly as it did
+    // before this change — which is what keeps R4-1's Play/Stop refusal evidence valid
+    let rate =
+        spectre_core::SampleRate::new(config.sample_rate).ok_or(EngineUnavailable::Routing(
+            spectre_project::RoutingError::Device("sample rate must be nonzero"),
+        ))?;
+    let mut has_clips = false;
+    if let Some(primary) = bake_track_schedule(tracks, primary_index, tempo, rate) {
+        has_clips = true;
+        let mut player = ClipPlayer::new(CLIP_EVENT_RESERVE);
+        let _ = player.install(Box::new(primary));
+        bridge = bridge.with_clip_player(player);
+    }
+    let voices: Vec<_> = (0..tracks.len())
+        .filter(|index| *index != primary_index)
+        .filter_map(|index| {
+            let schedule = bake_track_schedule(tracks, index, tempo, rate)?;
+            let node = nodes.note_node(index)?;
+            let mut player = ClipPlayer::new(CLIP_EVENT_RESERVE);
+            let _ = player.install(Box::new(schedule));
+            Some((node, player))
+        })
+        .collect();
+    if !voices.is_empty() {
+        has_clips = true;
+        bridge = bridge.with_clip_voices(voices, DEFAULT_NOTE_SCRATCH);
+    }
+
     let telemetry = bridge.telemetry();
 
     Ok(EngineParts {
@@ -731,7 +796,40 @@ pub fn build_track_engine_parts(
         plan_max_frames,
         targets: targets.into_boxed_slice(),
         nodes: None,
+        has_clips,
     })
+}
+
+// Bake one track's active clip placements into absolute sample positions, or None when the
+// track carries no clip material. The conversion goes through TempoMap::ticks_to_samples and
+// nowhere else, which is what keeps one time conversion in the workspace
+fn bake_track_schedule(
+    tracks: &spectre_project::TrackList,
+    index: usize,
+    tempo: &spectre_core::TempoMap,
+    rate: spectre_core::SampleRate,
+) -> Option<ClipSchedule> {
+    let track = tracks.tracks().get(index)?;
+    let mut notes = Vec::new();
+    for placement in track.clips().placements() {
+        if !placement.is_active() {
+            continue;
+        }
+        let clip = tracks.clip(placement.clip())?;
+        for note in clip.notes() {
+            notes.push((
+                spectre_core::BeatTicks(placement.start().0 + note.start().0),
+                note.length(),
+                note.channel(),
+                note.note(),
+                note.velocity(),
+            ));
+        }
+    }
+    if notes.is_empty() {
+        return None;
+    }
+    ClipSchedule::bake(notes.into_iter(), tempo, rate, CLIP_EVENT_RESERVE).ok()
 }
 
 // Pair each parameter target with the plan node and key that applies it, in the same order
@@ -755,6 +853,7 @@ fn parameter_route_nodes(
 pub fn open_track_engine(
     backend: &dyn AudioBackend,
     tracks: &spectre_project::TrackList,
+    tempo: &spectre_core::TempoMap,
     seed: u64,
     note_track: Option<spectre_core::ObjectId>,
 ) -> Result<LiveEngine, EngineUnavailable> {
@@ -766,7 +865,7 @@ pub fn open_track_engine(
         .map_err(EngineUnavailable::Backend)?;
     let config = StreamConfig::stereo(sample_rate, ENGINE_BUFFER_FRAMES)
         .map_err(EngineUnavailable::Backend)?;
-    let parts = build_track_engine_parts(tracks, seed, note_track, config)?;
+    let parts = build_track_engine_parts(tracks, tempo, seed, note_track, config)?;
     open_with_parts(backend, &device.id, device.name, parts)
 }
 

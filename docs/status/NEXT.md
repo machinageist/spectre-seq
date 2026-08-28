@@ -16,7 +16,7 @@ Notes: Only active-milestone slices belong here
 - **Supersedes:** the R3 slice queue, closed 2026-08-09
 - **Superseded by:** none
 - **Open decisions:** none blocking R4 start; decision 23 leaves Linux device qualification as debt to discharge here
-- **Known gaps:** the R4 QA protocol exists at `../05-quality/r4-qa-protocol.md` and has never been run, so no slice has manual evidence; `./spectre` still attaches no clip player to its audition path, so the shell plays a held audition note rather than the project's clips; no clip lane or clip inspector is drawn in `./spectre` yet, so slice 5's surface is model-only; slice 6's two devices are not reachable from a track until slice 5 or 7 adds a `TrackInstrument` variant for them; later milestones are intentionally not decomposed here
+- **Known gaps:** the R4 QA protocol exists at `../05-quality/r4-qa-protocol.md` and has never been run, so no slice has manual evidence; the R4 QA protocol has never been run; no clip lane or clip inspector is drawn in `./spectre` yet, so slice 5's surface is model-only; slice 6's two devices are not reachable from a track until slice 5 or 7 adds a `TrackInstrument` variant for them; later milestones are intentionally not decomposed here
 
 ## Next slices
 

@@ -83,6 +83,7 @@ fn open_null(
     spectre_audio::control::ControlSender,
     Arc<BridgeTelemetry>,
     Box<[spectre_audio::control::ParameterTarget]>,
+    bool,
 ) {
     let EngineParts {
         mut bridge,
@@ -92,6 +93,7 @@ fn open_null(
         plan_max_frames: _,
         targets,
         nodes: _,
+        has_clips,
     } = parts;
     let backend = NullBackend::new();
     let mut stream = backend
@@ -102,13 +104,13 @@ fn open_null(
         )
         .unwrap();
     stream.start().unwrap();
-    (stream, sender, telemetry, targets)
+    (stream, sender, telemetry, targets, has_clips)
 }
 
 // Wrap an opened null stream in the engine without erasing its concrete type
 fn engine_over_null(parts: EngineParts) -> LiveEngine<NullStream> {
     let config = parts.config;
-    let (stream, sender, telemetry, targets) = open_null(parts);
+    let (stream, sender, telemetry, targets, has_clips) = open_null(parts);
     let mut engine = LiveEngine::from_open_stream(
         Box::new(stream),
         sender,
@@ -118,6 +120,10 @@ fn engine_over_null(parts: EngineParts) -> LiveEngine<NullStream> {
         config,
     );
     engine.set_targets(targets);
+    // Set here for the same reason open_with_parts sets it: a LiveEngine that forgot the flag
+    // would audition over its own clips, and the one-block Play/Stop test is what caught this
+    // helper doing exactly that
+    engine.set_has_clips(has_clips);
     engine
 }
 
@@ -202,7 +208,7 @@ fn play_produces_nonzero_output_and_stop_returns_exact_silence() {
 fn the_live_plan_matches_the_offline_render_of_the_same_app_snapshot() {
     let snapshot = prototype_snapshot();
     let parts = build_engine_parts(&snapshot, config()).unwrap();
-    let (mut stream, mut sender, telemetry, _targets) = open_null(parts);
+    let (mut stream, mut sender, telemetry, _targets, _) = open_null(parts);
 
     for event in spectre_offline::fixture_events(FRAMES) {
         sender.send_note(event).unwrap();
@@ -230,7 +236,7 @@ fn repeated_engine_builds_render_identically() {
     let mut hashes = Vec::new();
     for _ in 0..3 {
         let parts = build_engine_parts(&snapshot, config()).unwrap();
-        let (mut stream, mut sender, _telemetry, _targets) = open_null(parts);
+        let (mut stream, mut sender, _telemetry, _targets, _) = open_null(parts);
         for event in spectre_offline::fixture_events(FRAMES) {
             sender.send_note(event).unwrap();
         }
@@ -604,4 +610,177 @@ fn app_engine_opens_a_real_device_and_renders() {
 
     engine.stop_audition().expect("stop must be queued");
     engine.close().expect("close must release the device");
+}
+
+// R4 — the app's own engine plays the project's clips, not an audition note.
+// This is the last half of "a MIDI clip plays through a track into master": the offline path and
+// the bridge both compose, and this is what says the SHELL does
+#[test]
+fn a_project_with_clips_plays_its_own_material_rather_than_the_audition_note() {
+    use spectre_app::engine::build_track_engine_parts;
+    use spectre_core::{BeatTicks, IdGen, TempoMap};
+    use spectre_project::{ClipNote, ClipPlacement, MidiClip, Track, TrackInstrument, TrackList};
+
+    let mut ids = IdGen::new(0x0043_4c49_5041_5050);
+    let mut tracks = TrackList::new();
+    let track_id = ids.next_id();
+    let clip_id = ids.next_id();
+    let placement_id = ids.next_id();
+
+    // 160 ticks at 120 BPM is 4,000 samples: material that sounds well inside the blocks below
+    let mut clip = MidiClip::new(clip_id, "Take", BeatTicks(160)).unwrap();
+    clip.insert_note(ClipNote::new(BeatTicks(0), BeatTicks(128), 0, 57, 0.8).unwrap())
+        .unwrap();
+    let mut track = Track::new(track_id, "Lead", TrackInstrument::Filament).unwrap();
+    track
+        .clips_mut()
+        .insert(
+            ClipPlacement::new(placement_id, clip_id, BeatTicks(0)).unwrap(),
+            BeatTicks(160),
+        )
+        .unwrap();
+    tracks.push(track).unwrap();
+    tracks.add_clip(clip).unwrap();
+
+    let tempo = TempoMap::constant(120.0).unwrap();
+    let parts = build_track_engine_parts(
+        &tracks,
+        &tempo,
+        0x0041_5050_4752_4148,
+        Some(track_id),
+        config(),
+    )
+    .unwrap();
+    // The engine reports that it is playing project material, so Play will not audition
+    assert!(parts.has_clips);
+
+    let mut engine = engine_over_null(parts);
+    assert!(engine.has_clips());
+    engine.stream_mut().pump().unwrap();
+    assert!(
+        engine.stream_mut().last_block().iter().all(|s| *s == 0.0),
+        "a stopped transport must render exact silence"
+    );
+
+    // Play sends the transport command alone. If it also sent the audition note, the merge would
+    // put an all-notes-off before a note-on by rank on Stop and leave a note sounding
+    engine.start_audition().unwrap();
+    let mut peak = 0.0_f32;
+    for _ in 0..4 {
+        engine.stream_mut().pump().unwrap();
+        peak = engine
+            .stream_mut()
+            .last_block()
+            .iter()
+            .fold(peak, |peak, s| peak.max(s.abs()));
+    }
+    assert!(peak > 0.0, "the project's own clip must sound on Play");
+    assert_eq!(engine.health().plan_errors, 0);
+
+    engine.stop_audition().unwrap();
+    // Filament releases over its own fall contour rather than cutting to zero the way Pulse
+    // does, so silence is asserted after DEV-013's own 64-quantum bound rather than after two
+    // blocks. Anything still sounding at that point is a stuck note, not a release
+    for _ in 0..64 {
+        engine.stream_mut().pump().unwrap();
+    }
+    assert!(
+        engine.stream_mut().last_block().iter().all(|s| *s == 0.0),
+        "Stop must return exact silence, not a note the audition path left sounding"
+    );
+}
+
+// A project with no clip material still auditions, so R4-1's evidence stays valid unchanged
+#[test]
+fn a_project_without_clips_still_auditions() {
+    use spectre_app::engine::build_track_engine_parts;
+    use spectre_core::{IdGen, TempoMap};
+    use spectre_project::{Track, TrackInstrument, TrackList};
+
+    let mut ids = IdGen::new(0x004e_4f43_4c49_5000);
+    let mut tracks = TrackList::new();
+    let track_id = ids.next_id();
+    tracks
+        .push(Track::new(track_id, "Lead", TrackInstrument::Pulse).unwrap())
+        .unwrap();
+
+    let tempo = TempoMap::constant(120.0).unwrap();
+    let parts = build_track_engine_parts(
+        &tracks,
+        &tempo,
+        0x0041_5050_4752_4148,
+        Some(track_id),
+        config(),
+    )
+    .unwrap();
+    assert!(!parts.has_clips, "an empty project attaches no clip player");
+
+    let mut engine = engine_over_null(parts);
+    engine.start_audition().unwrap();
+    engine.stream_mut().pump().unwrap();
+    let peak = engine
+        .stream_mut()
+        .last_block()
+        .iter()
+        .fold(0.0_f32, |peak, s| peak.max(s.abs()));
+    assert!(peak > 0.0, "with no clips, Play must still audition");
+}
+
+// The case the replacement rule exists for, and the one the test above cannot reach.
+// R4-1's accepted evidence pins that a Play and a Stop landing in ONE block are refused into
+// counted silence with no stuck note. With a clip player attached the bridge sorts the block by
+// the contract key, and an audition note-on merged into that block would sort AFTER the
+// all-notes-off by rank — leaving a note sounding after Stop. The project's material replacing
+// the audition note is what keeps that refusal clean, and this is what says so
+#[test]
+fn play_then_stop_in_one_block_stays_silent_with_clips_attached() {
+    use spectre_app::engine::build_track_engine_parts;
+    use spectre_core::{BeatTicks, IdGen, TempoMap};
+    use spectre_project::{ClipNote, ClipPlacement, MidiClip, Track, TrackInstrument, TrackList};
+
+    let mut ids = IdGen::new(0x0053_5455_4b00_0001);
+    let mut tracks = TrackList::new();
+    let track_id = ids.next_id();
+    let clip_id = ids.next_id();
+    let placement_id = ids.next_id();
+
+    let mut clip = MidiClip::new(clip_id, "Take", BeatTicks(160)).unwrap();
+    clip.insert_note(ClipNote::new(BeatTicks(0), BeatTicks(128), 0, 57, 0.8).unwrap())
+        .unwrap();
+    let mut track = Track::new(track_id, "Lead", TrackInstrument::Filament).unwrap();
+    track
+        .clips_mut()
+        .insert(
+            ClipPlacement::new(placement_id, clip_id, BeatTicks(0)).unwrap(),
+            BeatTicks(160),
+        )
+        .unwrap();
+    tracks.push(track).unwrap();
+    tracks.add_clip(clip).unwrap();
+
+    let tempo = TempoMap::constant(120.0).unwrap();
+    let parts = build_track_engine_parts(
+        &tracks,
+        &tempo,
+        0x0041_5050_4752_4149,
+        Some(track_id),
+        config(),
+    )
+    .unwrap();
+    let mut engine = engine_over_null(parts);
+    // The engine, not only the parts: a helper that dropped the flag would audition over the
+    // project's own clips, which is what this test caught the first time it ran
+    assert!(engine.has_clips());
+
+    // Both sends before any callback, so they land in one block
+    engine.start_audition().unwrap();
+    engine.stop_audition().unwrap();
+    for _ in 0..64 {
+        engine.stream_mut().pump().unwrap();
+    }
+    assert!(
+        engine.stream_mut().last_block().iter().all(|s| *s == 0.0),
+        "a Play and a Stop in one block must leave no note sounding"
+    );
+    assert_eq!(engine.health().plan_errors, 0);
 }
