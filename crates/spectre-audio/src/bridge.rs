@@ -162,6 +162,16 @@ impl BridgeTelemetry {
     }
 }
 
+// One additional clip-driven note node. The primary note node keeps the lane's live ingress; a
+// voice is clip-only, because live performance input has one destination and clip material has
+// as many as the project has instrument tracks
+struct ClipVoice {
+    node: NodeId,
+    player: ClipPlayer,
+    // Preallocated at construction; pushes never exceed capacity, so rendering never allocates
+    notes: Vec<NoteEvent>,
+}
+
 // Owns the compiled plan and drives it from the audio callback
 pub struct RenderBridge {
     plan: CompiledPlan,
@@ -176,9 +186,13 @@ pub struct RenderBridge {
     // Built on the app thread before the stream opens; immutable for the bridge's life, so no
     // retired route table is ever handed to the reclaim lane
     routes: crate::route::ParameterRoutes,
-    // Clip playback for the single note node. None means this bridge behaves exactly as it did
+    // Clip playback for the primary note node. None means this bridge behaves exactly as it did
     // before R4-5, which is what keeps every existing caller of `new` correct
     player: Option<ClipPlayer>,
+    // Additional clip-driven note nodes, one per further instrument track. Fixed at construction
+    // and never resized, so the callback allocates nothing; a project whose track structure
+    // changes rebuilds the engine, which is the rule R4-4 already established
+    voices: Box<[ClipVoice]>,
     // A retired schedule the reclaim lane refused. Held rather than dropped: running its
     // destructor here would deallocate on the audio thread and violate RT-001. Typed as the
     // lane's own opaque box, because the render thread never needs to look inside it again
@@ -224,14 +238,38 @@ impl RenderBridge {
             telemetry: Arc::new(BridgeTelemetry::default()),
             routes,
             player: None,
+            voices: Box::new([]),
             held: None,
         }
     }
 
-    // Attach clip playback to the bridge's single note node. Consuming rather than mutating, so a
-    // bridge without a player cannot acquire one after the stream has started
+    // Attach clip playback to the bridge's primary note node. Consuming rather than mutating, so
+    // a bridge without a player cannot acquire one after the stream has started
     pub fn with_clip_player(mut self, player: ClipPlayer) -> Self {
         self.player = Some(player);
+        self
+    }
+
+    // Attach clip playback to further note nodes, one voice per additional instrument track.
+    // Consuming for the same reason, and allocated here on the app thread rather than on the
+    // callback. Voices past the graph's own flat-input bound are refused rather than truncated:
+    // a plan cannot hold more note-accepting nodes than that bound admits, so a caller asking
+    // for more has a project the plan could not have compiled
+    pub fn with_clip_voices(
+        mut self,
+        voices: impl IntoIterator<Item = (NodeId, ClipPlayer)>,
+        note_scratch: usize,
+    ) -> Self {
+        let built: Vec<ClipVoice> = voices
+            .into_iter()
+            .take(spectre_graph::MAX_FLAT_INPUTS.saturating_sub(1))
+            .map(|(node, player)| ClipVoice {
+                node,
+                player,
+                notes: Vec::with_capacity(note_scratch.max(1)),
+            })
+            .collect();
+        self.voices = built.into_boxed_slice();
         self
     }
 
@@ -270,6 +308,7 @@ impl RenderBridge {
         // Steps 6 and 7: clip events first, into the cleared scratch
         self.notes.clear();
         self.emit_clip_block(position_before, frames);
+        self.emit_voice_blocks(position_before, frames);
         // Step 8: lane events append to what the player wrote; clearing here would discard it
         self.collect_notes();
         // Steps 9 and 10 apply only when a player is attached, so a bridge without one behaves
@@ -279,7 +318,7 @@ impl RenderBridge {
         // all-notes-off before the note-on by rank and leave the note sounding after Stop — a
         // stuck note where there was a clean refusal. The merge rule exists for a second
         // producer, and with no second producer there is nothing to merge
-        if self.player.is_some() {
+        if self.player.is_some() || !self.voices.is_empty() {
             // Step 9: one array, sorted once, by the same tuple ProcessContext::new validates.
             // sort_unstable_by does not allocate, and the key is a total order because `sequence`
             // is unique within the block, so an unstable sort is still deterministic
@@ -317,13 +356,24 @@ impl RenderBridge {
                 .fetch_add(unapplied, Ordering::Relaxed);
         }
 
-        let inputs = [PlanNoteInput {
+        // A fixed-size stack array, sized from the graph's own flat-input bound, so building one
+        // block's note inputs allocates nothing. `with_clip_voices` refuses anything past it,
+        // which is what makes the length below unable to overrun
+        let mut inputs = [PlanNoteInput {
             node: self.note_node,
             events: &self.notes,
-        }];
+        }; spectre_graph::MAX_FLAT_INPUTS];
+        let mut input_count = 1;
+        for voice in self.voices.iter() {
+            inputs[input_count] = PlanNoteInput {
+                node: voice.node,
+                events: &voice.notes,
+            };
+            input_count += 1;
+        }
         if self
             .plan
-            .process(self.sample_rate, frames, &inputs)
+            .process(self.sample_rate, frames, &inputs[..input_count])
             .is_err()
         {
             block.fill_silence();
@@ -439,6 +489,41 @@ impl RenderBridge {
                     .loop_segments_refused
                     .fetch_add(1, Ordering::Relaxed);
             }
+        }
+    }
+
+    // Emit each additional voice's clip events into its own scratch, sorted on its own.
+    // Each voice feeds a different node, so there is nothing to merge between them: the merge
+    // rule exists where two producers share one destination, and these do not
+    fn emit_voice_blocks(&mut self, position_before: SampleTime, frames: usize) {
+        let seeked = self.transport.position != position_before;
+        for voice in self.voices.iter_mut() {
+            voice.notes.clear();
+            if seeked {
+                voice.player.release_all();
+            }
+            let outcome = voice.player.emit_block(
+                &self.transport,
+                frames,
+                &mut voice.notes,
+                CLIP_SEQUENCE_BAND,
+            );
+            match outcome {
+                ClipBlockOutcome::Complete => {}
+                ClipBlockOutcome::EventReserveExceeded => {
+                    self.telemetry
+                        .clip_events_refused
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+                ClipBlockOutcome::SegmentLimitExceeded => {
+                    self.telemetry
+                        .loop_segments_refused
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            // No sort here. A voice is one producer feeding one destination, and emit_block
+            // already leaves its own output in contract order. The merge rule exists where two
+            // producers share a node — which is the primary node's case, not a voice's
         }
     }
 

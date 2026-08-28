@@ -517,13 +517,13 @@ fn live_bridge_matches_the_offline_render_at_equal_block_size() {
     assert_eq!(bridge.telemetry().contaminated_nodes(), 0);
 }
 
-// The composition gap this slice exists to find, pinned so it cannot be forgotten.
-// RenderBridge carries exactly one note_node, so a project with three instrument tracks plays
-// only one of them live. Every seam passes its own test and the composition does not work —
-// which is the failure mode a vertical slice is for. This test FAILS the day the bridge learns
-// to address more than one instrument, which is exactly when the record must be updated
+// The composition gap R4-9 found, now closed and pinned from the other side.
+// RenderBridge used to carry exactly one note_node, so a three-track project played one track
+// live while the offline path played all three: every seam passed its own test and the
+// composition did not work. The bridge now carries additional clip voices, and this test is what
+// says the product plays the whole project rather than a third of it
 #[test]
-fn the_bridge_can_only_deliver_notes_to_one_instrument() {
+fn the_live_bridge_plays_every_instrument_track() {
     let envelope = fixture();
     let tracks = &envelope.project.tracks;
     assert_eq!(tracks.len(), 3, "the fixture has three instrument tracks");
@@ -531,6 +531,69 @@ fn the_bridge_can_only_deliver_notes_to_one_instrument() {
     let (plan, instruments) = compile(tracks);
     assert_eq!(instruments.len(), 3, "the graph has three instrument nodes");
 
+    let (mut sender, receiver) = control_channel(&[], 64, 8).unwrap();
+    let mut primary = ClipPlayer::new(CLIP_EVENT_RESERVE);
+    let _ = primary.install(Box::new(schedule_for(
+        tracks,
+        0,
+        &envelope.project.tempo_map,
+    )));
+    let voices: Vec<_> = (1..tracks.len())
+        .map(|index| {
+            let mut player = ClipPlayer::new(CLIP_EVENT_RESERVE);
+            let _ = player.install(Box::new(schedule_for(
+                tracks,
+                index,
+                &envelope.project.tempo_map,
+            )));
+            (instruments[index], player)
+        })
+        .collect();
+
+    let mut bridge = RenderBridge::new(
+        plan,
+        receiver,
+        instruments[0],
+        SAMPLE_RATE,
+        DEFAULT_NOTE_SCRATCH,
+    )
+    .with_clip_player(primary)
+    .with_clip_voices(voices, DEFAULT_NOTE_SCRATCH);
+    sender
+        .send_transport(spectre_core::TransportCommand::Play)
+        .unwrap();
+
+    let mut interleaved = vec![0.0_f32; FRAMES * CHANNELS];
+    let mut live = SampleHasher::new();
+    for _ in 0..E2E_TOTAL_BLOCKS {
+        interleaved.fill(0.0);
+        let mut block = RenderBlock::new(&mut interleaved, CHANNELS as u16);
+        bridge.render(&mut block);
+        hash_block(&mut live, &interleaved, CHANNELS, FRAMES);
+    }
+
+    // The whole project, live, equals the whole project, offline
+    let offline = render_offline(&envelope);
+    assert!(offline.peak > 0.0, "two silent buffers would agree");
+    assert_eq!(
+        live.finish(),
+        offline.hash,
+        "R4-4/R4-5/R4-1: the live bridge and the offline path disagree on the composed project"
+    );
+    assert_eq!(bridge.telemetry().plan_errors(), 0);
+    assert_eq!(bridge.telemetry().notes_deferred(), 0);
+    assert_eq!(bridge.telemetry().clip_events_refused(), 0);
+    assert_eq!(bridge.telemetry().contaminated_nodes(), 0);
+}
+
+// One voice is not three, and this is what says so. Without it, a bridge that silently dropped
+// every additional voice would still pass the test above if the offline side dropped them too
+#[test]
+fn one_voice_does_not_sound_like_three() {
+    let envelope = fixture();
+    let tracks = &envelope.project.tracks;
+
+    let (plan, instruments) = compile(tracks);
     let (mut sender, receiver) = control_channel(&[], 64, 8).unwrap();
     let mut player = ClipPlayer::new(CLIP_EVENT_RESERVE);
     let _ = player.install(Box::new(schedule_for(
@@ -558,15 +621,11 @@ fn the_bridge_can_only_deliver_notes_to_one_instrument() {
         bridge.render(&mut block);
         hash_block(&mut live, &interleaved, CHANNELS, FRAMES);
     }
-    let one_track = live.finish();
 
-    // The offline path CAN address all three, and does not agree — which is the gap, stated as
-    // a measurement rather than as a comment
-    let all_three = render_offline(&envelope);
     assert_ne!(
-        one_track, all_three.hash,
-        "if these now agree, the bridge learned to address more than one instrument and \
-         R4's exit record must be updated to say so"
+        live.finish(),
+        render_offline(&envelope).hash,
+        "one instrument must not produce what three produce"
     );
 }
 

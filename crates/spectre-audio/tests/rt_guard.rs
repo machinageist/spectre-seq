@@ -401,3 +401,147 @@ fn rt_modules_contain_no_blocking_primitives() {
         }
     }
 }
+
+// R4: a bridge driving several clip voices must still allocate nothing on the callback.
+// The voices' scratches are reserved at construction and cleared per block; a Vec::clear does
+// not free, so the only way this fails is if a voice's events exceed its reserve or the
+// note-input array stops being the stack array it is
+#[test]
+fn multi_voice_bridge_render_is_rt_clean() {
+    use spectre_audio::clip::{ClipPlayer, ClipSchedule, CLIP_EVENT_RESERVE};
+    use spectre_core::{BeatTicks, SampleRate, TempoMap, TransportCommand};
+    use spectre_dsp::SumBus;
+
+    // Three instruments into a sum, so the plan really holds three note-accepting nodes.
+    // A single-node plan would refuse the extra inputs with DuplicateNoteNode and this test
+    // would be measuring an error path rather than the render
+    const VOICES: usize = 3;
+    let mut ids = IdGen::new(0x0000_5254_4d55_4c54);
+    let instruments: Vec<NodeId> = (0..VOICES).map(|_| NodeId::new(ids.next_id())).collect();
+    let sum = NodeId::new(ids.next_id());
+
+    let mut graph = EditableGraph::new();
+    for node in &instruments {
+        graph
+            .add_node(
+                *node,
+                PulseInstrument::new(Waveform::Saw, 0.3).unwrap().io(),
+            )
+            .unwrap();
+    }
+    graph
+        .add_node(sum, SumBus::new(VOICES).unwrap().io())
+        .unwrap();
+    for (bus, node) in instruments.iter().enumerate() {
+        graph
+            .connect(Connection {
+                from: *node,
+                from_bus: 0,
+                to: sum,
+                to_bus: bus,
+            })
+            .unwrap();
+    }
+    let plan = graph
+        .compile(sum, FRAMES, &mut |node| {
+            if node == sum {
+                Ok(Box::new(SumBus::new(VOICES)?))
+            } else {
+                Ok(Box::new(PulseInstrument::new(Waveform::Saw, 0.3)?))
+            }
+        })
+        .unwrap();
+
+    let tempo = TempoMap::constant(120.0).unwrap();
+    let rate = SampleRate::new(48_000).unwrap();
+    let player_for = |offset: i64, note: u8| {
+        let mut player = ClipPlayer::new(CLIP_EVENT_RESERVE);
+        let schedule = ClipSchedule::bake(
+            [(BeatTicks(offset), BeatTicks(400), 0_u8, note, 0.7_f32)].into_iter(),
+            &tempo,
+            rate,
+            CLIP_EVENT_RESERVE,
+        )
+        .unwrap();
+        let _ = player.install(Box::new(schedule));
+        player
+    };
+
+    let (mut sender, receiver) = control_channel(&[], 256, 32).unwrap();
+    let voices: Vec<_> = (1..VOICES)
+        .map(|index| {
+            (
+                instruments[index],
+                player_for(index as i64 * 8, 60 + index as u8),
+            )
+        })
+        .collect();
+    let mut bridge = RenderBridge::new(plan, receiver, instruments[0], SAMPLE_RATE, 64)
+        .with_clip_player(player_for(0, 57))
+        .with_clip_voices(voices, 64);
+    sender.send_transport(TransportCommand::Play).unwrap();
+
+    let mut interleaved = vec![0.0_f32; FRAMES * CHANNELS as usize];
+    // Warm-up outside the guard so first-touch cost is not misread as a violation
+    bridge.render(&mut RenderBlock::new(&mut interleaved, CHANNELS));
+
+    for block in 1..8 {
+        let (_, violations) = rt_section(|| {
+            bridge.render(&mut RenderBlock::new(&mut interleaved, CHANNELS));
+        });
+        assert_eq!(
+            violations, 0,
+            "multi-voice bridge render violated RT-001 on block {block}"
+        );
+    }
+    assert_eq!(bridge.telemetry().plan_errors(), 0);
+    assert_eq!(bridge.telemetry().blocks_rendered(), 8);
+    // A render that produced nothing would satisfy the guard without exercising the voices
+    assert!(interleaved.iter().any(|sample| *sample != 0.0));
+}
+
+// A caller that hands two voices the same node gets a refused block, and the refusal must be as
+// RT-clean as the render. `CompiledPlan::process` rejects a duplicate note node, so the bridge
+// fails closed into counted silence — but failing closed on the callback still may not allocate
+#[test]
+fn a_duplicate_voice_node_is_refused_without_allocating() {
+    use spectre_audio::clip::{ClipPlayer, ClipSchedule, CLIP_EVENT_RESERVE};
+    use spectre_core::{BeatTicks, SampleRate, TempoMap, TransportCommand};
+
+    let (plan, note_node) = fixture(FRAMES);
+    let tempo = TempoMap::constant(120.0).unwrap();
+    let rate = SampleRate::new(48_000).unwrap();
+    let mut player = ClipPlayer::new(CLIP_EVENT_RESERVE);
+    let _ = player.install(Box::new(
+        ClipSchedule::bake(
+            [(BeatTicks(0), BeatTicks(400), 0_u8, 57_u8, 0.7_f32)].into_iter(),
+            &tempo,
+            rate,
+            CLIP_EVENT_RESERVE,
+        )
+        .unwrap(),
+    ));
+
+    let (mut sender, receiver) = control_channel(&[], 256, 32).unwrap();
+    // The same node as the primary: a caller error, not a plan error
+    let mut bridge = RenderBridge::new(plan, receiver, note_node, SAMPLE_RATE, 64)
+        .with_clip_voices([(note_node, player)], 64);
+    sender.send_transport(TransportCommand::Play).unwrap();
+
+    let mut interleaved = vec![1.0_f32; FRAMES * CHANNELS as usize];
+    bridge.render(&mut RenderBlock::new(&mut interleaved, CHANNELS));
+
+    for block in 1..4 {
+        let (_, violations) = rt_section(|| {
+            bridge.render(&mut RenderBlock::new(&mut interleaved, CHANNELS));
+        });
+        assert_eq!(
+            violations, 0,
+            "the refused-block path violated RT-001 on block {block}"
+        );
+    }
+    // Counted silence, never stale audio and never a partial block
+    assert_eq!(bridge.telemetry().plan_errors(), 4);
+    assert_eq!(bridge.telemetry().blocks_rendered(), 0);
+    assert!(interleaved.iter().all(|sample| *sample == 0.0));
+}

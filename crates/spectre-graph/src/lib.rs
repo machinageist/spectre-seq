@@ -16,7 +16,10 @@ const CHANNELS_PER_BUS: usize = 2;
 // 32 input channels, and PlanStep carries its input map as a fixed array of this width so the
 // render path needs no heap collection. Rationale row in
 // docs/01-requirements/requirements-ledger.md (PROD-003, decision 16)
-const MAX_FLAT_INPUTS: usize = 32;
+// Public since R4: the callback bridge sizes its note-input array from this, so the number of
+// note-accepting nodes one block can address is the graph's own already-accepted bound rather
+// than a second number with a second rationale
+pub const MAX_FLAT_INPUTS: usize = 32;
 const FLAT_OUTPUTS: usize = 2;
 
 // Graph-node identity wrapping the project-stable object ID
