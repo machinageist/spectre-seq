@@ -34,7 +34,22 @@ operator, not code.
    truncate-then-write saver, **failed**, reporting that 14 destinations had all decoded cleanly.
    The write was finishing before the kill could land, so the drill would have passed against any
    implementation. The project is now sized from a measurement rather than a guess.
-2. **Journal an autosave to a sidecar** per decision 14, without touching the project file.
+2. ~~**Journal an autosave to a sidecar** per decision 14, without touching the project file.~~
+   **Landed 2026-08-29** as `crates/spectre-project/src/journal.rs`. **The design choice is stated
+   rather than implied, because decision 14 adopts the model without specifying the journal's
+   shape:** the sidecar is a `ProjectEnvelope` written by `save_project_atomic`, not an
+   append-only operation log and not a bespoke wrapper record. A log would need record framing and
+   a truncation policy before recovery could read a crash-torn tail — new failure modes introduced
+   to save work a snapshot already saves. Reusing the project's own type means the sidecar
+   inherits R5-1's crash qualification, CORE-003's schema gate, and the semantic validator whole
+   rather than by resemblance. **Stated cost:** every autosave rewrites the project rather than
+   appending a delta.
+   Eight tests. The load-bearing one is `an_autosave_does_not_touch_the_project_file`, which
+   asserts the saved project is **byte-identical** across an autosave carrying different content —
+   an autosave that could damage the saved project would be worse than none.
+   `a_sidecar_from_another_project_is_not_offered` matches by project identity, and
+   `a_refused_autosave_leaves_an_earlier_sidecar_intact` covers the case that actually loses work:
+   replacing good unsaved state with nothing because the newest state was momentarily invalid.
 3. **Recover from an unclean exit**, and state what was and was not recovered rather than
    presenting a recovered project as if it were the saved one.
 4. **Migrate a schema**, which is the first thing that makes CORE-001's migration evidence

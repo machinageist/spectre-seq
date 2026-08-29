@@ -13,6 +13,7 @@ use std::collections::HashSet;
 pub mod clip;
 pub mod command;
 pub mod fs;
+pub mod journal;
 pub mod routing;
 pub mod track;
 
@@ -24,6 +25,7 @@ pub use fs::{
     load_project, save_project_atomic, LoadError, SaveError, SaveReceipt, SaveStage, TargetState,
     MAX_PROJECT_FILE_BYTES, SAVE_TEMP_NAME_ATTEMPTS,
 };
+pub use journal::{discard_autosave, journal_path, read_autosave, write_autosave, AutosaveError};
 pub use routing::{build_track_graph, track_device_factory, RoutingError, TrackPathNodes};
 pub use track::{
     Track, TrackEffect, TrackError, TrackInsert, TrackInstrument, TrackList, MAX_TRACKS,
