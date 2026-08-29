@@ -448,6 +448,35 @@ impl AppModel {
 
     // One accessible label for a placement: name, position, length, note count, and active state.
     // Built from the model rather than from a view, so no second description of a clip exists
+    // The selected placement's clip length, its notes as plain rows, and whether the placement
+    // is active. Returned as owned rows so the UI can hold them while it mutates the model --
+    // the inspector's active checkbox writes back through set_clip_active in the same frame
+    #[allow(clippy::type_complexity)]
+    pub fn selected_clip_detail(&self) -> Option<(BeatTicks, Vec<(i64, i64, u8, f32, u8)>, bool)> {
+        let placement_id = self.selected_clip?;
+        let track = self.tracks.get(self.clip_track(placement_id)?)?;
+        let placement = track
+            .clips()
+            .placements()
+            .iter()
+            .find(|entry| entry.id() == placement_id)?;
+        let clip = self.tracks.clip(placement.clip())?;
+        let notes = clip
+            .notes()
+            .iter()
+            .map(|note| {
+                (
+                    note.start().0,
+                    note.length().0,
+                    note.note(),
+                    note.velocity(),
+                    note.channel(),
+                )
+            })
+            .collect();
+        Some((clip.length(), notes, placement.is_active()))
+    }
+
     pub fn clip_label(&self, placement: ObjectId) -> Option<String> {
         let track = self.tracks.get(self.clip_track(placement)?)?;
         let index = track

@@ -831,3 +831,44 @@ fn every_clip_row_exposes_a_non_empty_accessible_label() {
     assert!(model.clip_label(placement).unwrap().contains("inactive"));
     assert_eq!(model.clip_label(track), None);
 }
+
+// R4-5 §3.1's clip inspector reads through this. Before it existed, the whole clip API was
+// reachable only from tests -- create_clip, select_clip, selected_clip, set_clip_active and
+// clip_label had zero callers in src/, because Arrange drew a hardcoded rectangle instead of the
+// project's own placements
+#[test]
+fn the_clip_inspector_reads_the_selected_placements_own_material() {
+    let mut model = AppModel::prototype();
+    let track = model.track_list().tracks()[0].id();
+    let placement = model
+        .create_clip(track, "Take", BeatTicks(1_920), BeatTicks(960))
+        .expect("a clip on an existing track is valid");
+
+    // create_clip selects the placement it made, which is what the lane highlights
+    assert_eq!(model.selected_clip(), Some(placement));
+
+    let (length, notes, active) = model
+        .selected_clip_detail()
+        .expect("a selected placement has detail");
+    assert_eq!(length, BeatTicks(1_920));
+    assert!(notes.is_empty(), "a new clip carries no notes");
+    assert!(active, "a new placement is active");
+
+    // The inspector's checkbox writes back through this path
+    model.set_clip_active(placement, false).unwrap();
+    let (_, _, active) = model.selected_clip_detail().unwrap();
+    assert!(!active, "deactivating must reach the inspector's own read");
+
+    assert!(
+        model.clip_label(placement).is_some(),
+        "the lane labels a placement by the same call the inspector titles it with"
+    );
+}
+
+// Nothing selected must not be an error state; the lens draws its prompt instead
+#[test]
+fn clip_detail_is_absent_when_nothing_is_selected() {
+    let model = AppModel::prototype();
+    assert_eq!(model.selected_clip(), None);
+    assert!(model.selected_clip_detail().is_none());
+}

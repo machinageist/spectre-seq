@@ -13,6 +13,7 @@ use spectre_app::engine::{
 };
 use spectre_app::project::{adopt, is_dirty, open_gate, project_envelope, OpenGate};
 use spectre_app::{open_device_in_shape_from_ui, AppModel, Lens};
+use spectre_core::{BeatTicks, ObjectId};
 
 const BG: Color32 = Color32::from_rgb(15, 18, 24);
 const PANEL: Color32 = Color32::from_rgb(24, 29, 38);
@@ -24,6 +25,11 @@ const MUTED: Color32 = Color32::from_rgb(128, 140, 156);
 
 // The fader's range IS the accepted gain descriptor's range; no fader law is invented here
 const GAIN_MAX: f32 = 2.0;
+
+// Arrange lane geometry. The label column is wide enough for the longest track name the model
+// admits without truncating at the 1060px minimum width this shell supports
+const LANE_LABEL_WIDTH: f32 = 120.0;
+const LANE_HEIGHT: f32 = 46.0;
 const GAIN_RANGE: std::ops::RangeInclusive<f32> = 0.0..=GAIN_MAX;
 
 // One mixer edit, deferred out of the panel closure that borrows the model
@@ -669,56 +675,232 @@ impl SpectrePrototype {
             });
     }
 
-    fn arrange(&self, ui: &mut egui::Ui) {
+    // Arrange: one clip lane per track, drawn from the project's own placements.
+    //
+    // This drew a hardcoded "Pulse Pattern - 8 bars" rectangle with invented step lines until
+    // 2026-08-28 -- a surface that corresponded to no project data, which is the fake surface the
+    // vision prohibits and the reason NullBackend was refused elsewhere in this file. R4-5 §3.1
+    // specifies a per-track clip lane, a clip inspector, and a note list; the model API existed
+    // and nothing drew it
+    fn arrange(&mut self, ui: &mut egui::Ui) {
+        // Eight bars of 4/4 at the accepted 960 PPQ, matching the ruler drawn below. A fixed
+        // span rather than a fitted one: a lane that rescales as clips are added moves every
+        // other clip under the pointer
+        const VISIBLE_BARS: i64 = 8;
+        let span_ticks = (VISIBLE_BARS * 4 * spectre_core::TICKS_PER_BEAT) as f32;
+
         ui.horizontal(|ui| {
-            for bar in 1..=9 {
+            ui.add_sized(
+                [LANE_LABEL_WIDTH, 22.0],
+                egui::Label::new(RichText::new("track").small().color(MUTED)),
+            );
+            for bar in 1..=VISIBLE_BARS {
                 ui.add_sized(
-                    [88.0, 22.0],
+                    [78.0, 22.0],
                     egui::Label::new(RichText::new(bar.to_string()).small().color(MUTED)),
                 );
             }
         });
         ui.separator();
-        let (rect, _) =
-            ui.allocate_exact_size(Vec2::new(ui.available_width(), 170.0), egui::Sense::hover());
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, CornerRadius::same(8), Color32::from_rgb(19, 24, 31));
-        for index in 0..9 {
-            let x = rect.left() + index as f32 * rect.width() / 9.0;
-            painter.line_segment(
-                [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-                Stroke::new(1.0_f32, Color32::from_rgb(40, 47, 59)),
-            );
+
+        let selected_clip = self.model.selected_clip();
+        let mut clicked: Option<ObjectId> = None;
+        let rows: Vec<_> = self
+            .model
+            .track_list()
+            .tracks()
+            .iter()
+            .map(|track| {
+                let placements: Vec<_> = track
+                    .clips()
+                    .placements()
+                    .iter()
+                    .map(|placement| {
+                        let clip = self.model.track_list().clip(placement.clip());
+                        (
+                            placement.id(),
+                            placement.start(),
+                            clip.map(|c| c.length()).unwrap_or(BeatTicks(0)),
+                            clip.map(|c| c.name().to_string()).unwrap_or_default(),
+                            placement.is_active(),
+                        )
+                    })
+                    .collect();
+                (track.name().to_string(), placements)
+            })
+            .collect();
+
+        if rows.is_empty() {
+            ui.add_space(24.0);
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new("No tracks. Add one to place a clip.").color(MUTED));
+            });
+            return;
         }
-        let clip = egui::Rect::from_min_size(
-            rect.min + Vec2::new(6.0, 34.0),
-            Vec2::new(rect.width() * 0.43, 86.0),
-        );
-        painter.rect_filled(clip, CornerRadius::same(6), Color32::from_rgb(47, 113, 99));
-        painter.text(
-            clip.min + Vec2::new(12.0, 10.0),
-            egui::Align2::LEFT_TOP,
-            "Pulse Pattern · 8 bars",
-            egui::FontId::proportional(14.0),
-            TEXT,
-        );
-        for step in 0..16 {
-            let x = clip.left() + 12.0 + step as f32 * (clip.width() - 24.0) / 16.0;
-            let h = if step % 4 == 0 {
-                30.0
-            } else if step % 3 == 0 {
-                20.0
-            } else {
-                11.0
-            };
-            painter.line_segment(
-                [
-                    egui::pos2(x, clip.bottom() - 12.0),
-                    egui::pos2(x, clip.bottom() - 12.0 - h),
-                ],
-                Stroke::new(2.0_f32, ACCENT),
-            );
+
+        for (name, placements) in &rows {
+            ui.horizontal(|ui| {
+                ui.add_sized(
+                    [LANE_LABEL_WIDTH, LANE_HEIGHT],
+                    egui::Label::new(RichText::new(name).color(TEXT)),
+                );
+                let (rect, response) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(), LANE_HEIGHT),
+                    egui::Sense::click(),
+                );
+                let painter = ui.painter_at(rect);
+                painter.rect_filled(rect, CornerRadius::same(6), Color32::from_rgb(19, 24, 31));
+                for bar in 0..VISIBLE_BARS {
+                    let x = rect.left() + bar as f32 * rect.width() / VISIBLE_BARS as f32;
+                    painter.line_segment(
+                        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                        Stroke::new(1.0_f32, Color32::from_rgb(40, 47, 59)),
+                    );
+                }
+
+                if placements.is_empty() {
+                    painter.text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "no clips on this track",
+                        egui::FontId::proportional(12.0),
+                        MUTED,
+                    );
+                    return;
+                }
+
+                for (id, start, length, clip_name, active) in placements {
+                    let x0 = rect.left() + (start.0 as f32 / span_ticks) * rect.width();
+                    let width = (length.0 as f32 / span_ticks) * rect.width();
+                    // A zero-width clip would be invisible and unclickable; the minimum keeps a
+                    // very short clip addressable rather than silently absent from the surface
+                    let clip_rect = egui::Rect::from_min_size(
+                        egui::pos2(x0, rect.top() + 6.0),
+                        Vec2::new(width.max(6.0), LANE_HEIGHT - 12.0),
+                    )
+                    .intersect(rect);
+                    let is_selected = selected_clip == Some(*id);
+                    // An inactive placement is drawn, not hidden: it is still project data, and
+                    // hiding it would make "muted" and "deleted" look identical
+                    let fill = if !*active {
+                        Color32::from_rgb(38, 46, 44)
+                    } else if is_selected {
+                        Color32::from_rgb(62, 148, 130)
+                    } else {
+                        Color32::from_rgb(47, 113, 99)
+                    };
+                    painter.rect_filled(clip_rect, CornerRadius::same(5), fill);
+                    if is_selected {
+                        painter.rect_stroke(
+                            clip_rect,
+                            CornerRadius::same(5),
+                            Stroke::new(1.5_f32, ACCENT),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                    painter.text(
+                        clip_rect.min + Vec2::new(8.0, 6.0),
+                        egui::Align2::LEFT_TOP,
+                        clip_name,
+                        egui::FontId::proportional(12.0),
+                        if *active { TEXT } else { MUTED },
+                    );
+                    if response.clicked() {
+                        if let Some(position) = response.interact_pointer_pos() {
+                            if clip_rect.contains(position) {
+                                clicked = Some(*id);
+                            }
+                        }
+                    }
+                }
+            });
+            ui.add_space(6.0);
         }
+
+        if let Some(placement) = clicked {
+            // Selection is the only mutation this lens performs; a failed select leaves the
+            // previous selection untouched rather than clearing it
+            let _ = self.model.select_clip(placement);
+        }
+
+        self.clip_inspector(ui);
+    }
+
+    // R4-5 §3.1's clip inspector and note list. Drawn inline under the lanes rather than as a
+    // trailing side panel, because the lens body is already inside a panel and nesting a second
+    // one would clip the note list at the 1060x680 minimum this shell supports
+    fn clip_inspector(&mut self, ui: &mut egui::Ui) {
+        let Some(placement) = self.model.selected_clip() else {
+            ui.add_space(10.0);
+            ui.label(
+                RichText::new("Select a clip to inspect it.")
+                    .small()
+                    .color(MUTED),
+            );
+            return;
+        };
+        let Some(label) = self.model.clip_label(placement) else {
+            return;
+        };
+        let Some((length, notes, active)) = self.model.selected_clip_detail() else {
+            return;
+        };
+
+        ui.add_space(10.0);
+        ui.separator();
+        egui::Frame::new()
+            .fill(RAISED)
+            .corner_radius(8)
+            .inner_margin(14)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(&label).size(16.0).strong().color(ACCENT));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let mut is_active = active;
+                        if ui.checkbox(&mut is_active, "active").changed() {
+                            let _ = self.model.set_clip_active(placement, is_active);
+                        }
+                    });
+                });
+                ui.label(
+                    RichText::new(format!(
+                        "{} ticks · {} note{}",
+                        length.0,
+                        notes.len(),
+                        if notes.len() == 1 { "" } else { "s" }
+                    ))
+                    .small()
+                    .color(MUTED),
+                );
+                ui.separator();
+                if notes.is_empty() {
+                    ui.label(RichText::new("no notes in this clip").small().color(MUTED));
+                    return;
+                }
+                // A list, not a piano roll: R4-5 §3.1 makes this a deliberate accessibility
+                // choice under decision 17, not an aesthetic one
+                egui::ScrollArea::vertical()
+                    .max_height(150.0)
+                    .show(ui, |ui| {
+                        egui::Grid::new("clip-note-list")
+                            .num_columns(5)
+                            .striped(true)
+                            .show(ui, |ui| {
+                                for header in ["start", "length", "pitch", "vel", "ch"] {
+                                    ui.label(RichText::new(header).small().color(MUTED));
+                                }
+                                ui.end_row();
+                                for note in &notes {
+                                    ui.label(note.0.to_string());
+                                    ui.label(note.1.to_string());
+                                    ui.label(note.2.to_string());
+                                    ui.label(format!("{:.2}", note.3));
+                                    ui.label(note.4.to_string());
+                                    ui.end_row();
+                                }
+                            });
+                    });
+            });
     }
 
     fn build_devices(&mut self, ui: &mut egui::Ui) {
