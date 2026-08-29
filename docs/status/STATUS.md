@@ -40,6 +40,22 @@ Status is `implemented`, not `verified`: the manual protocol in the R4-1 spec §
 
 The accepted JSON project codec and 960-PPQ `BeatTicks` representation have checked-in R1 fixtures. Tempo conversion evidence now covers signed pre-roll, fractional piecewise boundaries, 24-hour positions, unrounded-anchor accumulation, and nearest-tick sample quantization without claiming impossible one-sample arbitrary-sample round trips.
 
+### Arrange, and what it drew before
+
+Until 2026-08-28 the `Arrange` lens drew a hardcoded `Pulse Pattern · 8 bars` rectangle with
+sixteen invented step lines, sized from the panel and corresponding to no project data. The clip
+model had shipped at R4-5 and nothing read it: `create_clip`, `select_clip`, `selected_clip`,
+`set_clip_active`, and `clip_label` had zero callers outside `crates/spectre-app/tests/`.
+
+`Arrange` now draws one lane per track from the project's own placements, positioned by start tick
+over a fixed eight-bar span, with inactive placements dimmed rather than hidden, click-to-select,
+and an inspector carrying the selected clip's length, note count, active state, and a scrollable
+note list. The transport's position reads bars.beats.sixteenths from the render thread's own
+published playhead, and reads `—` before any block has rendered rather than a fabricated `1.1.1`.
+
+**Still not drawn:** a piano roll, a session grid, an automation lane, a record-arm surface, and
+per-clip time tools — each deferred by name in R4-5 §3.1 rather than overlooked.
+
 ## Validation
 
 The current gate is:
