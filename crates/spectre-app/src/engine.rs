@@ -859,6 +859,13 @@ fn parameter_route_nodes(
     routes
 }
 
+// Node identity seed for the app's track graph. Rationale: identities must be stable across a
+// rebuild so the same list produces the same graph; the value itself carries no meaning.
+//
+// Defined here rather than in main.rs so the hardware drill opens the engine with the SAME seed
+// the binary does. It lived in main.rs until 2026-08-28, where no test could reach it
+pub const APP_GRAPH_SEED: u64 = 0x0053_5045_4354_5245;
+
 // Open and start the default output device running a track list.
 //
 // The seed fixes node identity, so the same list rebuilds to the same graph

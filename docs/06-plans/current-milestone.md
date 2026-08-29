@@ -84,7 +84,7 @@ VST3 hosting, recording, automation and modulation, session/live slots, mixer se
 
 ## Exit evidence
 
-- ~~`./spectre` opens the qualified backend and produces sound through the existing compiled plan, with no second render path~~ — **partially closed 2026-08-24.** The open path, the render, and the no-second-path claim are all evidenced; the app's own drill rendered 88 real driver blocks. Audible confirmation and the manual protocol are outstanding, so this row is `implemented`, not closed.
+- ~~`./spectre` opens the qualified backend and produces sound through the existing compiled plan, with no second render path~~ — **partially closed 2026-08-24, strengthened 2026-08-28.** The open path, the render, and the no-second-path claim are all evidenced. The 2026-08-24 macOS evidence came from a drill on `open_default`, which the binary does not call; `the_engine_main_actually_opens_reaches_a_real_device_and_renders` now drills `open_track_engine` — the function `main.rs` uses — and passes on Linux with 90 real driver blocks, 0 xruns, 0 plan errors, 0 stream errors. Audible confirmation and the manual protocol are still outstanding, so this row is `implemented`, not closed.
 - Decision 22's parameter seam is implemented, so a UI edit changes live audio — **REOPENED 2026-08-28.** The seam itself works and `a_shape_edit_changes_live_audio_and_nothing_stays_pending` still passes, but it builds its engine with `build_engine_parts`, whose lane targets are derived from the model's own device snapshot, so the edit addresses a target that exists by construction. **`./spectre` opens `open_track_engine` instead**, whose targets are `TrackPathNodes::parameter_targets` — ObjectIds the graph builder allocates from `APP_GRAPH_SEED`. The model's device IDs and the graph's node IDs are disjoint, so no Shape edit reaches live audio in the product; the app reports "stored but did not reach live audio". `a_shape_edit_does_not_reach_live_audio_through_the_engine_the_app_opens` pins the current behaviour and fails the day the two ID spaces are reconciled.
   **This is accepted scope, not a defect to fix here.** R4-4's spec §8 Q2 states it: the track model leaves "the existing flat `AppModel::devices` list driving Build and Shape untouched", and records the cost as "Build shows a device list that belongs to no track, which is a seam a user can see", with re-parenting the device browser onto tracks assigned to **R6**. What nobody noticed is that this deferral invalidated a row that was already marked closed: R4-2 was verified on 2026-08-24 against a configuration the app stopped using when the track engine landed. The row is honest now, and closes when R6 re-parents the browser.
 - ~~A MIDI clip plays through a track into master~~ — **partially closed 2026-08-28.** The clip model, the baked schedule, and the merge rule are evidenced; `crates/spectre-offline/tests/e2e_alpha.rs` renders three tracks' clips into master offline. The live path composes too: `the_live_bridge_plays_every_instrument_track` drives all three tracks' clips through `RenderBridge` and matches the offline hash exactly, at zero callback allocations. **Closed in the product too:** `./spectre` bakes each track's clips before the stream opens and plays them; Play sends the transport command alone, so the project's material replaces the audition note rather than merging with it. A project with no clips still auditions, so R4-1's evidence is unchanged. What remains open on this row is the manual protocol — nobody has confirmed by ear that a clip is what they hear.
@@ -123,6 +123,8 @@ All ten rows are closed, two of them on macOS only under decision 23. R3 exited 
 | Linux | 2026-08-28 | cpal / ALSA via **pipewire-alsa**, C-Media USB Audio (card 2) | 363 | 0 | 0.844 | 0 | 0 | 0 |
 | Linux | 2026-08-28 | same host and device, re-run | 369 | 0 | 0.826 | 0 | 0 | 0 |
 | Linux | 2026-08-28 | cpal / **raw ALSA** `plug` → `hw:1,0`, onboard ALC285, **no sound server** | 198 | 0 | 0.822 | 0 | 0 | 0 |
+| Linux | 2026-08-28 | cpal / pipewire-alsa (**app engine drill**, `open_default`, 44 100 Hz) | 94 | 0 | 0.837 | 0 | 0 | 0 |
+| Linux | 2026-08-28 | cpal / pipewire-alsa (**the engine `main.rs` opens**, `open_track_engine`, 44 100 Hz) | 90 | 0 | 0.442 – 0.897 over 5 runs | 0 | 0 | 0 |
 
 The 2026-08-24 rows add the frame-capacity rejection count, which the original record did not
 carry. Both read 0, so on this host cpal's fixed buffer request is honored rather than merely
@@ -182,6 +184,15 @@ in the table. Read every single-value headroom cell in this document as one samp
 constant. That noise is also why the middle row is retained: it is the same code path measured
 before and after the insert landed, so the three rows isolate the cost of each change rather than
 mixing them.
+
+**The drill that cited itself as proof `./spectre` reaches a real driver was on the wrong path,
+and that is the third instance of this shape in one run.** `app_engine_opens_a_real_device_and_renders`
+opens through `open_default`, which is called from the test file and nowhere else; `main.rs` calls
+`open_track_engine`. The two build different plans, register different lane targets, and take
+different code paths into the backend. `the_engine_main_actually_opens_reaches_a_real_device_and_renders`
+now drills the binary's own path with the same track list, tempo map, seed, and selected track,
+and `APP_GRAPH_SEED` moved out of `main.rs` into the library so the drill and the binary cannot
+open with different graphs. Both drills pass on Linux; the fifth and sixth rows above are theirs.
 
 **The alpha contained no effect until 2026-08-28, and R4-9's spec required one.** R4-6 shipped
 `Gloam`; R4-9 §"Devices per track" specifies *"one `Filament` instrument and one `Gloam` insert"*

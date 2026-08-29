@@ -89,9 +89,7 @@ impl Default for SpectrePrototype {
 }
 
 // Open the default device against the compiled-in backend
-// Node identity seed for the app's track graph. Rationale: identities must be stable across a
-// rebuild so the same list produces the same graph; the value itself carries no meaning
-const APP_GRAPH_SEED: u64 = 0x0053_5045_4354_5245;
+use spectre_app::engine::APP_GRAPH_SEED;
 
 #[cfg(feature = "live-audio")]
 fn open_engine(model: &AppModel) -> Result<LiveEngine, EngineUnavailable> {

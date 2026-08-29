@@ -817,3 +817,59 @@ fn a_shape_edit_does_not_reach_live_audio_through_the_engine_the_app_opens() {
         "expected the publish to be refused as an unknown target, got: {status:?}"
     );
 }
+
+// Hardware evidence for the path main.rs ACTUALLY takes.
+//
+// app_engine_opens_a_real_device_and_renders above drills `open_default`, which is called from
+// this test file and nowhere else -- main.rs calls `open_track_engine`. So the drill that R4's
+// exit row cites as "the row that establishes ./spectre reaches a real driver" exercises a
+// function the binary never invokes. This one opens the engine exactly as main.rs does: the same
+// track list, the same tempo map, the same APP_GRAPH_SEED, the same selected track.
+#[cfg(feature = "live-audio")]
+#[test]
+#[ignore = "requires a real audio device; run on macOS and Linux beside the other drills"]
+fn the_engine_main_actually_opens_reaches_a_real_device_and_renders() {
+    use spectre_app::engine::{open_track_engine, APP_GRAPH_SEED};
+
+    let model = AppModel::prototype();
+    let backend = spectre_audio::cpal_backend::CpalBackend::new();
+    let engine = open_track_engine(
+        &backend,
+        model.track_list(),
+        model.tempo_map(),
+        APP_GRAPH_SEED,
+        model.selected_track_id(),
+    )
+    .expect("a real output device is required for this drill");
+
+    assert!(matches!(engine.state(), EngineState::Opened { .. }));
+    std::thread::sleep(std::time::Duration::from_millis(250));
+
+    let health = engine.health();
+    let EngineState::Running {
+        backend: name,
+        ref device,
+        sample_rate,
+        frames,
+    } = engine.state()
+    else {
+        panic!("the driver never called back: {:?}", engine.state());
+    };
+    println!(
+        "backend={name} device={device} rate={sample_rate} frames={frames} blocks={} xruns={} worst_headroom={} plan_errors={} contaminated={} stream_errors={} params_pending={}",
+        health.blocks_rendered,
+        health.xruns,
+        health.worst_headroom,
+        health.plan_errors,
+        health.contaminated_nodes,
+        health.stream_errors,
+        health.parameters_pending,
+    );
+    assert!(
+        health.blocks_rendered > 0,
+        "the driver must have called back"
+    );
+    assert_eq!(health.plan_errors, 0, "no block may fail to render");
+    assert_eq!(health.contaminated_nodes, 0, "output must stay finite");
+    assert_eq!(health.stream_errors, 0, "the driver reported an error");
+}
