@@ -306,3 +306,37 @@ engine has a hard-constraint dimension no UI or competitive lens covers. Weights
 Realtime & Correctness 35%, DAW Workflow Depth 25%, Product Identity & Scope
 Discipline 20%, Truthfulness & Evidence 20%. Jeff authorized the run without
 amending them; `feature-tree.md`'s nine features were confirmed in the same breath.
+
+
+### D-R5 — R4-4's Q2 deferral invalidated an exit row that was already closed
+
+**Raised:** 2026-08-28, by an implementation session, not by a spec.
+**Blocks:** nothing new. It corrects a claim rather than opening a choice.
+
+R4-2's exit row — *"Decision 22's parameter seam is implemented, so a UI edit changes live
+audio"* — was closed on 2026-08-24 and verified by
+`a_shape_edit_changes_live_audio_and_nothing_stays_pending`. That test builds its engine with
+`build_engine_parts`, whose lane targets are derived from the model's own device snapshot, so the
+edit addresses a target that exists by construction.
+
+`./spectre` calls `open_track_engine`. Its targets are `TrackPathNodes::parameter_targets` —
+ObjectIds the graph builder allocates from `APP_GRAPH_SEED`. The model's device IDs and the
+graph's node IDs are disjoint, so **no Shape edit has reached live audio in the product since the
+track engine landed.** `a_shape_edit_does_not_reach_live_audio_through_the_engine_the_app_opens`
+pins it and fails the day the two are reconciled.
+
+**The seam itself is accepted scope.** R4-4 §8 Q2 says so in as many words: the track model
+leaves *"the existing flat `AppModel::devices` list driving Build and Shape untouched"* and
+records the cost as *"Build shows a device list that belongs to no track, which is a seam a user
+can see"*, with re-parenting the device browser onto tracks assigned to R6. Nothing here asks to
+bring R6 forward.
+
+**What needs no decision, and is already done:** the R4-2 exit row, `STATUS.md`, and
+`r4-qa-protocol.md` row 3 now say what is true.
+
+**What may need one:** whether an exit row closed against a configuration the product later
+stopped using should be re-verified at each milestone exit, or whether closing a row is
+permanent. This is the second instance of the same shape in one run — the first was R4-6's
+"one original effect ships as the alpha's voice", closed while `Gloam` was constructed nowhere.
+Both were verified proposals with passing tests. Neither test exercised the path the product
+takes.

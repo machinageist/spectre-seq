@@ -40,6 +40,7 @@ must say so rather than record a failure against the operator.
   REPLACES the audition note. A project with **no** clip placements attaches no player and still
   auditions, so row 1 records which of the two it heard rather than assuming the audition voice.
 - **The alpha's tracks are `Filament → Gloam` as of 2026-08-28**, and were `Filament` alone before that: `build_track_graph` constructed no effect, so row 3's "drag a `Gloam` parameter" had no live control to drag and row 9's bounce carried no effect. A run recorded before that date measured a different product.
+- **Row 3 cannot pass today, and the reason is structural.** `./spectre` opens the track engine, whose lane targets are graph-node ObjectIds, while a Shape slider addresses the flat `AppModel::devices` list's own IDs. The two spaces are disjoint, so every Shape edit reports "stored but did not reach live audio". R4-4 §8 Q2 accepted this seam and assigned the fix to R6. Record row 3 as `FAIL` with that reason rather than as an operator error, and do not record `params pending 0` as a pass — nothing was published.
 - **`Gain` does not smooth**, though the accepted device contract says it does. Open as D-R3.
 - **No autosave, journal, or recovery exists.** Row 8 checks replacement, not crash durability;
   crash injection is R5's.

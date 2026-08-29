@@ -9,9 +9,9 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use spectre_app::engine::{
-    apply_parameter_edit, build_engine_parts, engine_status_field, toggle_transport, AuditionError,
-    EngineParts, EngineState, EngineUnavailable, LiveEngine, ENGINE_BUFFER_FRAMES,
-    ENGINE_PLAN_FRAME_MARGIN,
+    apply_parameter_edit, build_engine_parts, build_track_engine_parts, engine_status_field,
+    toggle_transport, AuditionError, EngineParts, EngineState, EngineUnavailable, LiveEngine,
+    ENGINE_BUFFER_FRAMES, ENGINE_PLAN_FRAME_MARGIN,
 };
 use spectre_app::AppModel;
 use spectre_audio::bridge::BridgeTelemetry;
@@ -783,4 +783,37 @@ fn play_then_stop_in_one_block_stays_silent_with_clips_attached() {
         "a Play and a Stop in one block must leave no note sounding"
     );
     assert_eq!(engine.health().plan_errors, 0);
+}
+
+// 26 — the acceptance criterion of test 16, re-asked against the engine ./spectre ACTUALLY opens.
+//
+// Test 16 builds its engine with build_engine_parts, whose lane targets are derived from the
+// model's own device snapshot, so a Shape edit addresses a target that exists by construction.
+// main.rs calls open_track_engine, whose targets come from TrackPathNodes::parameter_targets --
+// ObjectIds allocated by the graph builder from APP_GRAPH_SEED. The model's device IDs and the
+// graph's node IDs are disjoint ID spaces, so an edit routed through the app's real engine
+// addresses a target that was never registered.
+//
+// If this test ever fails, the two ID spaces have been reconciled and R4-2's exit row can finally
+// be claimed of the product rather than of a test-only configuration
+#[test]
+fn a_shape_edit_does_not_reach_live_audio_through_the_engine_the_app_opens() {
+    let mut model = AppModel::prototype();
+    let parts = build_track_engine_parts(
+        model.track_list(),
+        model.tempo_map(),
+        0x0053_5045_4354_5245,
+        model.selected_track_id(),
+        config(),
+    )
+    .unwrap();
+    let engine = engine_over_null(parts);
+
+    let mut status = String::new();
+    apply_parameter_edit(&mut model, Some(&engine), "gain", "gain", 0.1, &mut status);
+
+    assert!(
+        status.contains("did not reach live audio"),
+        "expected the publish to be refused as an unknown target, got: {status:?}"
+    );
 }
