@@ -5,15 +5,20 @@
 # Status: active
 # Contract: keep steps identical to README's "## Validate" section; single
 #   ubuntu-latest job is a deliberate minimum, not a platform coverage claim
+# Notes: Triggers on every branch, not just main. It used to watch main alone,
+#   so the whole R4 slice series landed on gauntlet/r4-spec-phase without ever
+#   being gated -- and the Linux build had been broken since the rebuild
+#   foundation. CI had in fact failed on main on 2026-08-06 and 2026-08-16 for
+#   exactly that reason and nobody read it. A gate nothing runs against is not
+#   a gate.
 # ==============================================================================
 
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
-    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always

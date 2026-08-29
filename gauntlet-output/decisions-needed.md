@@ -104,6 +104,30 @@ favorable path is a partial coverage matrix, not a source-complete dossier.
 **Raised:** 2026-08-21, by the R4-9 spec, which routed it rather than deciding it.
 **Blocks:** R4's exit, and nothing before it. All nine specs pass regardless.
 
+> **RESOLVED BY FACT, 2026-08-28 — the question's premise is void.** The Linux row closed. This
+> repository's own development host is Linux (Arch, kernel 7.1.9-arch1-2, PipeWire 1.6.8) with
+> three usable audio cards, and `hardware_lifecycle_drill` ran on it: 363 and 369 blocks through
+> pipewire-alsa on a C-Media USB interface, and 198 blocks on the raw ALSA path to the onboard
+> ALC285 with no sound server, all with 0 xruns, 0 plan errors, 0 contaminated nodes, and 0
+> frame-capacity rejections. **The hardware was never missing.**
+>
+> Each disposition below collapses accordingly. **(a) strict conjunction** is now satisfiable and
+> was never gated on a purchase. **(b) a second deferral** must not happen — there is nothing left
+> to defer, and taking it now would defer a commitment that has already been discharged.
+> **(c) split exit** is unnecessary for the Linux row.
+>
+> What remains open is a *different* obligation that D-R4 correctly identified as a strict
+> superset: R4-9's manual protocol needs an **operator** at the host, not new hardware. That is
+> the single remaining open R4 exit row. The per-platform rule still holds — no document may say
+> "R4 passed" unqualified, because no operator pass exists on any platform.
+>
+> Two things surfaced in the same run that bear on how this decision came to look hardware-shaped:
+> the workspace did not compile on Linux at all until 2026-08-28, and CI had been failing on
+> exactly that since 2026-08-06 while watching only `main`, which no R4 slice ever touched. The
+> drill also did not "run unchanged" as decision 23 predicted — it exposed a real `find_device`
+> defect on ALSA first. A Linux host had been available the whole time; what was missing was
+> anything that ran against one.
+
 R4's exit evidence is a **ten-row conjunction** (`current-milestone.md`, "Exit evidence"),
 and the milestone's own inherited-debt section says at `:22`: *"R4 carries four obligations
 from earlier milestones. **None is optional** and none should be rediscovered later."*
