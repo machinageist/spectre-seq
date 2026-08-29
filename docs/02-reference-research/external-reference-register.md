@@ -62,7 +62,7 @@ The VCV supported-host list is an observation about VCV Rack Pro, not an endorse
 
 | Product | Classification | Repository context | Required treatment |
 |---|---|---|---|
-| VCV Rack | substantive behavioral reference | `docs/modular_rack_spec.md`; modular routing change specs | rebuild dossier with claim-level source anchors; separate volts/polyphony/limits from Spectre decisions |
+| VCV Rack | substantive behavioral reference | prototype-era `docs/modular_rack_spec.md` and modular routing change specs — **removed from the tree 2026-07-12 with the rest of the prototype plans; retained only in git history** | rebuild dossier with claim-level source anchors; separate volts/polyphony/limits from Spectre decisions |
 | Kilohearts Phase Plant | substantive behavioral reference | Spectre modular synth spec/plan | rebuild dossier; exact macros, lanes, and module limits remain candidates, not commitments |
 | Kilohearts Snapins | bounded subsystem reference | Phase Plant device/effect-chain behavior | cover only chain/nesting/modulation workflows relevant to Spectre |
 | Xfer Serum 2 | substantive behavioral reference | dedicated dossier and sound-design change material | source scope remains incomplete without full official guide; preserve extensive gaps |

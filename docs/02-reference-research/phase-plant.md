@@ -49,7 +49,7 @@ A field absent from official documentation remains unknown. Standard synthesizer
 
 ## Legacy-spec correction controls
 
-During extraction from `docs/specs/spectre-modular-synth-spec.md` and related plans:
+During extraction from the prototype-era `docs/specs/spectre-modular-synth-spec.md` and related plans — **removed from the tree 2026-07-12 and retained only in git history**, so these controls describe how that extraction was performed rather than a file a reader can open:
 
 1. External claims require an exact official source section.
 2. Spectre limits and architecture move only to the requirements/architecture hierarchy after independent review.

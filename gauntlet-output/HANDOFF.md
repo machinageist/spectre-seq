@@ -85,3 +85,16 @@ satisfied the spec that commissioned it, and in each case a two-line grep would 
    implementation runs, or cite by symbol and quoted literal. R4-7's iteration-2 reviewer
    recommends the latter as its "single most important fix".
 
+   **Measured 2026-08-29, so the decision can rest on a number.** The nine specs carry **712**
+   `path:line` citations. After a session that rewrote `effect.rs`, `engine.rs`, `lib.rs`,
+   `bridge.rs`, `routing.rs`, and `track.rs`, exactly **one** points past the end of its file
+   (`R4-8` citing `crates/spectre-audio/tests/bridge_plan.rs:227-245`; that file has 194 lines,
+   and the drift predates this session). Out-of-range drift is therefore **0.1%**.
+
+   Two cautions the number does not cover. Out-of-range is a *weak* proxy: a citation can stay in
+   range and still point at different content, and nothing here measures that. And the accepted
+   documents under `docs/` carry **zero** `path:line` citations — they already cite by path and
+   symbol, which is exactly the convention the reviewer recommends. So the choice is narrower than
+   it looked: the practice is already correct everywhere except `specs/`, and `specs/` are
+   point-in-time proposals whose citations were true when graded.
+

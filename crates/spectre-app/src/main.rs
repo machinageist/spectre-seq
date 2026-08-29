@@ -26,8 +26,14 @@ const MUTED: Color32 = Color32::from_rgb(128, 140, 156);
 // The fader's range IS the accepted gain descriptor's range; no fader law is invented here
 const GAIN_MAX: f32 = 2.0;
 
+// The shell's window geometry. Named rather than inlined because three separate places depend on
+// these numbers -- the window builder, two layout comments, and r4-qa-protocol.md row 10, which
+// asks an operator to check both sizes by name. They were literals in all of them until 2026-08-29
+const WINDOW_DEFAULT_SIZE: [f32; 2] = [1420.0, 860.0];
+const WINDOW_MIN_SIZE: [f32; 2] = [1060.0, 680.0];
+
 // Arrange lane geometry. The label column is wide enough for the longest track name the model
-// admits without truncating at the 1060px minimum width this shell supports
+// admits without truncating at WINDOW_MIN_SIZE's width
 const LANE_LABEL_WIDTH: f32 = 120.0;
 const LANE_HEIGHT: f32 = 46.0;
 const GAIN_RANGE: std::ops::RangeInclusive<f32> = 0.0..=GAIN_MAX;
@@ -845,7 +851,7 @@ impl SpectrePrototype {
 
     // R4-5 §3.1's clip inspector and note list. Drawn inline under the lanes rather than as a
     // trailing side panel, because the lens body is already inside a panel and nesting a second
-    // one would clip the note list at the 1060x680 minimum this shell supports
+    // one would clip the note list at WINDOW_MIN_SIZE
     fn clip_inspector(&mut self, ui: &mut egui::Ui) {
         let Some(placement) = self.model.selected_clip() else {
             ui.add_space(10.0);
@@ -1404,8 +1410,8 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Spectre · Interaction Prototype")
-            .with_inner_size([1420.0, 860.0])
-            .with_min_inner_size([1060.0, 680.0]),
+            .with_inner_size(WINDOW_DEFAULT_SIZE)
+            .with_min_inner_size(WINDOW_MIN_SIZE),
         ..Default::default()
     };
     eframe::run_native(
