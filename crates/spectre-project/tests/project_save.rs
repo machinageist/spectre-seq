@@ -10,8 +10,8 @@ use spectre_core::{IdGen, ObjectId, TempoMap, Transport};
 use spectre_project::{
     command::{EditHistory, ProjectCommand, Transaction},
     from_bytes, load_project, save_project_atomic, to_bytes, LoadError, ProjectDoc,
-    ProjectEnvelope, SaveError, SaveStage, TargetState, Track, TrackInstrument, TrackList, ViewDoc,
-    MAX_READABLE_SCHEMA, SCHEMA_VERSION,
+    ProjectEnvelope, SaveError, SaveStage, TargetState, Track, TrackEffect, TrackInsert,
+    TrackInstrument, TrackList, ViewDoc, MAX_READABLE_SCHEMA, SCHEMA_VERSION,
 };
 use std::path::{Path, PathBuf};
 
@@ -332,4 +332,42 @@ fn a_decodable_but_invalid_project_is_refused_on_load() {
     ));
     // from_bytes refuses it for the same reason, so the two doors agree
     assert!(from_bytes(&to_bytes(&broken).unwrap()).is_err());
+}
+
+// A track's insert must survive the file, or R4's "atomic save and reload round-trip a project
+// containing tracks, clips, and device parameters" row is closed on a project shape the alpha
+// does not have -- every alpha track carries one
+#[test]
+fn a_track_insert_survives_save_and_reload() {
+    let (mut list, ids) = three_tracks(0x0053_4156_494e_5301);
+    list.set_insert(ids[1], Some(TrackInsert::new(TrackEffect::Gloam, 0.37)))
+        .unwrap();
+    let directory = scratch("insert-round-trip");
+    let path = directory.join("take.spectre");
+
+    save_project_atomic(&path, &envelope("insert", list, 0x0053_4156_494e_5302)).unwrap();
+    let loaded = load_project(&path).unwrap();
+    let tracks = loaded.project.tracks.tracks();
+
+    assert_eq!(tracks[0].insert(), None, "an untouched track gains nothing");
+    assert_eq!(tracks[2].insert(), None);
+    let insert = tracks[1]
+        .insert()
+        .expect("the insert must survive the file");
+    assert_eq!(insert.effect(), TrackEffect::Gloam);
+    assert_eq!(insert.depth(), 0.37);
+}
+
+// The compatibility line the insert slot promised: a project with no insert anywhere must
+// serialize exactly as it did before the field existed, or CORE-003's byte-stability evidence
+// is quietly weakened by an optional field that is not actually optional in the bytes
+#[test]
+fn a_project_without_inserts_writes_no_insert_field() {
+    let (list, _) = three_tracks(0x0053_4156_494e_5303);
+    let bytes = to_bytes(&envelope("plain", list, 0x0053_4156_494e_5304)).unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+    assert!(
+        !text.contains("insert"),
+        "a track with no insert must not write the field: {text}"
+    );
 }

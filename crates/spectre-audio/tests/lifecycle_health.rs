@@ -196,12 +196,19 @@ fn headroom_is_published_off_thread_after_every_block() {
         worst <= last,
         "worst headroom must not exceed the most recent block"
     );
-    // Rendering three cheap devices must not consume a 256-frame budget at 48 kHz
-    assert!(
-        worst > 0.0,
-        "unloaded render should leave headroom, saw {worst}"
-    );
-    assert_eq!(telemetry.xruns(), 0, "no block should have overrun");
+    // No wall-clock assertion here, deliberately. This test's subject is that headroom is
+    // PUBLISHED off thread after every block, and the two assertions above are the whole of that
+    // claim. `worst > 0.0` and `xruns == 0` were also asserted until 2026-08-28 and made this a
+    // flaky gate: the null backend's pump has no realtime scheduling, so a busy machine preempts
+    // a block and publishes negative headroom truthfully. It failed inside a full `cargo test
+    // --workspace` run, which executes test binaries in parallel, and passed five times in
+    // isolation on the same commit.
+    //
+    // The performance claim still has homes, both of which measure under conditions that make it
+    // meaningful: `an_overrunning_block_is_counted_as_an_xrun` below drives the xrun path
+    // deliberately rather than hoping for it, and the #[ignore]d hardware drills report real
+    // driver headroom on a quiet machine into the milestone's qualification record
+    let _ = telemetry.xruns();
 }
 
 #[test]
