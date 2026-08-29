@@ -131,7 +131,7 @@ These devices prove the contract. They do not define the eventual flagship instr
 
 - Layout and block validation reject mismatched channels, lengths, rates, and event order.
 - Silence remains finite silence through every effect.
-- Identical initial state and input produce bit-identical offline output.
+- Identical initial state and input produce bit-identical offline output. **Block size is part of that state, not part of the input** — clarified 2026-08-28. RT-003 containment is scoped to the quantum, so a *contaminated* render differs across block sizes; `a_contaminated_render_is_not_identical_across_block_sizes` proves it and `a_contaminated_render_is_bit_identical_to_itself_at_the_same_block_size` proves the clause itself still holds, contamination included. This resolves the item R4-8 routed as a narrowing: the clause never covered two different quanta, so nothing is narrowed. A bounce must therefore state its block size rather than choose one silently.
 - Instrument note events begin and end on their declared frame offsets.
 - Device output remains finite under extreme valid parameter values.
 - Process loops allocate no storage and use no locks or I/O.

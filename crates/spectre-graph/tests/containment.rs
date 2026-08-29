@@ -685,3 +685,39 @@ fn a_contaminated_render_is_not_identical_across_block_sizes() {
     // containment from the quantum to the sample, which would be a good change to notice
     assert_ne!(one_quantum, two_quanta);
 }
+
+// The other half of the test above, and the half that evidences the accepted contract.
+//
+// `dsp-device-io.md`'s checklist says "identical initial state and input produce bit-identical
+// offline output". R4-8 read the cross-block-size result as narrowing that clause and routed it
+// as an open item. It does not narrow it: block size is part of a render's configuration, not
+// part of its input -- which is what `STATUS.md` already says in the words "block size is part of
+// a render, not a preference". Two renders at different quanta are not the same render, so the
+// clause never covered them.
+//
+// What the clause DOES claim is that one configuration reproduces itself, and it holds even when
+// containment fires. Without this test the pair would show only that block size matters and never
+// that determinism survives contamination at all
+#[test]
+fn a_contaminated_render_is_bit_identical_to_itself_at_the_same_block_size() {
+    const TOTAL: usize = 512;
+    const TARGET: usize = 300;
+
+    for block in [TOTAL, TOTAL / 2, TOTAL / 4] {
+        let (first, first_stats) = render_poisoned_at(TOTAL, block, TARGET);
+        let (second, second_stats) = render_poisoned_at(TOTAL, block, TARGET);
+        assert_eq!(
+            first, second,
+            "a contaminated render at block {block} did not reproduce itself"
+        );
+        assert_eq!(
+            first_stats.contaminated_nodes,
+            second_stats.contaminated_nodes
+        );
+        // A pair of all-silent renders would satisfy the equality above
+        assert!(
+            first.iter().any(|sample| *sample != 0.0) || block == TOTAL,
+            "block {block} produced only silence, so the comparison proved nothing"
+        );
+    }
+}
