@@ -56,6 +56,31 @@ published playhead, and reads `—` before any block has rendered rather than a 
 **Still not drawn:** a piano roll, a session grid, an automation lane, a record-arm surface, and
 per-clip time tools — each deferred by name in R4-5 §3.1 rather than overlooked.
 
+### AAA quality pass, 2026-08-29
+
+`gauntlet-output/criteria.md`'s auto-fail rules were run against the active documents rather than
+against specs, because they grade claims about state and this repository's claims had drifted.
+
+- **AF-2, paths:** two citations pointed at prototype-era files removed on 2026-07-12 and are now
+  marked as history rather than left dangling. Every other cited path under `docs/` resolves.
+- **AF-2, symbols:** five backticked identifiers in `docs/` are absent from `crates/`, and all five
+  are correct — four are Serum 2's own folder names in an observation file, one is ALSA's
+  `snd_pcm_open`. No Spectre symbol is claimed that does not exist.
+- **AF-6:** six promotional words appear under `docs/`, all inside quoted external product claims
+  in research files. None describes Spectre's own state.
+- **Citation drift**, which the gauntlet handoff carried as an undecided rule, is measured: 712
+  `path:line` citations across the nine specs, one out of range after a session that rewrote six
+  of the cited files. `docs/` carries none at all — it already cites by path and symbol.
+
+**Lens 1 carried the real gap**, and it is the heaviest at 35%. RT-001's allocation evidence
+guarded a three-node chain and a device pair; the composed alpha — multi-voice, summed, with a
+Gloam insert per track — had none. The structural lock scan reached only `spectre-audio`'s own
+modules, so every `AudioProcessor::process` body and `CompiledPlan::process` were unscanned. Both
+are closed and both were falsified rather than assumed.
+
+This is the fourth appearance of one pattern: evidence taken on a fixture the product does not
+run. The others were the headroom record, R4-1's driver drill, and R4-2's parameter seam.
+
 ## Validation
 
 The current gate is:
