@@ -77,6 +77,28 @@ from direct observation — never from `docs/status/STATUS.md`, a sibling spec, 
    `cargo run --locked -p spectre-offline -- --write-alpha-fixture --out /tmp/r4-alpha.json`
 4. Launch the app **with system volume low**: `./spectre`. The audition voice is a held saw with
    no amplitude envelope and it clicks at note edges.
+
+   **On a host with no ALSA default, `./spectre` will report the engine unavailable.** Check with
+   `grep -rl 'pcm.!default' /etc/alsa/conf.d/`; an empty result means ALSA falls back to
+   `defaults.pcm.card 0`, which may be an HDMI-only card with no device 0. Two fixes, either is
+   valid and **the record's E4 must say which was used**:
+
+   - Install the distribution's default wiring — on Arch, `pipewire-alsa`, which ships
+     `99-pipewire-default.conf`. This is the ordinary desktop configuration.
+   - Or supply one for the run without touching the system:
+
+     ```sh
+     cat > /tmp/spectre-alsa.conf <<'EOF'
+     </usr/share/alsa/alsa.conf>
+     pcm.!default { type pipewire }
+     ctl.!default { type pipewire }
+     EOF
+     ALSA_CONFIG_PATH=/tmp/spectre-alsa.conf ./spectre
+     ```
+
+     Replace both `pipewire` lines with `plug`/`hw` on a host with no sound server — e.g.
+     `pcm.!default { type plug; slave.pcm "hw:1,0" }` — which is what the raw-ALSA qualification
+     row used. `/tmp` is cleared on reboot, so this is per-session by design.
 5. Work rows 1–15 of §Manual checks in order. Record a verdict for **every** row. `NOT RUN` is a
    valid verdict; a blank is not.
 6. Write one numbered block into `r4-qa-records.md` with all of E1–E10 and Q-A…Q-D.
