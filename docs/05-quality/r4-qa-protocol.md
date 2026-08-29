@@ -18,16 +18,17 @@ Notes: Flow B. The automated half is `cargo test -p spectre-offline --test e2e_a
 - **Supersedes:** none
 - **Superseded by:** none
 - **Open decisions:** whether R4's exit narrows while Linux device qualification is undischarged — decision 23's shape, and Jeff's call
-- **Known gaps:** no run has been performed; `r4-qa-records.md` is at its empty state
+- **Known gaps:** no operator run has been performed on any platform; `r4-qa-records.md` carries one `INCONCLUSIVE` automated-half record (block Q-1)
 
 ## Standing constraints at the time of writing
 
 Read this section before running, because several rows below cannot pass today and the record
 must say so rather than record a failure against the operator.
 
-- **Linux device qualification has never run.** No Linux audio device has ever been opened by
-  this project. A macOS run produces no Linux evidence, and the record's Linux column stays
-  blank rather than being filled with an inference.
+- ~~**Linux device qualification has never run.**~~ **Discharged 2026-08-28** on Arch Linux
+  across three rows in the milestone's qualification record, one of them on the raw ALSA path
+  with no sound server. A macOS run still produces no Linux evidence and the reverse holds too:
+  each platform's column is filled only by a run on that platform.
 - ~~**The live bridge addresses exactly one instrument.**~~ **Lifted 2026-08-28** by the R4-9
   follow-up, which is the update that paragraph required of itself. `RenderBridge` now carries a
   fixed `Box<[ClipVoice]>` sized from `spectre_graph::MAX_FLAT_INPUTS`, so every instrument track
@@ -141,9 +142,10 @@ It does **not** authorize, and the record's Q-D field states each of these that 
 
 1. **"R4 has exited."** R4's exit is a ten-row conjunction. This produces evidence for one row
    and contributes to several others; it produces **none** for Linux device qualification.
-2. **"Spectre works on Linux."** No Linux audio device has ever been opened. A combined verdict
-   across a filled macOS column and an empty Linux one would be exactly the unauthorized claim
-   decision 23 forbids.
+2. **"Spectre works on Linux."** The *device seam* is qualified on Linux as of 2026-08-28; the
+   *shell* is not, because no operator has worked these rows on any platform. A combined verdict
+   across a filled column and an empty one is still exactly the unauthorized claim decision 23
+   forbids — it just is no longer the device layer that is missing.
 3. **Any other machine, interface, or driver configuration.** One host, one interface, one
    configuration.
 4. **Crash durability or recovery.** CORE-004's crash-injection evidence is R5's.
