@@ -458,3 +458,35 @@ fn a_deactivated_clip_produces_no_events() {
     assert_eq!(bridge.telemetry().last_block_events(), 0);
     assert_eq!(bridge.telemetry().plan_errors(), 0);
 }
+
+// The playhead the transport readout draws. Published every block off thread, so the app can
+// report a position without reading render state -- and NOT published before a block renders,
+// because a fabricated 1.1.1 is exactly what r4-qa-protocol.md row 4 exists to catch
+#[test]
+fn the_playhead_is_published_off_thread_and_advances_while_rolling() {
+    let (_sender, mut bridge) = playing_bridge(&[(0, 960, 60)]);
+    let telemetry = bridge.telemetry();
+
+    assert_eq!(
+        telemetry.position_samples(),
+        None,
+        "no block has rendered, so there is no position to report"
+    );
+
+    let mut buffer = vec![0.0_f32; FRAMES * CHANNELS as usize];
+    render(&mut bridge, &mut buffer);
+    let first = telemetry
+        .position_samples()
+        .expect("a rendered block publishes a position");
+    assert!(telemetry.transport_rolling(), "the bridge was sent Play");
+
+    render(&mut bridge, &mut buffer);
+    let second = telemetry
+        .position_samples()
+        .expect("a rendered block publishes a position");
+    assert_eq!(
+        second - first,
+        FRAMES as i64,
+        "the playhead must advance by exactly one block"
+    );
+}

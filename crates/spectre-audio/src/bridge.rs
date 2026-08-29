@@ -10,10 +10,10 @@
 use crate::clip::{contract_order, ClipBlockOutcome, ClipPlayer, CLIP_SEQUENCE_BAND};
 use crate::control::ControlReceiver;
 use crate::RenderBlock;
-use spectre_core::{ObjectId, SampleDuration, SampleTime, Transport};
+use spectre_core::{ObjectId, SampleDuration, SampleTime, Transport, TransportState};
 use spectre_dsp::NoteEvent;
 use spectre_graph::{CompiledPlan, NodeId, PlanNoteInput};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -45,6 +45,12 @@ pub struct BridgeTelemetry {
     schedules_held: AtomicU64,
     // Note events the most recent block merged, from both producers together
     last_block_events: AtomicU64,
+    // The playhead, published off thread so the app can draw a position without reading render
+    // state. Stored as samples plus a rolling flag rather than a formatted string, because
+    // formatting on the audio thread would allocate. Signed, because a pre-roll position is
+    // negative and a u64 sentinel would collide with a real one
+    position_samples: AtomicI64,
+    transport_rolling: AtomicU64,
 }
 
 impl Default for BridgeTelemetry {
@@ -69,12 +75,29 @@ impl Default for BridgeTelemetry {
             schedules_installed: AtomicU64::new(0),
             schedules_held: AtomicU64::new(0),
             last_block_events: AtomicU64::new(0),
+            position_samples: AtomicI64::new(0),
+            transport_rolling: AtomicU64::new(0),
         }
     }
 }
 
 impl BridgeTelemetry {
     // Count blocks the bridge has rendered
+    // The playhead in samples, or None when no block has published one yet. None is not zero:
+    // an engine that has never rendered must not be drawn as sitting at bar 1, which is exactly
+    // the fabricated position r4-qa-protocol.md row 4 exists to catch. Gated on blocks_rendered
+    // rather than a sentinel value, because every i64 is a position a pre-roll could hold
+    pub fn position_samples(&self) -> Option<i64> {
+        if self.blocks_rendered.load(Ordering::Relaxed) == 0 {
+            return None;
+        }
+        Some(self.position_samples.load(Ordering::Relaxed))
+    }
+
+    pub fn transport_rolling(&self) -> bool {
+        self.transport_rolling.load(Ordering::Relaxed) == 1
+    }
+
     pub fn blocks_rendered(&self) -> u64 {
         self.blocks_rendered.load(Ordering::Relaxed)
     }
@@ -331,6 +354,11 @@ impl RenderBridge {
             self.transport.advance(SampleDuration::new(frames as u64));
         }
 
+        // Publish the playhead every block, whether or not a clip player advanced it. A bridge
+        // with no clips does not advance, and publishing the unmoved position is the honest
+        // answer -- the app then draws a position that does not move, rather than no position
+        self.publish_transport();
+
         // Parameter application runs once per block, before `process`, so the whole block sees
         // one coherent parameter set. Borrows are split by field before the call, so the closure
         // captures `plan` and `routes` rather than `self`, leaving `&mut self.control` free
@@ -390,6 +418,17 @@ impl RenderBridge {
     }
 
     // Publish how much of this block's time budget the render left unused
+    // Publish the playhead off thread: two relaxed stores, no formatting, no allocation
+    fn publish_transport(&self) {
+        self.telemetry
+            .position_samples
+            .store(self.transport.position.0, Ordering::Relaxed);
+        self.telemetry.transport_rolling.store(
+            u64::from(self.transport.state == TransportState::Playing),
+            Ordering::Relaxed,
+        );
+    }
+
     fn publish_headroom(&self, started: Instant, frames: usize) {
         let budget = frames as f64 / self.sample_rate;
         if budget <= 0.0 {

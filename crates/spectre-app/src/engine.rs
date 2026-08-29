@@ -139,6 +139,10 @@ pub struct EngineHealth {
     // Parameter edits observed but not delivered. In a correctly wired build this stays zero;
     // §1.3 of the R4-2 spec names it as the field that encodes the acceptance criterion
     pub parameters_pending: u64,
+    // The playhead in samples, None until a block has rendered. None is drawn as "—"; drawing a
+    // zero would be the fabricated position r4-qa-protocol.md row 4 exists to catch
+    pub position_samples: Option<i64>,
+    pub transport_rolling: bool,
 }
 
 // Render-side halves built together, before any device is touched
@@ -521,6 +525,8 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
             stream_errors: self.stream.stream_errors(),
             parameters_applied: self.telemetry.parameters_applied(),
             parameters_pending: self.telemetry.parameters_pending(),
+            position_samples: self.telemetry.position_samples(),
+            transport_rolling: self.telemetry.transport_rolling(),
         }
     }
 
@@ -857,6 +863,37 @@ fn parameter_route_nodes(
     }
     routes.push((nodes.master.node, GAIN_PARAMETERS[0].key));
     routes
+}
+
+// Format a playhead as bars and beats, one-based, the way a musician counts.
+//
+// R4-5 §3.1 specifies this readout as derived from MeterMap::signature_at and TempoMap, and it
+// lives here rather than in main.rs so it is reachable from a test -- main.rs is a binary target
+// and R4-1's review already found one rule that could not be tested because it lived there.
+//
+// Returns None for no position, which the caller draws as the same "—" it drew before any
+// position existed. A negative position is pre-roll and counts backwards from bar 1.
+pub fn bars_beats(
+    position: Option<i64>,
+    tempo: &spectre_core::TempoMap,
+    meter: &spectre_core::MeterMap,
+    rate: spectre_core::SampleRate,
+) -> Option<String> {
+    let samples = position?;
+    let ticks = tempo.samples_to_ticks(spectre_core::SampleTime(samples), rate);
+    let signature = meter.signature_at(ticks);
+    let per_bar = signature.ticks_per_bar().0;
+    let per_beat = spectre_core::TICKS_PER_BEAT;
+    // div_euclid, not `/`: a pre-roll tick is negative, and truncating division would place
+    // -1 tick in bar 1 alongside +1 tick instead of in the bar before it
+    let bar = ticks.0.div_euclid(per_bar);
+    let within = ticks.0.rem_euclid(per_bar);
+    let beat = within.div_euclid(per_beat);
+    let remainder = within.rem_euclid(per_beat);
+    // Sixteenths of a beat, so the readout moves visibly without implying sample precision it
+    // does not have -- the position is published once per block, not once per sample
+    let sixteenths = (remainder * 4) / per_beat;
+    Some(format!("{}.{}.{}", bar + 1, beat + 1, sixteenths + 1))
 }
 
 // Node identity seed for the app's track graph. Rationale: identities must be stable across a

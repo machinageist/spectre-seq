@@ -9,7 +9,8 @@ pub mod engine;
 pub mod project;
 
 use spectre_core::{
-    BeatTicks, IdGen, ObjectId, TempoMap, Transport, TransportCommand, TransportState,
+    BeatTicks, IdGen, MeterMap, ObjectId, TempoMap, TimeSignature, Transport, TransportCommand,
+    TransportState,
 };
 use spectre_dsp::{
     DeviceParameterSnapshot, DspParameter, FILAMENT_PARAMETERS, GAIN_PARAMETERS, GLOAM_PARAMETERS,
@@ -231,6 +232,9 @@ pub struct AppModel {
     // CORE-001's project-level identity meaningless, which is worse than one field
     project_id: ObjectId,
     tempo_map: TempoMap,
+    // The project's meter. Held rather than assumed so the transport's bars-beats readout and
+    // its "4 / 4" label read one source; meter editing arrives with the arrangement
+    meter_map: MeterMap,
     transport: Transport,
     lens: Lens,
     tracks: TrackList,
@@ -300,6 +304,9 @@ impl AppModel {
         Self {
             project_id: ids.next_id(),
             tempo_map: TempoMap::constant(PROTOTYPE_BPM).expect("a constant tempo is valid"),
+            meter_map: MeterMap::constant(
+                TimeSignature::new(4, 4).expect("4/4 is a valid signature"),
+            ),
             transport: Transport::new(),
             lens: Lens::Arrange,
             selected_track: Some(track_id),
@@ -319,6 +326,10 @@ impl AppModel {
 
     pub fn tempo_map(&self) -> &TempoMap {
         &self.tempo_map
+    }
+
+    pub fn meter_map(&self) -> &MeterMap {
+        &self.meter_map
     }
 
     pub fn transport(&self) -> Transport {

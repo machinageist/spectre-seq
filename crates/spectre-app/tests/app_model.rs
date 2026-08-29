@@ -872,3 +872,43 @@ fn clip_detail_is_absent_when_nothing_is_selected() {
     assert_eq!(model.selected_clip(), None);
     assert!(model.selected_clip_detail().is_none());
 }
+
+// R4-5 §3.1's transport readout. It lives in the library rather than main.rs precisely so this
+// test can exist -- R4-1's review already found one binding rule that could not be tested because
+// it lived in the binary
+#[test]
+fn the_transport_readout_counts_bars_and_beats_the_way_a_musician_does() {
+    use spectre_app::engine::bars_beats;
+    use spectre_core::{MeterMap, SampleRate, TempoMap, TimeSignature, TICKS_PER_BEAT};
+
+    let tempo = TempoMap::constant(120.0).unwrap();
+    let meter = MeterMap::constant(TimeSignature::new(4, 4).unwrap());
+    let rate = SampleRate::new(48_000).unwrap();
+    // 120 BPM at 48 kHz: one beat is 24,000 samples, one 4/4 bar is 96,000
+    let at = |samples: i64| bars_beats(Some(samples), &tempo, &meter, rate).unwrap();
+
+    assert_eq!(at(0), "1.1.1", "the start is bar 1 beat 1, not bar 0");
+    assert_eq!(at(24_000), "1.2.1");
+    assert_eq!(at(96_000), "2.1.1");
+    assert_eq!(at(96_000 + 72_000), "2.4.1");
+    // A quarter of a beat in is the second sixteenth
+    assert_eq!(at(6_000), "1.1.2");
+
+    // Pre-roll counts backwards into the bar before bar 1. Truncating division would place this
+    // in bar 1 alongside +1 tick, which is what div_euclid is there to prevent
+    assert_eq!(at(-24_000), "0.4.1");
+
+    // No position is not position zero
+    assert_eq!(bars_beats(None, &tempo, &meter, rate), None);
+    let _ = TICKS_PER_BEAT;
+}
+
+// The readout must never fabricate a position before a block has rendered -- r4-qa-protocol.md
+// row 4 exists to catch exactly that
+#[test]
+fn no_position_is_published_before_a_block_renders() {
+    use spectre_audio::bridge::BridgeTelemetry;
+    let telemetry = BridgeTelemetry::default();
+    assert_eq!(telemetry.position_samples(), None);
+    assert!(!telemetry.transport_rolling());
+}

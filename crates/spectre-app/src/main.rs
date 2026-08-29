@@ -263,14 +263,31 @@ impl SpectrePrototype {
                         open_bounce = true;
                     }
                     ui.separator();
-                    // Tempo and meter are the model's defaults; position is not derived from the
-                    // render thread yet, so it reads as unknown rather than as a frozen 001
+                    // Tempo and meter are the model's defaults; the position comes from the
+                    // render thread's own published playhead, or reads as unknown when no block
+                    // has rendered -- never as a frozen 1.1.1
                     ui.label(RichText::new("120.00 BPM").monospace().color(TEXT))
                         .on_hover_text("Fixed project default; tempo editing arrives with the arrangement.");
                     ui.label(RichText::new("4 / 4").monospace().color(MUTED))
                         .on_hover_text("Fixed project default; meter editing arrives with the arrangement.");
-                    ui.label(RichText::new("—").monospace().color(MUTED))
-                        .on_hover_text("Playhead position is not reported by the engine yet.");
+                    let position = self.engine_health().and_then(|health| {
+                        spectre_app::engine::bars_beats(
+                            health.position_samples,
+                            self.model.tempo_map(),
+                            self.model.meter_map(),
+                            spectre_core::SampleRate::new(48_000).expect("48 kHz is valid"),
+                        )
+                    });
+                    match position {
+                        Some(text) => {
+                            ui.label(RichText::new(text).monospace().color(TEXT))
+                                .on_hover_text("Bars.beats.sixteenths, from the render thread's published playhead.");
+                        }
+                        None => {
+                            ui.label(RichText::new("—").monospace().color(MUTED))
+                                .on_hover_text("No block has rendered yet, so there is no position to report.");
+                        }
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         match self.engine_state() {
                             Some(EngineState::Running {
