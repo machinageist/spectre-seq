@@ -1,23 +1,106 @@
 <!--
 Author: Jeff
-Date: 2026-08-09
+Date: 2026-08-29
 Description: The single active Spectre milestone
 Notes: Exactly one milestone is active; the roadmap owns ordering
 -->
 
-# Current Milestone — R4 Credible Alpha
+# Current Milestone — R5 Project Safety
 
 - **Status:** accepted
-- **Last verified:** 2026-08-28
-- **Scope:** track to master, MIDI clip, a small original synth/effect, minimal UI, save/reload, bounce
+- **Last verified:** 2026-08-29
+- **Scope:** crash-qualified atomic save, journaled autosave, recovery, schema migration, undo/redo at its gate, and missing-media diagnostics
 - **Decision authority:** Jeff
-- **Upstream sources:** `rebuild-roadmap.md`, product seeds, decisions 8/13/14/22, CORE-004
+- **Upstream sources:** `rebuild-roadmap.md`; CORE-001, CORE-004; decisions 13 and 14; `../03-architecture/project-persistence.md`
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
-- **Supersedes:** the R3 live-shell milestone, exited 2026-08-09
-- **Open decisions:** none new at intake; decisions 13 and 17 gate later milestones
-- **Known gaps:** all nine slices are implemented; slice 3 closed 2026-08-28 on Arch Linux hardware. **No slice has an operator protocol pass** — the protocol exists at `../05-quality/r4-qa-protocol.md` and `../05-quality/r4-qa-records.md` holds one `INCONCLUSIVE` automated-half record. **Exactly one of the ten exit rows is open**, and it needs an operator rather than hardware. **D-R4's premise is void:** it asked what R4's exit means while the Linux row cannot close, and the Linux row closed
+- **Supersedes:** the R4 credible-alpha milestone, whose record is retained below
+- **Open decisions:** the persistence contract's own intake item — exact OS API mapping and the qualified filesystem matrix (`../03-architecture/project-persistence.md`); decisions 13 and 14 are `SD adopted` and gate at R5 **exit**, not intake
+- **Known gaps:** no R5 slice is implemented. R4 leaves one exit row open, and it is a verification obligation rather than a dependency — see below
 
-## Inherited debt
+## Why R5 opens while one R4 row is open
+
+R4's exit is a ten-row conjunction. **Eight rows are closed.** The two that are not —
+*"`./spectre` produces sound"* and the end-to-end row — reduce to a single activity: an operator
+working `../05-quality/r4-qa-protocol.md` and confirming that signal reaching the driver reaches
+the speakers. The objective half of both is closed and evidenced on Linux hardware.
+
+The roadmap requires documented dependency reasoning to proceed, and this is it: **no R5 obligation
+depends on that operator pass.** Crash qualification, journaled autosave, recovery, schema
+migration, and missing-media diagnostics are all properties of the persistence layer, which the
+operator protocol does not exercise and whose evidence the protocol does not produce. Blocking
+them behind a listening session would be a scheduling artifact, not a dependency.
+
+This is disposition **(c)** of D-R4 (`../../gauntlet-output/decisions-needed.md`), applied to the
+row that remained after the Linux row closed: *"Nine rows close; the milestone carries a named
+`R4-exit-pending` state until the tenth does. Keeps the conjunction honest without blocking
+everything behind hardware."* D-R4's own recommendation was (c) where the remaining obligation is
+real but not blocking, and warned against (b) — a second silent deferral — which this is not:
+nothing is deferred, the row stays open and named.
+
+**R4 has therefore NOT exited.** It is `R4-exit-pending-operator-QA`. No document may say "R4
+passed" while that row is open, which is the rule `r4-qa-protocol.md` §"What a PASS authorizes"
+already states.
+
+## R5 scope
+
+The roadmap's row: *atomic save, journaled autosave, recovery, migrations, undo/redo,
+missing-media diagnostics*, with key requirement **CORE-004 full** and exit gate
+**crash/recovery drills**.
+
+What already exists, so R5 starts from a real base rather than a blank one:
+
+- `crates/spectre-project/src/fs.rs` implements the accepted save algorithm's eight ordered steps
+  and never deletes, truncates, or moves the destination aside. Six of seven `SaveStage` values
+  are covered by fault injection through a private `FsOps` seam.
+- `crates/spectre-project/src/command.rs` carries transactional edits with bounded undo/redo, and
+  `reorder_is_exactly_reversible` proves an inverse built from the index `TrackList::reorder`
+  returns.
+- Schema 2 exists with `#[serde(default)]` on every added field, so a schema-1 file still decodes
+  and rewrites byte-identically.
+
+What does not exist, stated as absence rather than as partial credit:
+
+- **No crash qualification.** Nothing has been tested against process death mid-save. The fault
+  injection unwinds; a crash does not.
+- **No autosave and no journal.** Decision 14 adopts journaled autosave to a sidecar; no sidecar
+  is written anywhere.
+- **No recovery path.** Nothing reads a journal, and no surface offers a recovered project.
+- **No schema migration.** `MAX_READABLE_SCHEMA` refuses a newer file; nothing upgrades an older
+  one, so CORE-001's migration evidence is still unobtainable.
+- **No missing-media diagnostics.** The project references no external media yet.
+
+## Requirements in scope
+
+CORE-004 to full crash qualification; CORE-001's migration half; decisions 13 and 14 at their exit
+gates; the persistence contract's OS-mapping and filesystem-matrix intake item.
+
+## Non-goals
+
+Audio recording, piano-roll editing, VST3 hosting, automation, session/launcher surfaces, and the
+device-browser re-parenting R4-4 §8 Q2 assigns to R6. R5 is about not losing work.
+
+## R5 exit evidence
+
+- A save interrupted by process death leaves the destination either entirely the previous project
+  or entirely the new one, proved by killing a real process rather than by unwinding a fault.
+- No temporary file is ever mistaken for a project, and none survives a crash in a state a loader
+  would accept.
+- A journaled autosave writes to a sidecar without touching the project file.
+- A recovery drill restores work after an unclean exit and states what was and was not recovered.
+- A schema migration upgrades an older file, and CORE-001's identity survives it.
+- Undo/redo satisfies decision 13's gate.
+- Missing media is diagnosed by name rather than by silent substitution.
+- `cargo fmt`, strict Clippy, and the full workspace suite stay green.
+- Traceability and status match the implementation, re-verified against the product's own paths
+  rather than against the previous record.
+
+## R4 exit record
+
+R4's full record is retained verbatim below, demoted one level. Nothing is deleted: the
+qualification tables, the wiring-gap account, and the R3 record inside it are cited from
+`../01-requirements/traceability.md`, `../status/STATUS.md`, and `../05-quality/r4-qa-protocol.md`.
+
+### Inherited debt
 
 R4 carries four obligations from earlier milestones. None is optional and none should be rediscovered later:
 
@@ -26,7 +109,7 @@ R4 carries four obligations from earlier milestones. None is optional and none s
 3. ~~**CORE-004 atomic save.**~~ **Discharged 2026-08-28 by slice 7.** `crates/spectre-project/src/fs.rs` implements the accepted contract's eight ordered steps; the destination is never deleted, truncated, or moved aside first, and the only non-`Unchanged` failure is the parent-directory sync after a successful replacement. Six of the seven save stages are fault-injected through a private seam; `EncodeSnapshot` is deliberately uncovered, because a validated envelope cannot fail to encode with the current encoder and the test could not fail. **Crash qualification remains R5's** and is not claimed anywhere.
 4. ~~**CORE-001 reorder evidence.**~~ **Discharged 2026-08-28 by slice 7.** `reorder_preserves_identity_across_save_and_reload` and `undone_reorder_reloads_in_the_original_order` prove identity and every field survive a reorder *through a real file*, and survive an undo after it. Migration evidence remains gated on the first schema migration, at R5.
 
-## Wiring gap — closed 2026-08-24
+### Wiring gap — closed 2026-08-24
 
 R3 built a live shell that nothing launched. `spectre-audio` had a qualified backend, a control transport, a callback bridge, MIDI ingress, and health telemetry, all tested — and `./spectre` never constructed any of it, so Play produced no sound.
 
@@ -36,7 +119,7 @@ No second render path was created: the app's live output hashes identically to `
 
 **What slice 1 does not establish.** No one has confirmed by ear that sound leaves the speakers, and the manual protocol in the slice's spec §5.4 — four resting engine states, the `Retry engine` control, text-size and window-size extremes, and mid-playback device removal — has not been run. Status is `implemented`, not `verified`.
 
-## R3 exit record
+### R3 exit record
 
 Slice 2 landed `spectre-audio`, the decision-19 trait seam. `AudioBackend` owns device enumeration and stream construction; `AudioStream` owns the Stopped/Running/Closed lifecycle. Both are app-thread surfaces that may allocate. `StreamConfig` validates sample rate, channel count, and buffer size against explicit inclusive bounds before any driver call, so an invalid open fails before it reaches cpal.
 
@@ -74,15 +157,15 @@ Slice 9 landed the health telemetry. `BridgeTelemetry` publishes fractional head
 
 Slice 7's lifecycle drill is implemented and its deterministic half passes against the null backend: three start/stop/restart cycles with rendering preserved across each gap, sample-rate changes reopening without losing the device, and device loss reported through `BackendError::Closed` on every subsequent operation with recovery on a fresh stream. That covers the state machine, not a driver. No live driver has been opened, so backend qualification and the hardware drill both remain open.
 
-## Requirements in scope
+### Requirements in scope
 
 Product seeds for track routing, MIDI clips, and bounce; decision 22's parameter seam; CORE-004's atomic save; CORE-001 reorder evidence; decision 8's egui shell. RT-001..003 remain standing workspace policy and must not regress.
 
-## Non-goals
+### Non-goals
 
 VST3 hosting, recording, automation and modulation, session/live slots, mixer sends and returns, latency compensation, and the flagship synth. Those are R5 and later.
 
-## Exit evidence
+### Exit evidence
 
 - `./spectre` opens the qualified backend and produces sound through the existing compiled plan,
   with no second render path — **OPEN. Not struck**, because "produces sound" is not established
@@ -130,7 +213,7 @@ VST3 hosting, recording, automation and modulation, session/live slots, mixer se
 - ~~`cargo fmt`, strict Clippy, and the full workspace suite stay green~~ — **closed 2026-08-28 on Linux**: formatting clean, strict Clippy clean, 443 passed / 0 failed / 2 ignored, offline self-test exit 0. This is the first green full gate this project has ever produced on Linux; the workspace did not compile there until the same day. Two failures were cleared to reach it, both the R4-8 `LIVE_PATH_HASH` literal.
 - ~~Traceability and status match the implementation~~ — **re-verified 2026-08-28** against all nine slices after four claims were found overstated: R4-6's effect was constructed nowhere, R4-2's seam was verified on an engine the app does not open, R4-5's five specified surfaces were undrawn, and the drill cited as proof `./spectre` reaches a driver exercised a function the binary never calls. All four are corrected in code or in the record. Rechecked by the QA protocol's manual row 15 at each run.
 
-## R3 exit record
+### R3 exit record
 
 R3's ten rows, as closed on 2026-08-09:
 
@@ -147,7 +230,7 @@ All ten rows are closed, two of them on macOS only under decision 23. R3 exited 
 - ~~`cargo fmt`, strict Clippy, and the full workspace suite stay green~~ — 230/230 tests pass with 1 ignored hardware drill, plus the smoke and offline self-tests.
 - ~~Traceability and status match the implementation~~ — updated 2026-08-09, including correcting stale claims that R3 had no implementation.
 
-## Hardware qualification record
+### Hardware qualification record
 
 | Platform | Date | Backend / device | Blocks | xruns | Worst headroom | Plan errors | Contaminated | Frame rejections |
 |---|---|---|---|---|---|---|---|---|
@@ -249,7 +332,7 @@ formula, and `a_list_without_inserts_keeps_the_node_identities_it_had_before_the
 holds the compatibility line: a track with no insert allocates nothing extra, so a project written
 before the slot existed serializes byte-identically (CORE-003) and rebuilds the same node IDs.
 
-## Single-platform exit and the debt it creates
+### Single-platform exit and the debt it creates
 
 R3 exited on macOS qualification alone, decided by Jeff on 2026-08-09 and recorded as decision 23. This narrows decision 1, which makes macOS and Linux co-first-class, and the narrowing is deliberate and scoped to R3's exit rather than a change to decision 1 itself.
 

@@ -18,7 +18,26 @@ Notes: Only active-milestone slices belong here
 - **Open decisions:** none blocking R4 start; decision 23's Linux debt is discharged as of 2026-08-28
 - **Known gaps:** the R4 QA protocol exists at `../05-quality/r4-qa-protocol.md` and its manual half has never been run, so no slice has operator evidence; later milestones are intentionally not decomposed here
 
-## Next slices
+## Next slices — R5 project safety
+
+R5 opened 2026-08-29. R4's queue is retained below as its exit record; its one open row needs an
+operator, not code.
+
+1. **Crash-qualify the atomic save (CORE-004 full).** Kill a real process at each save stage and
+   assert the destination is entirely the old project or entirely the new one, and that no
+   temporary survives in a state a loader would accept. R4-7's fault injection unwinds; a crash
+   does not, and the difference is the whole requirement.
+2. **Journal an autosave to a sidecar** per decision 14, without touching the project file.
+3. **Recover from an unclean exit**, and state what was and was not recovered rather than
+   presenting a recovered project as if it were the saved one.
+4. **Migrate a schema**, which is the first thing that makes CORE-001's migration evidence
+   obtainable at all.
+5. **Take decision 13's undo gate**, over the transactional command path that already exists.
+6. **Diagnose missing media by name**, once the project references anything external.
+7. **Close the persistence contract's intake item**: the exact OS API mapping and the qualified
+   filesystem matrix it defers to R5 intake.
+
+## Closed R4 queue
 
 1. ~~Wire `./spectre` to the qualified backend so Play produces sound through the existing compiled plan~~ — landed 2026-08-24 as `crates/spectre-app/src/engine.rs`. The app compiles a plan from its own validated four-parameter snapshot, queries the device's native rate through two new app-thread seam methods (`AudioBackend::default_sample_rate`, `AudioStream::stream_errors`), opens at 256 frames with the plan reserving twice that, and moves the existing `RenderBridge` into the render closure. **No new render path and no new DSP:** the app's live output hashes identically to `render_app_snapshot` over the same snapshot, using the FNV-1a walk both the offline harness and the bridge test already use. The transport button and `Space` both send before mutating, so a refused transport send leaves the UI unchanged rather than diverging from the render thread. 14 new tests; the app's own hardware drill opened an M-Audio AIR 192|6 at its native 88 200 Hz for 88 blocks with 0 xruns and 0 stream errors. **Two limits recorded rather than hidden:** the manual protocol has not run and no one has confirmed audible output by ear; and the held audition note is scaffolding that slice 5 replaces with clip playback.
 2. ~~Implement decision 22's runtime parameter seam on `AudioProcessor`, then connect the RT-002 parameter lane the bridge already drains~~ — landed 2026-08-24. `AudioProcessor` gained one **required** `set_parameter`, so a device added later must answer the seam rather than silently ignore every edit made to it; all four shipping devices and the three test doubles implement it. `CompiledPlan::set_parameter` addresses one node's processor by the same bounded linear scan `process` already performs; `spectre_audio::route::ParameterRoutes` resolves an RT-002 target to a node and key by binary search over a frozen boxed slice, and is **added to `rt_guard`'s scanned module set** rather than left outside it. The bridge applies the drained lane once per block before `process`, so a block sees one coherent parameter set. `a_shape_edit_changes_live_audio_and_nothing_stays_pending` asserts a UI edit changes the rendered hash with `parameters_pending == 0`; a 500-write sweep coalesces to one application. 8 new tests. **`Gain` still does not smooth** — see D-R3; R4-2 deliberately did not add smoothing, because it would break the bit-exact live/offline hash equality and needs its own bound with a rationale row.
