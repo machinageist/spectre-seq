@@ -119,7 +119,9 @@ All ten rows are closed, two of them on macOS only under decision 23. R3 exited 
 | macOS | 2026-08-09 | cpal / CoreAudio, M-Audio AIR 192\|6 | 173 | 0 | 0.990 | 0 | 0 | not recorded |
 | macOS | 2026-08-24 | cpal / CoreAudio, M-Audio AIR 192\|6 (audio-crate drill, re-run) | 175 | 0 | 0.974 | 0 | 0 | 0 |
 | macOS | 2026-08-24 | cpal / CoreAudio, M-Audio AIR 192\|6 (**app engine drill**, 88 200 Hz) | 88 | 0 | 0.970 | 0 | 0 | 0 |
-| Linux | not run | cpal / ALSA (decision 20 baseline) | — | — | — | — | — | — |
+| Linux | 2026-08-28 | cpal / ALSA via **pipewire-alsa**, C-Media USB Audio (card 2) | 363 | 0 | 0.844 | 0 | 0 | 0 |
+| Linux | 2026-08-28 | same host and device, re-run | 369 | 0 | 0.826 | 0 | 0 | 0 |
+| Linux | 2026-08-28 | cpal / **raw ALSA** `plug` → `hw:1,0`, onboard ALC285, **no sound server** | 198 | 0 | 0.822 | 0 | 0 | 0 |
 
 The 2026-08-24 rows add the frame-capacity rejection count, which the original record did not
 carry. Both read 0, so on this host cpal's fixed buffer request is honored rather than merely
@@ -127,7 +129,37 @@ unproven — a larger-than-requested block is now known-absent here instead of u
 The third row is the first qualification through the **application's** own open path rather than
 a test's, and it is the row that establishes `./spectre` reaches a real driver.
 
-Linux **build** qualification did run on 2026-08-09, in a Linux aarch64 container with `libasound2-dev`: the workspace compiles and links against ALSA and all 34 non-hardware `spectre-audio` tests pass, which is the first time the CI `libasound2-dev` step has been exercised. That is a build and portability result, **not** a device qualification. The same run confirmed the drill fails closed on a machine with no audio device, panicking with "no output device to qualify against" rather than reporting a false pass — so the Linux row cannot be satisfied by a container or a VM without real audio.
+The three Linux rows are the first Linux audio devices ever opened by this project, on
+`mg-arch` (Arch Linux, kernel 7.1.9-arch1-2, x86_64, ALSA k7.1.9-arch1-2, PipeWire 1.6.8),
+`rustc 1.98.0`, at commit `a157846`. Two things must be read with them, because both change what
+the rows authorize.
+
+**The drill did not run unchanged, contrary to decision 23's stated confidence.** It failed
+`UnknownDevice(DeviceId("default"))` before opening anything: `CpalBackend::find_device` resolved
+ids only against `host.output_devices()`, and on ALSA the default PCM is named `default` but is
+absent from that enumeration, so the id `default_output_device()` reports resolved against
+nothing. CoreAudio lists its default, which is why the round trip held on macOS for three prior
+qualification rows and broke the first time the drill met ALSA. `find_device` now checks the
+default before the enumeration. **This was a real seam defect on the app's own open path**, not a
+test artifact, and no macOS run could have found it.
+
+**The host supplied no usable ALSA default, so one was supplied for the run and must be read as
+part of the configuration.** `mg-arch` has no `pcm.!default` at all — `pipewire-alsa`'s
+`99-pipewire-default.conf` is not installed — so ALSA fell back to `defaults.pcm.card 0`, which
+is an HDMI-only NVidia card with no device 0, failing `snd_pcm_open` with ENOENT. Each row above
+ran with `ALSA_CONFIG_PATH` pointing at a temporary file that includes the system `alsa.conf` and
+adds the missing default; nothing on the host was installed or modified. The first two rows route
+through PipeWire's ALSA plugin, which is the ordinary Linux desktop path; the third bypasses every
+sound server and drives `hw:1,0` directly, which is decision 20's raw ALSA baseline. A fourth
+attempt at raw `hw:2,0` failed `device is no longer available` because PipeWire holds that
+interface as its default sink — an exclusive-access fact about the host, not a defect.
+
+Worst-case headroom on Linux (0.82–0.84) is materially tighter than macOS's (0.97–0.99). The
+render still consumes well under a fifth of its budget and no row recorded an xrun, but these are
+different devices at different period sizes and the two columns are not comparable as a
+platform ranking.
+
+Linux **build** qualification ran on 2026-08-09 in a Linux aarch64 container with `libasound2-dev`, and its "the workspace compiles" wording was **too broad — corrected 2026-08-28**. The workspace did not compile on Linux on that date and had not since the rebuild foundation: `spectre-app` declared `eframe` with `default-features = false` and named neither `x11` nor `wayland`, so winit matched no platform and emitted `compile_error!`. macOS was unaffected because `macos_platform` keys off `target_os` rather than a feature. GitHub Actions ran the full gate on `ubuntu-latest` and failed on exactly this error on 2026-08-06 and again on 2026-08-16; the failures went unread, and the R4 slices landed on a branch CI does not watch, since `ci.yml` triggers only on `main`. What the 2026-08-09 run actually established is narrower and still true: `spectre-audio` compiles and links against ALSA and its non-hardware tests pass. `spectre-app` now names both platform backends and the whole workspace compiles on Linux. That is a build and portability result, **not** a device qualification. The same run confirmed the drill fails closed on a machine with no audio device, panicking with "no output device to qualify against" rather than reporting a false pass — so the Linux row cannot be satisfied by a container or a VM without real audio.
 
 The macOS run is the first time a live driver has ever been opened in this project. It confirms the callback bridge executes the compiled plan under a real driver, that RT-001 holds there, and that the render consumes about 1% of its time budget on this fixture.
 
@@ -137,8 +169,8 @@ R3 exited on macOS qualification alone, decided by Jeff on 2026-08-09 and record
 
 What is and is not established:
 
-- **Established:** the backend, bridge, and RT-001..003 behavior hold under a real CoreAudio driver; the workspace builds and links against ALSA on Linux with all 34 non-hardware audio tests passing; and the drill fails closed where no device exists, so it cannot report a false pass.
-- **Not established:** that cpal's ALSA backend opens, streams, and survives device lifecycle events on real Linux hardware. No Linux audio device has ever been opened.
+- **Established:** the backend, bridge, and RT-001..003 behavior hold under a real CoreAudio driver; `spectre-audio` builds and links against ALSA on Linux with all 34 non-hardware audio tests passing; and the drill fails closed where no device exists, so it cannot report a false pass. **Superseded 2026-08-28:** the Linux device drill has now run — see the qualification record above.
+- ~~**Not established:** that cpal's ALSA backend opens, streams, and survives device lifecycle events on real Linux hardware.~~ **Established 2026-08-28** on `mg-arch` across three rows, one of them on the raw ALSA path with no sound server, after fixing the `find_device` defect the run exposed.
 
 The debt carries into R4 and must be discharged before any beta or release claim of Linux support:
 

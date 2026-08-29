@@ -50,8 +50,18 @@ impl CpalBackend {
         }
     }
 
-    // Resolve an enumerated device by its reported key
+    // Resolve a device by its reported key, default first
     fn find_device(&self, id: &DeviceId) -> Result<cpal::Device, BackendError> {
+        // The default is checked before the enumeration because on ALSA it is not IN the
+        // enumeration: cpal names the default PCM "default", while output_devices() lists the
+        // concrete PCMs, so the id default_output_device() hands out resolves against nothing
+        // and every open fails UnknownDevice. CoreAudio lists its default, which is why this
+        // round trip held on macOS and broke the first time the drill ran on Linux
+        if let Some(device) = self.host.default_output_device() {
+            if device_key(&device)? == id.as_str() {
+                return Ok(device);
+            }
+        }
         let devices = self
             .host
             .output_devices()
