@@ -442,10 +442,71 @@ fn a_setter_clamps_against_its_own_descriptor() {
     let mut outputs = [left.as_mut_slice(), right.as_mut_slice()];
     gain.process(&context, &inputs, &mut outputs).unwrap();
 
+    // Gain ramps a change across one block, so the clamp is what the block ARRIVES at rather
+    // than what every sample already is. The three assertions together still fail if the setter
+    // passed 999.0 through, refused it, or clamped to the wrong bound
     let expected = GAIN_PARAMETERS[0].maximum();
     assert!(
-        outputs[0].iter().all(|sample| *sample == expected),
-        "an out-of-range value must clamp to the descriptor maximum, not pass through"
+        outputs[0].iter().all(|sample| *sample <= expected),
+        "no sample may exceed the descriptor maximum; an unclamped 999.0 would"
+    );
+    assert_eq!(
+        outputs[0][outputs[0].len() - 1],
+        expected,
+        "the ramp must arrive exactly at the clamped maximum"
+    );
+    assert!(
+        outputs[0][0] > 1.0,
+        "a refused setter would leave the block at the constructed 1.0"
+    );
+    let _ = (&mut left, &mut right);
+}
+
+// D-R3 — the accepted device contract says "Gain already smooths"; it did not until 2026-08-28.
+// R4-2 left it unimplemented for two stated reasons and this pins that both are answered: the
+// ramp spans exactly one block, so it needs no numeric bound of its own, and a render with no
+// parameter change is bit-identical to the unsmoothed device
+#[test]
+fn a_gain_change_ramps_across_one_block_instead_of_stepping() {
+    let mut gain = Gain::new(1.0).unwrap();
+    let context = ProcessContext::new(48_000.0, 8, &[]).unwrap();
+    let ones = vec![1.0_f32; 8];
+    let inputs: [&[f32]; 2] = [&ones, &ones];
+
+    // No change: every sample is the constructed value, exactly as before smoothing existed
+    let (mut left, mut right) = output(8);
+    let mut outputs = [left.as_mut_slice(), right.as_mut_slice()];
+    gain.process(&context, &inputs, &mut outputs).unwrap();
+    assert!(
+        outputs[0].iter().all(|sample| *sample == 1.0),
+        "an unchanged gain must not ramp"
+    );
+
+    // A change: the block ramps and lands on the target at its final sample
+    gain.set_parameter(GAIN_PARAMETERS[0].key, 0.5).unwrap();
+    let (mut left, mut right) = output(8);
+    let mut outputs = [left.as_mut_slice(), right.as_mut_slice()];
+    gain.process(&context, &inputs, &mut outputs).unwrap();
+    assert!(
+        outputs[0][0] > 0.5 && outputs[0][0] < 1.0,
+        "the first sample must be between the old value and the new one, not either"
+    );
+    assert_eq!(
+        outputs[0][7], 0.5,
+        "the ramp must land exactly on the target at the block's last sample"
+    );
+    assert!(
+        outputs[0].windows(2).all(|w| w[1] < w[0]),
+        "the ramp must be monotonic"
+    );
+
+    // The block after arrival is flat at the target: the ramp settles rather than drifting
+    let (mut left, mut right) = output(8);
+    let mut outputs = [left.as_mut_slice(), right.as_mut_slice()];
+    gain.process(&context, &inputs, &mut outputs).unwrap();
+    assert!(
+        outputs[0].iter().all(|sample| *sample == 0.5),
+        "a settled gain must be flat"
     );
     let _ = (&mut left, &mut right);
 }

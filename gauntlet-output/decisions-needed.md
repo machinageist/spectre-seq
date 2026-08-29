@@ -167,7 +167,32 @@ the second-deferral consequence written into the row. What should not happen is 
 default — deferring twice without naming it is how a co-first-class commitment quietly becomes
 a single-platform product.
 
-### D-R3 — An accepted architecture document asserts `Gain` smooths; the shipped `Gain` does not
+### D-R3 — An accepted architecture document asserts `Gain` smooths; the shipped `Gain` does not 2026-08-15, by the R4-2 spec and confirmed independently at blind verification.
+
+> **RESOLVED BY IMPLEMENTATION, 2026-08-28. This needed no decision.** The question was framed as
+> "which side is wrong, the document or the code", and the answer was the code. `Gain` now carries
+> a target and ramps to it across exactly one block, so the contract's clause is true as written
+> and the document was amended only to record that.
+>
+> R4-2 declined to implement it for two reasons, and both were checkable rather than matters of
+> judgement:
+>
+> 1. *"It would change rendered output for identical inputs and break the bit-exact live/offline
+>    hash equality."* It does not. `Gain::new` sets target equal to the current value, so a render
+>    with no parameter change takes the delta-is-zero path and is bit-identical to the unsmoothed
+>    device. The whole suite passes unchanged at 461 tests, `bridge_plan.rs` included.
+> 2. *"It would need its own numeric bound with a rationale row."* It does not. The ramp spans one
+>    block — the boundary the accepted seam already applies parameters on — so its length is
+>    `context.frames()` and no new constant exists to justify.
+>
+> One test changed and it was not an equality test: `a_setter_clamps_against_its_own_descriptor`
+> asserted every sample of the first block equals the clamped maximum, which encodes immediacy
+> rather than clamping. It now asserts no sample exceeds the maximum, the block arrives exactly at
+> it, and the first sample has moved off the constructed value — which still fails if the setter
+> passes an out-of-range value through, refuses it, or clamps to the wrong bound.
+>
+> RT-001's guard is clean over the new arithmetic and the alpha's headroom is unchanged within
+> its measured spread.
 
 **Raised:** 2026-08-15, by the R4-2 spec and confirmed independently at blind verification.
 **Blocks:** R4-2's implementation, and it should — R4-2 exists to make a slider drag reach a
