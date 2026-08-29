@@ -340,6 +340,11 @@ amending them; `feature-tree.md`'s nine features were confirmed in the same brea
 > audio through the engine `main.rs` opens. That needed no R6 work and no decision here — Build
 > and Shape still show the same flat list, and R4-4 §8 Q2's visible seam is untouched.
 >
+> **The structural trap is removed, 2026-08-28.** `open_default` — the alternate open path that
+> let an exit row cite a drill the binary never runs — is deleted, and all four misclaimed rows are
+> corrected in code. All ten R4 exit rows were then re-verified against the product's own path,
+> which is the practice this entry asks about, performed once.
+>
 > What this entry still asks is unchanged and is not answered by the fix: whether an exit row
 > closed against a configuration the product later stopped using should be re-verified at each
 > milestone exit. Four rows in one run were closed on paths the product does not take — R4-6's
