@@ -6,6 +6,11 @@
 //   code rather than a claim about three files agreeing. What stays independent is the traversal:
 //   the live side folds interleaved driver memory, the bounce folds planar planes, and the two
 //   are only equal if they describe the same audio.
+//   No hash literal is pinned here. One was, and it was produced on macOS: device math reaches
+//   the platform's libm through tanh and powf, so the number is per-platform and the assertion
+//   failed the first time the suite ran on Linux while live and offline still agreed exactly.
+//   QUAL-006 already refused a golden hash in e2e_alpha for this reason. The equality that
+//   carries the evidence is live == offline, asserted below on whatever host runs it.
 
 use spectre_audio::bridge::{RenderBridge, DEFAULT_NOTE_SCRATCH};
 use spectre_audio::control::control_channel;
@@ -25,11 +30,6 @@ const FRAMES: usize = 4_096;
 const BLOCK: usize = 256;
 const BLOCKS: usize = FRAMES / BLOCK;
 const CHANNELS: usize = 2;
-
-// The frame-major streaming hash this configuration produces, written as a literal so the
-// --bounce CLI can assert the same number from a separate process. See
-// crates/spectre-offline/tests/bounce_cli.rs, which pins it as "the live path's hash"
-const LIVE_PATH_HASH: u64 = 6_709_076_177_999_973_021;
 
 fn id(raw: u64) -> ObjectId {
     ObjectId::from_raw(raw).unwrap()
@@ -166,9 +166,6 @@ fn a_multi_block_bounce_matches_the_live_path_block_for_block() {
     assert_eq!(offline.block_hashes.len(), BLOCKS);
     assert_eq!(live.block_hashes, offline.block_hashes);
     assert_eq!(offline.contaminated_nodes, 0);
-    // The number the CLI round trip prints. Asserted here, where it is produced by the live
-    // bridge, so the CLI test is comparing against the live path rather than against a bounce
-    assert_eq!(live.hash, LIVE_PATH_HASH);
 }
 
 // 16

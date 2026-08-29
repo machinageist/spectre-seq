@@ -28,14 +28,17 @@ must say so rather than record a failure against the operator.
 - **Linux device qualification has never run.** No Linux audio device has ever been opened by
   this project. A macOS run produces no Linux evidence, and the record's Linux column stays
   blank rather than being filled with an inference.
-- **The live bridge addresses exactly one instrument.** `RenderBridge` carries one `note_node`,
-  so a project with three instrument tracks plays only the one the bridge was built for. The
-  offline path addresses all three. `the_bridge_can_only_deliver_notes_to_one_instrument`
-  (`crates/spectre-offline/tests/e2e_alpha.rs`) pins this, and **it fails the day the limit is
-  lifted**, which is when this paragraph and the record must be updated.
-- **The app does not attach a clip player to its audition path.** `./spectre` plays a held
-  audition note on Play, not the project's clips. Row 1 below therefore records what the
-  audition voice sounds like, not what the fixture's clips sound like, and says which.
+- ~~**The live bridge addresses exactly one instrument.**~~ **Lifted 2026-08-28** by the R4-9
+  follow-up, which is the update that paragraph required of itself. `RenderBridge` now carries a
+  fixed `Box<[ClipVoice]>` sized from `spectre_graph::MAX_FLAT_INPUTS`, so every instrument track
+  sounds live. `the_bridge_can_only_deliver_notes_to_one_instrument` was removed;
+  `the_live_bridge_plays_every_instrument_track` replaces it, with
+  `one_voice_does_not_sound_like_three` as its control.
+- ~~**The app does not attach a clip player to its audition path.**~~ **Lifted 2026-08-28.**
+  `build_track_engine_parts` bakes each track's active placements before the stream opens and
+  attaches them, so Play sends the transport command alone and the project's own material
+  REPLACES the audition note. A project with **no** clip placements attaches no player and still
+  auditions, so row 1 records which of the two it heard rather than assuming the audition voice.
 - **`Gain` does not smooth**, though the accepted device contract says it does. Open as D-R3.
 - **No autosave, journal, or recovery exists.** Row 8 checks replacement, not crash durability;
   crash injection is R5's.
@@ -142,5 +145,6 @@ It does **not** authorize, and the record's Q-D field states each of these that 
 3. **Any other machine, interface, or driver configuration.** One host, one interface, one
    configuration.
 4. **Crash durability or recovery.** CORE-004's crash-injection evidence is R5's.
-5. **That the product plays a multi-track project live.** The bridge addresses one instrument;
-   see §Standing constraints.
+5. **That multi-track live playback holds anywhere but this host.** The bridge now addresses
+   every instrument track, so the R4-9 limit is gone; what a run establishes is still one host,
+   one interface, one configuration.

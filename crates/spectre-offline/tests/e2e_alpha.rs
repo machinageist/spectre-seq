@@ -432,8 +432,11 @@ fn the_chain_returns_to_exact_zero_after_the_last_note_off() {
 }
 
 // I-3 — live and offline over the composed graph, at equal block size.
-// Scoped to one track's note delivery, because RenderBridge carries exactly ONE note_node: see
-// the_bridge_can_only_deliver_notes_to_one_instrument below, which pins that limit
+// Scoped to one track's note delivery so the comparison isolates block alignment rather than
+// voice fan-out. The bridge's one-note_node limit that originally forced this scope was lifted by
+// the R4-9 follow-up; multi-instrument delivery is proved by
+// the_live_bridge_plays_every_instrument_track, with one_voice_does_not_sound_like_three as its
+// control
 #[test]
 fn live_bridge_matches_the_offline_render_at_equal_block_size() {
     let envelope = fixture();
