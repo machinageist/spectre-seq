@@ -16,7 +16,16 @@ default = ["live-audio"]
 live-audio = ["spectre-audio/cpal-backend"]
 
 [dependencies]
-eframe = { version = "0.32.3", default-features = false, features = ["default_fonts", "glow"] }
+# x11 and wayland are winit's Linux platform backends. With default-features off and neither
+# named, winit's platform_impl matches no platform and emits compile_error!, so the workspace
+# does not build on Linux at all; macOS is unaffected because macos_platform keys off target_os.
+# accesskit stays off deliberately — r4-qa-protocol.md row 13 records that consequence
+eframe = { version = "0.32.3", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+] }
 spectre-audio = { path = "../spectre-audio", default-features = false }
 spectre-core = { path = "../spectre-core" }
 spectre-dsp = { path = "../spectre-dsp" }
