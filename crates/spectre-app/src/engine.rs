@@ -352,26 +352,6 @@ pub fn build_engine_parts(
     })
 }
 
-// Open and start the default output device, consuming the parts' bridge
-pub fn open_default(
-    backend: &dyn AudioBackend,
-    snapshot: &[DeviceParameterSnapshot],
-) -> Result<LiveEngine, EngineUnavailable> {
-    let device = backend
-        .default_output_device()
-        .map_err(EngineUnavailable::Backend)?;
-    let sample_rate = backend
-        .default_sample_rate(&device.id)
-        .map_err(EngineUnavailable::Backend)?;
-    let config = StreamConfig::stereo(sample_rate, ENGINE_BUFFER_FRAMES)
-        .map_err(EngineUnavailable::Backend)?;
-
-    // The plan is built before the device is touched, so an open failure can never leave a
-    // half-built engine behind
-    let parts = build_engine_parts(snapshot, config)?;
-    open_with_parts(backend, &device.id, device.name, parts)
-}
-
 // Open and start a named device over already-built parts, consuming the parts' bridge
 pub fn open_with_parts(
     backend: &dyn AudioBackend,

@@ -376,7 +376,16 @@ fn engine_open_failure_reports_the_backend_error_and_leaves_the_model_intact() {
     let track_before = model.selected_track_id();
     let device_before = model.selected_device_id();
 
-    let result = spectre_app::engine::open_default(&FailingBackend, &prototype_snapshot());
+    // Through open_track_engine, the function main.rs calls. It used to go through open_default,
+    // which no product path invoked
+    let model_for_open = AppModel::prototype();
+    let result = spectre_app::engine::open_track_engine(
+        &FailingBackend,
+        model_for_open.track_list(),
+        model_for_open.tempo_map(),
+        spectre_app::engine::APP_GRAPH_SEED,
+        model_for_open.selected_track_id(),
+    );
     assert_eq!(
         result.err(),
         Some(EngineUnavailable::Backend(BackendError::NoDefaultDevice))
@@ -558,58 +567,6 @@ fn every_fixture_parameter_routes_and_a_sweep_coalesces() {
     engine.stream_mut().pump().unwrap();
     assert_eq!(engine.health().parameters_applied, 5);
     assert_eq!(engine.health().parameters_pending, 0);
-}
-
-// Hardware evidence for the app's own open path, not in the spec's test list. The deterministic
-// tests above prove the plan and the wiring; only this proves open_default reaches a real driver.
-// #[ignore]d for the same reason the audio crate's drill is: most machines have no output device
-#[cfg(feature = "live-audio")]
-#[test]
-#[ignore]
-fn app_engine_opens_a_real_device_and_renders() {
-    let backend = spectre_audio::cpal_backend::CpalBackend::new();
-    let mut engine = spectre_app::engine::open_default(&backend, &prototype_snapshot())
-        .expect("a real output device is required for this drill");
-
-    assert!(
-        matches!(engine.state(), EngineState::Opened { .. }),
-        "no block can have rendered before the driver calls back"
-    );
-
-    engine.start_audition().expect("audition must be queued");
-    std::thread::sleep(std::time::Duration::from_millis(250));
-
-    let health = engine.health();
-    let EngineState::Running {
-        backend: name,
-        ref device,
-        sample_rate,
-        frames,
-    } = engine.state()
-    else {
-        panic!("the driver never called back: {:?}", engine.state());
-    };
-    println!(
-        "backend={name} device={device} rate={sample_rate} frames={frames} blocks={} xruns={} worst_headroom={} plan_errors={} frame_rejections={} contaminated={} stream_errors={}",
-        health.blocks_rendered,
-        health.xruns,
-        health.worst_headroom,
-        health.plan_errors,
-        health.frame_capacity_rejections,
-        health.contaminated_nodes,
-        health.stream_errors,
-    );
-
-    assert!(
-        health.blocks_rendered > 0,
-        "the driver must have called back"
-    );
-    assert_eq!(health.plan_errors, 0, "no block may fail to render");
-    assert_eq!(health.contaminated_nodes, 0, "output must stay finite");
-    assert_eq!(health.stream_errors, 0, "the driver must report no errors");
-
-    engine.stop_audition().expect("stop must be queued");
-    engine.close().expect("close must release the device");
 }
 
 // R4 — the app's own engine plays the project's clips, not an audition note.
