@@ -280,14 +280,15 @@ fn alpha_plan_headroom_drill() {
     stream.close().expect("close must succeed");
 
     println!(
-        "blocks={} xruns={} worst_headroom={} plan_errors={} contaminated={} frame_capacity_rejections={} clip_events_refused={}",
+        "blocks={} xruns={} worst_headroom={} plan_errors={} contaminated={} frame_capacity_rejections={} clip_events_refused={} session_peak={}",
         telemetry.blocks_rendered(),
         telemetry.xruns(),
         telemetry.worst_headroom(),
         telemetry.plan_errors(),
         telemetry.contaminated_nodes(),
         telemetry.frame_capacity_rejections(),
-        telemetry.clip_events_refused()
+        telemetry.clip_events_refused(),
+        telemetry.session_peak()
     );
     assert!(
         telemetry.blocks_rendered() > 0,
@@ -304,6 +305,11 @@ fn alpha_plan_headroom_drill() {
         telemetry.clip_events_refused(),
         0,
         "a dropped clip event would make this a measurement of a quieter project"
+    );
+    // A headroom figure for a silent render measures nothing anyone will hear
+    assert!(
+        telemetry.session_peak() > 0.0,
+        "the alpha rendered to the driver but carried no signal"
     );
 }
 
@@ -326,4 +332,22 @@ fn a_parameter_that_is_in_the_signal_path_does_change_the_render() {
         baseline, moved,
         "halving the master level changed nothing, so this file measures nothing"
     );
+}
+
+// Isolates the peak publication from the driver: if this passes and the hardware drill's peak is
+// zero, the difference is the device, not the fold
+#[test]
+fn a_rendered_alpha_block_publishes_a_nonzero_peak() {
+    let envelope = fixture();
+    let (mut bridge, _) = alpha_bridge(&envelope);
+    let telemetry = bridge.telemetry();
+    let mut interleaved = vec![0.0_f32; FRAMES * CHANNELS];
+    let mut best = 0.0_f32;
+    for _ in 0..16 {
+        interleaved.fill(0.0);
+        let mut block = RenderBlock::new(&mut interleaved, CHANNELS as u16);
+        bridge.render(&mut block);
+        best = best.max(telemetry.last_peak());
+    }
+    assert!(best > 0.0, "the alpha rendered silence off the driver too");
 }

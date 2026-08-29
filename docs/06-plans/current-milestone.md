@@ -84,7 +84,20 @@ VST3 hosting, recording, automation and modulation, session/live slots, mixer se
 
 ## Exit evidence
 
-- ~~`./spectre` opens the qualified backend and produces sound through the existing compiled plan, with no second render path~~ — **partially closed 2026-08-24, strengthened 2026-08-28.** The open path, the render, and the no-second-path claim are all evidenced. The 2026-08-24 macOS evidence came from a drill on `open_default`, which the binary does not call; `the_engine_main_actually_opens_reaches_a_real_device_and_renders` now drills `open_track_engine` — the function `main.rs` uses — and passes on Linux with 90 real driver blocks, 0 xruns, 0 plan errors, 0 stream errors. Audible confirmation and the manual protocol are still outstanding, so this row is `implemented`, not closed.
+- ~~`./spectre` opens the qualified backend and produces sound through the existing compiled plan,
+  with no second render path~~ — **partially closed 2026-08-24, strengthened twice on 2026-08-28.**
+  The open path, the render, and the no-second-path claim are all evidenced. Two gaps in that
+  evidence closed the same day. First, the 2026-08-24 macOS drill opened through `open_default`,
+  which the binary does not call; `the_engine_main_actually_opens_reaches_a_real_device_and_renders`
+  now drills `open_track_engine` with the same track list, tempo map, seed, and selected track
+  `main.rs` uses. Second, **no drill asserted the render carried any signal** — a clean render of
+  pure silence satisfied every counter, which `r4-qa-protocol.md` names as the highest-value
+  failure it exists to catch. `RenderBridge` now folds a peak in the interleave loop it already
+  walks and publishes it off thread, and both hardware drills assert it. On Linux the product's
+  own path renders 90 driver blocks at `session_peak=0.16` with 0 xruns, 0 plan errors, and 0
+  stream errors.
+  **Still open, and irreducibly so:** no operator has confirmed the signal leaves the speakers.
+  The row is `implemented`, not closed.
 - ~~Decision 22's parameter seam is implemented, so a UI edit changes live audio~~ — **reopened and
   re-closed 2026-08-28.** It was first closed on 2026-08-24 against `build_engine_parts`, whose
   lane targets are derived from the model's own device snapshot, so the edit addressed a target

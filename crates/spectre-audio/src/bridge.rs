@@ -45,6 +45,15 @@ pub struct BridgeTelemetry {
     schedules_held: AtomicU64,
     // Note events the most recent block merged, from both producers together
     last_block_events: AtomicU64,
+    // Peak magnitude of the last interleaved block, published off thread. This is the objective
+    // half of "produces sound": a render that executes cleanly and emits silence passes every
+    // other counter here, and r4-qa-protocol.md names that exact case as the highest-value
+    // failure it exists to catch. It does not replace an operator hearing it
+    last_peak_bits: AtomicU32,
+    // Highest peak seen since the bridge was built. last_peak alone answers "is it sounding
+    // right now", which is the wrong question for a drill: material that ends before the run
+    // does leaves the final block legitimately silent
+    session_peak_bits: AtomicU32,
     // The playhead, published off thread so the app can draw a position without reading render
     // state. Stored as samples plus a rolling flag rather than a formatted string, because
     // formatting on the audio thread would allocate. Signed, because a pre-roll position is
@@ -75,6 +84,8 @@ impl Default for BridgeTelemetry {
             schedules_installed: AtomicU64::new(0),
             schedules_held: AtomicU64::new(0),
             last_block_events: AtomicU64::new(0),
+            last_peak_bits: AtomicU32::new(0),
+            session_peak_bits: AtomicU32::new(0),
             position_samples: AtomicI64::new(0),
             transport_rolling: AtomicU64::new(0),
         }
@@ -83,6 +94,18 @@ impl Default for BridgeTelemetry {
 
 impl BridgeTelemetry {
     // Count blocks the bridge has rendered
+    // Peak magnitude of the most recent interleaved block. Zero means the last block was exactly
+    // silent, which is a fact worth reading rather than an absence of data
+    pub fn last_peak(&self) -> f32 {
+        f32::from_bits(self.last_peak_bits.load(Ordering::Relaxed))
+    }
+
+    // Highest peak since the bridge was built. This is what answers "did anything sound",
+    // which is the question a hardware drill and a QA operator are both asking
+    pub fn session_peak(&self) -> f32 {
+        f32::from_bits(self.session_peak_bits.load(Ordering::Relaxed))
+    }
+
     // The playhead in samples, or None when no block has published one yet. None is not zero:
     // an engine that has never rendered must not be drawn as sitting at bar 1, which is exactly
     // the fabricated position r4-qa-protocol.md row 4 exists to catch. Gated on blocks_rendered
@@ -584,21 +607,39 @@ impl RenderBridge {
         }
     }
 
-    // Copy the plan's stereo output into the driver's interleaved buffer
+    // Copy the plan's stereo output into the driver's interleaved buffer, tracking its peak.
+    //
+    // The peak is folded here rather than in a second pass because this loop already touches
+    // every sample; it costs one max per sample and allocates nothing
     fn interleave(&self, block: &mut RenderBlock<'_>, frames: usize) {
         let Some(output) = self.plan.last_output() else {
             block.fill_silence();
+            self.telemetry.last_peak_bits.store(0, Ordering::Relaxed);
             return;
         };
         let channels = block.channels() as usize;
         let samples = block.samples_mut();
+        let mut peak = 0.0_f32;
         for frame in 0..frames {
             let base = frame * channels;
             for (channel, slot) in (0..channels).zip(base..base + channels) {
                 // Channels beyond the plan's stereo pair repeat the last plan channel
                 let source = output[channel.min(1)];
-                samples[slot] = source[frame];
+                let sample = source[frame];
+                samples[slot] = sample;
+                // RT-003 has already contained non-finites upstream, so abs() is finite here
+                peak = peak.max(sample.abs());
             }
+        }
+        self.telemetry
+            .last_peak_bits
+            .store(peak.to_bits(), Ordering::Relaxed);
+        // Single-threaded on the render thread, so load/compare/store needs no CAS
+        let seen = f32::from_bits(self.telemetry.session_peak_bits.load(Ordering::Relaxed));
+        if peak > seen {
+            self.telemetry
+                .session_peak_bits
+                .store(peak.to_bits(), Ordering::Relaxed);
         }
     }
 }

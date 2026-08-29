@@ -893,7 +893,7 @@ fn the_engine_main_actually_opens_reaches_a_real_device_and_renders() {
 
     let model = AppModel::prototype();
     let backend = spectre_audio::cpal_backend::CpalBackend::new();
-    let engine = open_track_engine(
+    let mut engine = open_track_engine(
         &backend,
         model.track_list(),
         model.tempo_map(),
@@ -903,6 +903,12 @@ fn the_engine_main_actually_opens_reaches_a_real_device_and_renders() {
     .expect("a real output device is required for this drill");
 
     assert!(matches!(engine.state(), EngineState::Opened { .. }));
+    // Play, so the drill measures a render that carries signal rather than a clean silence. The
+    // prototype has no clips, so this is the audition voice -- which is what R4-1's exit row
+    // means by "produces sound" until a project is loaded
+    engine
+        .start_audition()
+        .expect("the transport lane must accept Play");
     std::thread::sleep(std::time::Duration::from_millis(250));
 
     let health = engine.health();
@@ -916,7 +922,7 @@ fn the_engine_main_actually_opens_reaches_a_real_device_and_renders() {
         panic!("the driver never called back: {:?}", engine.state());
     };
     println!(
-        "backend={name} device={device} rate={sample_rate} frames={frames} blocks={} xruns={} worst_headroom={} plan_errors={} contaminated={} stream_errors={} params_pending={}",
+        "backend={name} device={device} rate={sample_rate} frames={frames} blocks={} xruns={} worst_headroom={} plan_errors={} contaminated={} stream_errors={} params_pending={} session_peak={}",
         health.blocks_rendered,
         health.xruns,
         health.worst_headroom,
@@ -924,6 +930,7 @@ fn the_engine_main_actually_opens_reaches_a_real_device_and_renders() {
         health.contaminated_nodes,
         health.stream_errors,
         health.parameters_pending,
+        health.session_peak,
     );
     assert!(
         health.blocks_rendered > 0,
@@ -932,4 +939,11 @@ fn the_engine_main_actually_opens_reaches_a_real_device_and_renders() {
     assert_eq!(health.plan_errors, 0, "no block may fail to render");
     assert_eq!(health.contaminated_nodes, 0, "output must stay finite");
     assert_eq!(health.stream_errors, 0, "the driver reported an error");
+    // Without this the drill passes on a clean render of pure silence, which is the exact
+    // failure r4-qa-protocol.md calls the highest-value one it exists to catch. It is the
+    // objective half of "produces sound"; the operator still has to hear it
+    assert!(
+        health.session_peak > 0.0,
+        "the render reached the driver but carried no signal"
+    );
 }

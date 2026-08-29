@@ -143,6 +143,11 @@ pub struct EngineHealth {
     // zero would be the fabricated position r4-qa-protocol.md row 4 exists to catch
     pub position_samples: Option<i64>,
     pub transport_rolling: bool,
+    // Peak of the last rendered block. The objective half of "produces sound": a clean render
+    // that emits silence satisfies every other field here
+    pub last_peak: f32,
+    // Highest peak since the engine opened; "did anything sound", not "is it sounding now"
+    pub session_peak: f32,
 }
 
 // Render-side halves built together, before any device is touched
@@ -527,6 +532,8 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
             parameters_pending: self.telemetry.parameters_pending(),
             position_samples: self.telemetry.position_samples(),
             transport_rolling: self.telemetry.transport_rolling(),
+            last_peak: self.telemetry.last_peak(),
+            session_peak: self.telemetry.session_peak(),
         }
     }
 
