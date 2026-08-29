@@ -154,10 +154,42 @@ sound server and drives `hw:1,0` directly, which is decision 20's raw ALSA basel
 attempt at raw `hw:2,0` failed `device is no longer available` because PipeWire holds that
 interface as its default sink — an exclusive-access fact about the host, not a defect.
 
-Worst-case headroom on Linux (0.82–0.84) is materially tighter than macOS's (0.97–0.99). The
-render still consumes well under a fifth of its budget and no row recorded an xrun, but these are
-different devices at different period sizes and the two columns are not comparable as a
+Worst-case headroom on Linux (0.82–0.84) is materially tighter than macOS's (0.97–0.99). These
+are different devices at different period sizes and the two columns are not comparable as a
 platform ranking.
+
+**Every number above, on both platforms, was measured on the three-node Pulse → Gain → Saturator
+chain in `lifecycle_health.rs` — not on the plan the product runs.** That gap is now measured
+rather than suspected. `crates/spectre-offline/tests/alpha_hardware.rs` drives the composed alpha
+(8 nodes: three tracks of instrument → track gain, one sum bus, one master) through the same
+device, the same lifecycle, and the same telemetry:
+
+| Plan | Nodes | Worst headroom, 6 runs | Median | xruns |
+|---|---|---|---|---|
+| Pulse → Gain → Saturator | 3 | 0.687 – 0.876 | 0.834 | 0 |
+| Composed alpha | 8 | 0.502 – 0.686 | 0.599 | 0 |
+
+The alpha costs roughly **2.4× the callback budget** the qualification chain does, and the two
+ranges barely overlap. It still leaves about 60% of the budget free with no xruns, no plan errors,
+no contamination, and no refused clip events, so nothing here is unsafe — but no prior headroom
+figure described the alpha's workload, and none should be quoted as if it did.
+
+**`worst_headroom` is a worst case over blocks and is noisy run to run**, which single-run rows
+above do not show: repeated runs of the same binary on the same device spread across the ranges
+in the table. Read every single-value headroom cell in this document as one sample, not a
+constant. A raw-ALSA alpha run on the onboard ALC285 measured 0.805, within the same spread.
+
+**One finding this slice was not looking for.** The composed alpha contains no effect. R4-6
+shipped `Gloam`; R4-9 made the *synth* reachable by adding `TrackInstrument::Filament`, and the
+R4-6 exit row was then written as though both devices had become reachable. `build_track_graph`
+wires instrument → track gain → sum → master and constructs nothing else, so the fixture's stored
+`gloam` device — carrying a deliberately non-default depth that `e2e_alpha.rs` asserts survives a
+save — reaches no render at all. `the_alphas_effect_device_is_stored_but_not_in_the_signal_path`
+moves that parameter and proves the audio does not change, with
+`a_parameter_that_is_in_the_signal_path_does_change_the_render` as its control. The test is
+written to fail the day a track effect slot lands. **Until then the alpha's headroom figure is
+also an under-measurement of the intended product**, which is one instrument and one effect per
+track, not one instrument.
 
 Linux **build** qualification ran on 2026-08-09 in a Linux aarch64 container with `libasound2-dev`, and its "the workspace compiles" wording was **too broad — corrected 2026-08-28**. The workspace did not compile on Linux on that date and had not since the rebuild foundation: `spectre-app` declared `eframe` with `default-features = false` and named neither `x11` nor `wayland`, so winit matched no platform and emitted `compile_error!`. macOS was unaffected because `macos_platform` keys off `target_os` rather than a feature. GitHub Actions ran the full gate on `ubuntu-latest` and failed on exactly this error on 2026-08-06 and again on 2026-08-16; the failures went unread, and the R4 slices landed on a branch CI does not watch, since `ci.yml` triggers only on `main`. What the 2026-08-09 run actually established is narrower and still true: `spectre-audio` compiles and links against ALSA and its non-hardware tests pass. `spectre-app` now names both platform backends and the whole workspace compiles on Linux. That is a build and portability result, **not** a device qualification. The same run confirmed the drill fails closed on a machine with no audio device, panicking with "no output device to qualify against" rather than reporting a false pass — so the Linux row cannot be satisfied by a container or a VM without real audio.
 

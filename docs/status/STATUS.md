@@ -16,7 +16,7 @@ Notes: Claims here link to live evidence; optimistic language is prohibited
 - **Supersedes:** all removed prototype-era status and handoff material
 - **Superseded by:** none
 - **Open decisions:** milestone-gated decisions in `../01-requirements/decision-gates.md`; rows 19-22 ratified 2026-08-09
-- **Known gaps:** callback-headroom measurements are still taken on a three-node plan while R4-4 makes the plan up to 34 nodes, so headroom is under-measured on both platforms; `docs/03-architecture/dsp-device-io.md` asserts `Gain` smooths and the shipped `Gain` does not, open as D-R3; `./spectre`'s transport button, engine status cluster, Retry control, and Shape sliders have not been exercised by hand on any platform, so no slice has an operator protocol pass
+- **Known gaps:** ~~callback-headroom measurements are still taken on a three-node plan~~ — **measured 2026-08-28**: the composed alpha (8 nodes) runs at 0.599 median worst-case headroom against the qualification chain's 0.834, about 2.4× the callback cost, with 0 xruns; `worst_headroom` is noisy run to run and every single-value figure in the record is one sample. **The alpha still contains no effect** — `build_track_graph` wires instrument → track gain → sum → master, so R4-6's `Gloam` reaches no render and the alpha's cost is itself an under-measurement of one-instrument-plus-one-effect-per-track; `docs/03-architecture/dsp-device-io.md` asserts `Gain` smooths and the shipped `Gain` does not, open as D-R3; `./spectre`'s transport button, engine status cluster, Retry control, and Shape sliders have not been exercised by hand on any platform, so no slice has an operator protocol pass
 
 ## Repository state
 
