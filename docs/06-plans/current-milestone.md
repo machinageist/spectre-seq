@@ -194,24 +194,25 @@ chain in `lifecycle_health.rs` — not on the plan the product runs.** That gap 
 rather than suspected. `crates/spectre-offline/tests/alpha_hardware.rs` drives the composed alpha
 through the same device, the same lifecycle, and the same telemetry:
 
-| Plan | Nodes | Worst headroom | Median | Runs | xruns |
-|---|---|---|---|---|---|
-| Pulse → Gain → Saturator | 3 | 0.687 – 0.876 | 0.834 | 6 | 0 |
-| Alpha, before the insert slot | 8 | 0.502 – 0.686 | 0.599 | 6 | 0 |
-| **Alpha as specified, with Gloam inserts** | **11** | **0.165 – 0.582** | **0.404** | 11 | 0 |
+| Plan | Nodes | Worst headroom, 6 runs | Median | Median cost |
+|---|---|---|---|---|
+| Pulse → Gain → Saturator | 3 | 0.707 – 0.892 | 0.849 | ~15% of budget |
+| **Alpha as specified** | **11** | **−0.685 – 0.758** | **0.634** | **~37% of budget** |
 
-The product's real plan consumes about **60% of its callback budget at the median**, against the
-17% the qualification chain suggested, and the worst single sample left 16.5%. No run recorded an
-xrun, a plan error, a contaminated node, a frame-capacity rejection, or a refused clip event, so
-nothing here is unsafe on this host — but the margin is a fifth of what the record implied, and
-this is the number an alpha-readiness judgement should use.
+The product's real plan costs about **2.4× the callback budget** the qualification chain does.
+**One of six alpha samples was negative (−0.685), meaning that block overran its budget** — on an
+otherwise idle machine, measured alone. No run recorded a plan error, a contaminated node, a
+frame-capacity rejection, or a refused clip event, and `session_peak` confirms every run carried
+signal rather than passing on silence. But an overrun is an audible dropout, and this host
+produced one in six runs of the plan the alpha actually is.
 
-**`worst_headroom` is a worst case over blocks and is noisy run to run**, which single-run rows
-above do not show: repeated runs of the same binary on the same device spread across the ranges
-in the table. Read every single-value headroom cell in this document as one sample, not a
-constant. That noise is also why the middle row is retained: it is the same code path measured
-before and after the insert landed, so the three rows isolate the cost of each change rather than
-mixing them.
+**These numbers replace an earlier set that was measured wrong, and the correction is instructive.**
+The first pass reported the chain at 0.834 and the alpha at 0.404, sampled in back-to-back batches
+while cargo was still compiling other targets. Run alone and sequentially, both figures rise and
+the alpha's spread widens. `worst_headroom` is a worst case over blocks and is dominated by
+machine load, not by plan size: **read every absolute headroom figure in this document as a
+property of the host at that moment.** What survived the correction is the ratio — the alpha cost
+about 2.4× the chain under both methodologies — which is the comparison the row is actually for.
 
 **The drill that cited itself as proof `./spectre` reaches a real driver was on the wrong path,
 and that is the third instance of this shape in one run.** `app_engine_opens_a_real_device_and_renders`
