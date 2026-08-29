@@ -174,3 +174,43 @@ fn devices_emit_no_non_finite_sample_at_extreme_rates() {
         }
     }
 }
+
+// Structural lock guard for the device layer, the companion to spectre-audio's rt_guard.rs scan.
+//
+// That scan reads its own crate through CARGO_MANIFEST_DIR, so it covered bridge, control, spsc,
+// null, and route -- and none of the DSP devices, whose `process` bodies are the most
+// callback-reachable code in the workspace. Every module here executes inside the audio callback
+// through CompiledPlan::process.
+#[test]
+fn device_modules_contain_no_blocking_primitives() {
+    // Every module carrying an AudioProcessor impl or arithmetic those impls call
+    const RENDER_MODULES: [&str; 6] = [
+        "src/effect.rs",
+        "src/source.rs",
+        "src/filament.rs",
+        "src/gloam.rs",
+        "src/mix.rs",
+        "src/io.rs",
+    ];
+    const FORBIDDEN: [&str; 7] = [
+        "Mutex",
+        "RwLock",
+        "Condvar",
+        "thread::sleep",
+        "println!",
+        "eprintln!",
+        "dbg!",
+    ];
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for module in RENDER_MODULES {
+        let source = std::fs::read_to_string(root.join(module))
+            .unwrap_or_else(|error| panic!("cannot read {module}: {error}"));
+        for needle in FORBIDDEN {
+            assert!(
+                !source.contains(needle),
+                "{module} names the blocking primitive {needle} on a callback-reachable path"
+            );
+        }
+    }
+}

@@ -191,3 +191,27 @@ fn a_plan_containing_a_sum_bus_is_allocation_free() {
     assert_eq!(after.0 - before.0, 0, "the sum path must not allocate");
     assert_eq!(after.1 - before.1, 0, "the sum path must not deallocate");
 }
+
+// Structural lock guard for the plan executor. CompiledPlan::process runs inside the audio
+// callback and was covered by neither spectre-audio's scan nor spectre-dsp's, because each reads
+// only its own crate through CARGO_MANIFEST_DIR
+#[test]
+fn the_plan_executor_contains_no_blocking_primitives() {
+    const FORBIDDEN: [&str; 7] = [
+        "Mutex",
+        "RwLock",
+        "Condvar",
+        "thread::sleep",
+        "println!",
+        "eprintln!",
+        "dbg!",
+    ];
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = std::fs::read_to_string(root.join("src/lib.rs")).expect("cannot read src/lib.rs");
+    for needle in FORBIDDEN {
+        assert!(
+            !source.contains(needle),
+            "spectre-graph names the blocking primitive {needle} on a callback-reachable path"
+        );
+    }
+}
