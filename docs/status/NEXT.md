@@ -9,7 +9,7 @@ Notes: Only active-milestone slices belong here
 
 - **Status:** accepted
 - **Last verified:** 2026-08-28
-- **Scope:** immediately actionable R4 slices; closed R2 and R3 queues retained as exit records
+- **Scope:** immediately actionable R4 slices; persistence work landed ahead of its milestone; closed R2 and R3 queues retained as exit records
 - **Decision authority:** Jeff
 - **Upstream sources:** `STATUS.md`, `../06-plans/current-milestone.md`
 - **Downstream dependents:** implementation sessions
@@ -18,48 +18,37 @@ Notes: Only active-milestone slices belong here
 - **Open decisions:** none blocking R4 start; decision 23's Linux debt is discharged as of 2026-08-28
 - **Known gaps:** the R4 QA protocol exists at `../05-quality/r4-qa-protocol.md` and its manual half has never been run, so no slice has operator evidence; later milestones are intentionally not decomposed here
 
-## Next slices — R5 project safety
+## Persistence work landed ahead of its milestone
 
-R5 opened 2026-08-29. R4's queue is retained below as its exit record; its one open row needs an
-operator, not code.
+R4 is still the active milestone. These three slices exist and are green, and they discharge
+evidence CORE-004's ledger row names as "crash-injection save tests at R5" — the work is real
+whatever milestone label it ends up under. **R5 was opened on 2026-08-29 and the transition was
+reverted the same day**: its justification misquoted D-R4's disposition (c) and made a dependency
+claim that `../05-quality/r4-qa-protocol.md` rows 7, 8, and 15 refute. The question is routed as
+**D-R6** in `../../gauntlet-output/decisions-needed.md` and is Jeff's.
 
-1. ~~**Crash-qualify the atomic save (CORE-004 full).**~~ **Landed 2026-08-29** as
-   `crates/spectre-project/tests/crash_qualification.rs` and the `crash_saver` example it kills.
-   24 trials SIGKILL a real process at a randomized phase of a measured ~23 ms save cycle; every
-   destination that exists decodes and equals the reference project, and every surviving file that
-   is not the target carries the temp suffix rather than the target's own name.
-   **The drill's own negative control is the part worth keeping.** The first version saved a
-   three-track kilobyte project and killed at sub-millisecond offsets; all three tests passed —
-   and `the_drill_detects_a_save_that_is_not_atomic`, which runs the same kill against a
-   truncate-then-write saver, **failed**, reporting that 14 destinations had all decoded cleanly.
-   The write was finishing before the kill could land, so the drill would have passed against any
-   implementation. The project is now sized from a measurement rather than a guess.
-2. ~~**Journal an autosave to a sidecar** per decision 14, without touching the project file.~~
-   **Landed 2026-08-29** as `crates/spectre-project/src/journal.rs`. **The design choice is stated
-   rather than implied, because decision 14 adopts the model without specifying the journal's
-   shape:** the sidecar is a `ProjectEnvelope` written by `save_project_atomic`, not an
-   append-only operation log and not a bespoke wrapper record. A log would need record framing and
-   a truncation policy before recovery could read a crash-torn tail — new failure modes introduced
-   to save work a snapshot already saves. Reusing the project's own type means the sidecar
-   inherits R5-1's crash qualification, CORE-003's schema gate, and the semantic validator whole
-   rather than by resemblance. **Stated cost:** every autosave rewrites the project rather than
-   appending a delta.
-   Eight tests. The load-bearing one is `an_autosave_does_not_touch_the_project_file`, which
-   asserts the saved project is **byte-identical** across an autosave carrying different content —
-   an autosave that could damage the saved project would be worse than none.
-   `a_sidecar_from_another_project_is_not_offered` matches by project identity, and
-   `a_refused_autosave_leaves_an_earlier_sidecar_intact` covers the case that actually loses work:
-   replacing good unsaved state with nothing because the newest state was momentarily invalid.
-3. **Recover from an unclean exit**, and state what was and was not recovered rather than
-   presenting a recovered project as if it were the saved one.
-4. **Migrate a schema**, which is the first thing that makes CORE-001's migration evidence
-   obtainable at all.
-5. **Take decision 13's undo gate**, over the transactional command path that already exists.
-6. **Diagnose missing media by name**, once the project references anything external.
-7. **Close the persistence contract's intake item**: the exact OS API mapping and the qualified
-   filesystem matrix it defers to R5 intake.
+1. **Crash-qualified atomic save.** `crates/spectre-project/tests/crash_qualification.rs` SIGKILLs
+   a real process at a randomized phase of a measured ~23 ms save cycle; every destination that
+   exists decodes and equals the reference project. **Its negative control is the part worth
+   keeping:** the first sizing used a three-track kilobyte project and sub-millisecond kills, and
+   `the_drill_detects_a_save_that_is_not_atomic` — the same kill against a truncate-then-write
+   saver — **failed**, reporting 14 destinations that had all decoded cleanly. The write was
+   finishing before the kill could land, so the drill would have passed against any
+   implementation. The project is now sized from a measurement.
+2. **Journaled autosave to a sidecar.** `src/journal.rs`. The sidecar is a `ProjectEnvelope`
+   written by `save_project_atomic`, not an operation log and not a wrapper record, so it inherits
+   the crash qualification and the validator whole. Stated cost: each autosave rewrites the
+   project. `an_autosave_does_not_touch_the_project_file` asserts the saved project is
+   byte-identical across an autosave carrying different content.
+3. **Recovery, offered and described, never applied.** `src/recovery.rs` reports what differs and
+   states what it did **not** compare, so a difference list cannot be read as exhaustive.
 
-## Closed R4 queue
+**None of it is reachable from `./spectre`.** No shell surface calls `write_autosave`,
+`read_autosave`, or `inspect`, so an operator running the QA protocol today sees no sidecar. That
+is recorded here rather than left for someone to discover, and it is the same pattern this
+repository has now hit five times: a seam that works, with nothing calling it.
+
+## Closed R4 queue## Closed R4 queue
 
 1. ~~Wire `./spectre` to the qualified backend so Play produces sound through the existing compiled plan~~ — landed 2026-08-24 as `crates/spectre-app/src/engine.rs`. The app compiles a plan from its own validated four-parameter snapshot, queries the device's native rate through two new app-thread seam methods (`AudioBackend::default_sample_rate`, `AudioStream::stream_errors`), opens at 256 frames with the plan reserving twice that, and moves the existing `RenderBridge` into the render closure. **No new render path and no new DSP:** the app's live output hashes identically to `render_app_snapshot` over the same snapshot, using the FNV-1a walk both the offline harness and the bridge test already use. The transport button and `Space` both send before mutating, so a refused transport send leaves the UI unchanged rather than diverging from the render thread. 14 new tests; the app's own hardware drill opened an M-Audio AIR 192|6 at its native 88 200 Hz for 88 blocks with 0 xruns and 0 stream errors. **Two limits recorded rather than hidden:** the manual protocol has not run and no one has confirmed audible output by ear; and the held audition note is scaffolding that slice 5 replaces with clip playback.
 2. ~~Implement decision 22's runtime parameter seam on `AudioProcessor`, then connect the RT-002 parameter lane the bridge already drains~~ — landed 2026-08-24. `AudioProcessor` gained one **required** `set_parameter`, so a device added later must answer the seam rather than silently ignore every edit made to it; all four shipping devices and the three test doubles implement it. `CompiledPlan::set_parameter` addresses one node's processor by the same bounded linear scan `process` already performs; `spectre_audio::route::ParameterRoutes` resolves an RT-002 target to a node and key by binary search over a frozen boxed slice, and is **added to `rt_guard`'s scanned module set** rather than left outside it. The bridge applies the drained lane once per block before `process`, so a block sees one coherent parameter set. `a_shape_edit_changes_live_audio_and_nothing_stays_pending` asserts a UI edit changes the rendered hash with `parameters_pending == 0`; a 500-write sweep coalesces to one application. 8 new tests. **`Gain` still does not smooth** — see D-R3; R4-2 deliberately did not add smoothing, because it would break the bit-exact live/offline hash equality and needs its own bound with a rationale row.

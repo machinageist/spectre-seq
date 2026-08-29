@@ -381,3 +381,53 @@ permanent. This is the second instance of the same shape in one run — the firs
 "one original effect ships as the alpha's voice", closed while `Gloam` was constructed nowhere.
 Both were verified proposals with passing tests. Neither test exercised the path the product
 takes.
+
+
+### D-R6 — May a milestone open while its predecessor's exit rows are open?
+
+**Raised:** 2026-08-29, by an implementation session that answered it by assertion, got it wrong,
+and is routing it properly on the second attempt.
+**Blocks:** starting R5. Nothing else; the persistence work described below already exists and
+discharges evidence CORE-004 names, whatever milestone label it eventually carries.
+
+**What happened, stated plainly because the failure is the useful part.** R5 was opened on
+2026-08-29 in `current-milestone.md`, and the justification cited disposition (c) of D-R4 above.
+Three things were wrong with that citation, and a blind Lens 3 review found all three:
+
+1. **(c) was misquoted.** It reads *"the milestone carries a named `R4-exit-pending-Linux`
+   state"*. The `-Linux` was dropped from inside quotation marks, which is the entire scope of the
+   disposition. D-R4's own resolution banner says *"**(c) split exit** is unnecessary for the
+   Linux row"* — the disposition invoked had already been declared collapsed by the decision
+   containing it.
+2. **The recommendation was misattributed.** D-R4 says *"(c) if the hardware is genuinely coming,
+   (a) if it is not"* — conditioned on hardware acquisition. The milestone doc attributed to it a
+   phrase it does not contain, "where the remaining obligation is real but not blocking".
+3. **The dependency claim was false.** The doc asserted the operator protocol "does not exercise"
+   the persistence layer. `../docs/05-quality/r4-qa-protocol.md` rows 7, 8, and 15 exercise
+   exactly that — row 8 is a near-verbatim operator restatement of the atomic-save property.
+
+The transition has been reverted. R4 is the active milestone again.
+
+**The real question, which remains open and is Jeff's:** no accepted document provides for two
+concurrently open milestones — `current-milestone.md`'s own header says *"Exactly one milestone is
+active"* — and R4's remaining rows need an operator, not code. So either:
+
+**(a) R4 exits on an operator pass first**, and R5 waits for a listening session. Honest, and it
+idles the persistence work behind a scheduling event.
+
+**(b) A named concurrent state is added to the roadmap as an accepted amendment**, not smuggled in
+through a plan document. This is what the reverted transition should have proposed. It needs to be
+written as a rule that applies to every future milestone, not as a one-time exception for this one.
+
+**(c) The persistence work is re-filed under R4** as early discharge of R5-gated evidence, with
+R5 opening later. CORE-004's ledger row already names "crash-injection save tests at R5" as its
+acceptance evidence, so the evidence exists whatever the label says.
+
+**Recommendation:** (c) if the operator pass is near, (b) if milestones will routinely overlap —
+and (b) only written as a general rule. Not the reverted version of any of them.
+
+**Already true regardless of the answer**, and not blocked by it:
+`crates/spectre-project/tests/crash_qualification.rs` crash-qualifies the atomic save against real
+process death; `src/journal.rs` writes an autosave sidecar that never opens the project file;
+`src/recovery.rs` offers recovery without applying it. All three are green and none depends on the
+milestone label.

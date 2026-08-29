@@ -14,6 +14,7 @@ pub mod clip;
 pub mod command;
 pub mod fs;
 pub mod journal;
+pub mod recovery;
 pub mod routing;
 pub mod track;
 
