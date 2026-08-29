@@ -15,43 +15,57 @@ Notes: Every agent updates this before stopping, including after failures
 - **Downstream dependents:** the next session, whoever runs it
 - **Supersedes:** the earlier 2026-08-15 handoff
 - **Open decisions:** D-R1, D-R2, D-R3, D-R4, D-MM1–D-MM4 in `decisions-needed.md`
-- **Known gaps:** the R4 QA protocol has never been run; the live bridge addresses one instrument; R4-3 needs Linux hardware
+- **Known gaps:** the R4 QA protocol's manual half has never been run; that is the only open R4 exit row
 
-**Current state: the spec loop is finished and the implementation is eight of nine.**
-All nine R4 specs hold a verdict. R4-1, R4-2, R4-4, R4-5, R4-6, R4-7, R4-8, and R4-9 are
-implemented and committed; **R4-3 is hardware-blocked** and is the only feature with no code.
-437 workspace tests pass with `cargo fmt`, strict Clippy, and `cargo test` all clean.
+**Current state: all nine features are implemented.** All nine R4 specs hold a verdict and all
+nine have code as of 2026-08-28. 450 workspace tests pass with `cargo fmt`, strict Clippy, and
+`cargo test` all clean, **on Linux** — which had never once been true before this date.
 
-Commits, newest first: `11bbbdb` R4-9, `a7aff87` R4-7, `136a227` R4-8, `deab408` site,
-`d8c2c87` + `487bc49` R4-5, `1960a8b` + `0d2a03c` R4-6/R4-4.
+Commits, newest first: `1f4314c` track insert slot, `af654e5` alpha headroom, `ec465a0` CI +
+R4 exit rows, `43a2403` R4-9 protocol and golden-hash removal, `09b6d6d` R4-3, `6f37c98` Linux
+build, then `11bbbdb` R4-9, `a7aff87` R4-7, `136a227` R4-8, `deab408` site, `d8c2c87` +
+`487bc49` R4-5, `1960a8b` + `0d2a03c` R4-6/R4-4.
 
-**Three things are open and none of them is a spec problem.**
+**The three things this handoff listed as open are closed, and how they closed matters.**
 
-1. **The R4 QA protocol has never been run.** `docs/05-quality/r4-qa-protocol.md` is written;
-   `docs/05-quality/r4-qa-records.md` is at its empty state. R4's end-to-end exit row is half
-   closed — the fixture passes, no operator has worked the manual rows. This needs a human at
-   the machine, not an agent.
-2. **The live bridge addresses one instrument.** `RenderBridge` carries one `note_node`, so a
-   three-track project plays one track live while the offline path plays all three. Found by
-   R4-9's composed fixture, which is what a vertical slice is for.
-   `the_bridge_can_only_deliver_notes_to_one_instrument` pins it and fails the day it is lifted.
-3. **R4-3 needs a Linux box.** One command; it only needs the hardware.
+1. ~~**The live bridge addresses one instrument.**~~ Lifted 2026-08-28. `RenderBridge` carries a
+   fixed `Box<[ClipVoice]>` and `the_live_bridge_plays_every_instrument_track` replaces the test
+   that pinned the limit.
+2. ~~**R4-3 needs a Linux box.**~~ Discharged 2026-08-28. **This handoff said the hardware "has
+   never existed in this environment"; the development host is Arch Linux with three audio
+   cards and always was.** What was missing was anything that ran against one: the workspace did
+   not compile on Linux at all — `spectre-app` named neither `x11` nor `wayland` with `eframe`'s
+   default features off — and CI had been failing on exactly that since 2026-08-06 while
+   watching only `main`, which no R4 slice ever touched. It was also not "one command": the
+   drill first exposed a real `find_device` defect on ALSA.
+3. **The R4 QA protocol's manual half still has not been run.** Its automated half has, on
+   Linux, and `r4-qa-records.md` carries block Q-1 at `INCONCLUSIVE` with thirteen rows `NOT
+   RUN`. This still needs a human at the machine, not an agent.
+
+**One requirement was found unimplemented while closing the above.** R4-9 §"Devices per track"
+specifies one `Filament` instrument and one `Gloam` insert per track, and §Traceability asserts
+Flow A renders through `Filament → Gloam`. `build_track_graph` wired instrument → track gain and
+constructed no effect at all, so R4-6's effect reached no render and the R4-6 exit row overstated
+what shipped. Closed by `1f4314c`. The lesson for the next run is that every one of the nine
+scorecards graded a *proposal*; nothing in the loop checked that a shipped feature satisfied the
+spec that commissioned it, and a two-line grep would have caught this one.
 
 **Exact next action, in order:**
 
-1. **Jeff answers D-R4** — what finishing R4 means while the Linux row is unclosable here.
-   R4's exit is a ten-row conjunction whose own text says "None is optional", and the Linux row
-   needs hardware that has never existed in this environment. The dispositions are in
-   `decisions-needed.md`. Exiting on macOS evidence alone would make R4 the second milestone to
-   do so, which is the option to avoid by default.
-2. **Lift the one-instrument limit in `RenderBridge`**, or record it as accepted scope for the
-   alpha. Today R4's "a MIDI clip plays through a track into master" row is closed offline and
-   open in the product. Whichever way it goes, `the_bridge_can_only_deliver_notes_to_one_instrument`
-   and `current-milestone.md`'s marker on that row must move together.
-3. **Run the QA protocol on macOS** and write block `Q1` into `r4-qa-records.md`. Per-platform
-   outcome word; no aggregate. A blank Linux column is valid; an omitted one is not.
-4. **Run R4-3's drill on Linux hardware** when a box is available:
-   `cargo test -p spectre-audio --test lifecycle_health -- --ignored --nocapture`.
+1. **Run the QA protocol's manual half**, on this host, and write block Q-2 into
+   `r4-qa-records.md`. Per-platform outcome word; no aggregate. This is the only open R4 exit
+   row. Note `./spectre` needs `pipewire-alsa` installed on this box, or an `ALSA_CONFIG_PATH`
+   override — the host ships no `pcm.!default`.
+2. **Jeff answers D-R3** — the accepted device contract says `Gain` smooths and the shipped
+   `Gain` does not. R4-2 declined to change either side by assertion, and it is still open.
+3. **Jeff rules on the `dsp-device-io.md` determinism clause**, which asserts bit-identical
+   offline output unconditionally while RT-003 containment is scoped to the quantum. R4-8
+   recorded the narrowing rather than editing an accepted contract.
+4. **Decide whether the alpha's headroom is acceptable.** The plan the product runs takes about
+   60% of its callback budget at the median on this host (0.404 worst-case headroom, worst
+   sample 0.165), against the 0.834 the three-node qualification chain implied. 0 xruns
+   throughout, so it is not unsafe here — but every headroom figure before 2026-08-28 described
+   a workload the alpha does not have.
 5. **Decide the citation-drift rule** the manifest records: specs pin lines that are true at one
    commit, and this run implemented past those commits. Either freeze the gauntlet while
    implementation runs, or cite by symbol and quoted literal. R4-7's iteration-2 reviewer

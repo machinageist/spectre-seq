@@ -15,13 +15,14 @@ Notes: The manifest and HANDOFF.md together define the next executable action
 - **Downstream dependents:** `HANDOFF.md`, dispatch decisions
 - **Supersedes:** the unrecorded 2026-08-12 run
 - **Superseded by:** none
-- **Open decisions:** D-R1, D-R2, D-R3 and D-MM1–D-MM4 in `decisions-needed.md`; **D-R3 is still open and R4-2 shipped without resolving it**, deliberately
-- **Known gaps:** eight of nine features are implemented; R4-3 is hardware-blocked and needs a Linux host. The R4 QA protocol has never been run. `RenderBridge` addresses one instrument, so a multi-track project plays one track live
+- **Open decisions:** D-R1, D-R2, D-R3 and D-MM1–D-MM4 in `decisions-needed.md`; **D-R3 is still open and R4-2 shipped without resolving it**, deliberately. **D-R4 is resolved by fact** as of 2026-08-28 — its premise was that the Linux row could not close, and it closed
+- **Known gaps:** all nine features are implemented as of 2026-08-28. The R4 QA protocol's **manual half** has never been run; its automated half and one `INCONCLUSIVE` record exist. `RenderBridge` addresses every instrument track, lifted 2026-08-28
 
 **Run:** 2 (run 1 discarded — see run history)
 **Criteria version:** 1 (2026-08-14, `accepted`)
-**Status:** Implementation. All nine specs hold a verdict; eight are implemented and committed.
-R4-3 is hardware-blocked. Criteria and tree accepted; benchmark set locked to Ableton Live,
+**Status:** Implementation. All nine specs hold a verdict; **all nine are implemented and committed** as of
+2026-08-28. R4-3 was discharged on the development host, which had been a Linux box with three audio cards
+the whole time. R4-9's manual half still needs an operator. Criteria and tree accepted; benchmark set locked to Ableton Live,
 Logic Pro, Serum 2, Phase Plant, and VCV Rack 2.
 **Batch policy:** concurrency 3, per `feature-tree.md` §"Dispatch order".
 
@@ -44,13 +45,13 @@ an author never verifies its own artifact.
 |---|---|---|---|---|---|---|---|---|
 | R4-1 | live-audio-wiring | **spec-pass** | `specs/R4-1-live-audio-wiring.md` | iter 1: `…-scorecard.md` (2.750 FAIL AF-2) · iter 2: `…-scorecard-iter2.md` (2.950 PASS) | **2.950** | 2 | 1 | **implemented** 2026-08-24 (`ab521a9`); review found two tests that could not fail, both fixed |
 | R4-2 | runtime-parameter-seam | **spec-pass** | `specs/R4-2-runtime-parameter-seam.md` (1,686 lines) | `spec-scorecards/R4-2-runtime-parameter-seam-scorecard.md` | **3.000** | 1 | 1 | **implemented** 2026-08-24; shipped without resolving D-R3, deliberately — smoothing would break the bit-exact live/offline hash equality |
-| R4-3 | linux-device-qualification | **spec-pass** · **hardware-blocked** | `specs/R4-3-linux-device-qualification.md` | iter 1: `…-scorecard.md` (2.633 FAIL) · iter 2: `…-scorecard-iter2.md` (**2.967 PASS**) | **2.967** | 2 | 0 | passed on remediation 1; **execution still needs a Linux box** — the only unimplemented feature |
+| R4-3 | linux-device-qualification | **spec-pass** · **hardware-blocked** | `specs/R4-3-linux-device-qualification.md` | iter 1: `…-scorecard.md` (2.633 FAIL) · iter 2: `…-scorecard-iter2.md` (**2.967 PASS**) | **2.967** | 2 | 0 | passed on remediation 1; **implemented 2026-08-28** (`09b6d6d`) on Arch Linux across three qualification rows. The drill did not run unchanged as the spec predicted — it first exposed a real `find_device` defect on ALSA |
 | R4-4 | track-model | **spec-pass** (iter 2, re-verified) | `specs/R4-4-track-model.md` (1,817 lines) | iter 1: `…-scorecard.md` (2.810) · iter 2: `…-scorecard-iter2.md` (**2.964 PASS**) | **2.964** | 2 | 1 | **implemented** 2026-08-24 (`1960a8b` lineage) |
 | R4-5 | midi-clips | **spec-pass** (iter 2, re-verified) | `specs/R4-5-midi-clips.md` (1,599 lines) | iter 1: `…-scorecard.md` (2.798) · iter 2: `…-scorecard-iter2.md` (**2.914 PASS**) | **2.914** | 2 | 1 | **implemented** 2026-08-25 (`487bc49`, `d8c2c87`); the merge rule found a latent defect in `collect_notes` |
-| R4-6 | first-devices | **spec-pass** (iter 2, re-verified) | `specs/R4-6-first-devices.md` | iter 1: `…-scorecard.md` (2.864) · iter 2: `…-scorecard-iter2.md` (**2.931 PASS**) | **2.931** | 2 | 1 | **implemented** 2026-08-25 (`0d2a03c`, `1960a8b`); made reachable from a track at R4-9 |
+| R4-6 | first-devices | **spec-pass** (iter 2, re-verified) | `specs/R4-6-first-devices.md` | iter 1: `…-scorecard.md` (2.864) · iter 2: `…-scorecard-iter2.md` (**2.931 PASS**) | **2.931** | 2 | 1 | **implemented** 2026-08-25 (`0d2a03c`, `1960a8b`); the **synth** was made reachable from a track at R4-9 and the **effect** was not — `build_track_graph` constructed no effect at all until the insert slot landed 2026-08-28 (`1f4314c`) |
 | R4-7 | project-persistence | **spec-remediation-1** (**FAILED** independent review) | `specs/R4-7-project-persistence.md` | orchestrator: `…-scorecard.md` (3.000, **superseded**) · independent: `…-scorecard-independent.md` (**2.850 FAIL**) | **2.681 FAIL** (iter 2, feasibility rule) | 2 | 1 | **implemented anyway** 2026-08-28 (`a7aff87`) — see the note below |
 | R4-8 | offline-bounce | **spec-pass** (iter 4, re-verified) | `specs/R4-8-offline-bounce.md` (2,436 lines) | iter 1: 2.848 · iter 3: **2.883 FAIL** · iter 4: `…-scorecard-iter4.md` (**2.967 PASS**) | **2.967** | 4 | 1 | **implemented** 2026-08-28 (`136a227`) |
-| R4-9 | e2e-and-qa | **spec-pass** | `specs/R4-9-e2e-and-qa.md` (1,404 lines) | `spec-scorecards/R4-9-e2e-and-qa-scorecard.md` | **2.845** | 1 | 1 | **half implemented** 2026-08-28 (`11bbbdb`): the fixture passes, the protocol is written, **no QA run has been performed** |
+| R4-9 | e2e-and-qa | **spec-pass** | `specs/R4-9-e2e-and-qa.md` (1,404 lines) | `spec-scorecards/R4-9-e2e-and-qa-scorecard.md` | **2.845** | 1 | 1 | **half implemented** 2026-08-28 (`11bbbdb`): the fixture passes and the protocol is written. Its §"Devices per track" requirement — one `Filament` and one `Gloam` insert — went unimplemented until `1f4314c`. **No operator QA run has been performed**; one `INCONCLUSIVE` automated-half record exists |
 
 **All nine features hold a verified passing verdict at their current iteration.** R4-2 and R4-7
 (3.000), R4-3 and R4-8 (2.967), R4-4 (2.964), R4-1 (2.950), R4-6 (2.931), R4-5 (2.914), R4-9
