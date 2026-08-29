@@ -15,7 +15,7 @@ use spectre_audio::clip::{ClipPlayer, ClipSchedule, CLIP_EVENT_RESERVE};
 use spectre_audio::control::control_channel;
 use spectre_audio::RenderBlock;
 use spectre_core::{IdGen, SampleRate, TempoMap};
-use spectre_dsp::GLOAM_PARAMETERS;
+use spectre_dsp::{GLOAM_DEPTH, GLOAM_PARAMETERS};
 use spectre_graph::CompiledPlan;
 use spectre_offline::hash::{hash_block, SampleHasher};
 use spectre_project::{
@@ -146,11 +146,10 @@ fn the_alpha_plan_is_materially_larger_than_the_chain_headroom_was_measured_on()
         "lifecycle_health.rs measures Pulse -> Gain -> Saturator; if that changed, this file's \
          premise changed with it"
     );
-    // Eight: three tracks of instrument -> track gain, one sum bus, one master. NOT ten --
-    // build_track_graph wires no effect, so the alpha's Gloam is absent from the plan entirely.
-    // See the_alphas_effect_device_is_stored_but_not_in_the_signal_path below
+    // Eleven: three tracks of instrument -> Gloam insert -> track gain, one sum bus, one master.
+    // It was eight until 2026-08-28, when the insert slot R4-9's spec requires was implemented
     assert_eq!(
-        alpha_steps, 8,
+        alpha_steps, 11,
         "the composed alpha's node count moved; the qualification record quotes this number"
     );
     assert!(
@@ -173,19 +172,44 @@ fn render_hash(envelope: &ProjectEnvelope, blocks: usize) -> u64 {
     hasher.finish()
 }
 
-// R4-6 shipped an effect. R4-9 made the SYNTH reachable from a track by adding
-// TrackInstrument::Filament, and the R4-6 exit row was then written as though both devices had
-// become reachable. They had not. build_track_graph wires instrument -> track gain -> sum ->
-// master and constructs nothing else, so the alpha's stored gloam device -- carrying a
-// deliberately non-default depth, which e2e_alpha.rs asserts survives a save -- reaches no
-// render, live or offline.
-//
-// This test moves that parameter and proves the audio does not change. It is written to FAIL the
-// day a track effect slot lands, which is the day the R4-6 exit row, NEXT.md slice 9's "Filament
-// into Gloam" description, and the QA protocol's fixture description all become true and must be
-// rewritten together
+// The insert R4-9's spec requires, proved to be in the audible path rather than merely stored.
+// Until 2026-08-28 build_track_graph wired instrument -> track gain and constructed no effect at
+// all, so R4-6's Gloam reached no render and the R4-6 exit row overstated what shipped
 #[test]
-fn the_alphas_effect_device_is_stored_but_not_in_the_signal_path() {
+fn the_tracks_gloam_insert_is_in_the_signal_path() {
+    let mut envelope = fixture();
+    let baseline = render_hash(&envelope, 16);
+
+    let tracks = &mut envelope.project.tracks;
+    let id = tracks.tracks()[0].id();
+    let stored = tracks.tracks()[0]
+        .insert()
+        .expect("R4-9's fixture declares a Gloam insert on every track")
+        .depth();
+    tracks
+        .get_mut(id)
+        .expect("the track is in the list")
+        .set_insert_depth(GLOAM_PARAMETERS[GLOAM_DEPTH].default());
+    assert_ne!(
+        stored,
+        GLOAM_PARAMETERS[GLOAM_DEPTH].default(),
+        "the fixture must store a non-default depth for this test to move anything"
+    );
+
+    let moved = render_hash(&envelope, 16);
+    assert_ne!(
+        baseline, moved,
+        "the track's insert depth changed nothing, so Gloam is not in the render"
+    );
+}
+
+// The project's DeviceDoc list is the app's Build/Shape surface, NOT the render path -- the
+// render reads the track model. Moving a value here changes no audio, and that is the current
+// design rather than a defect: crates/spectre-app/src/project.rs loads this list into the model's
+// device cards, and R4-2's parameter lane is what carries an edit to a live node.
+// It is pinned because the two representations are easy to mistake for one
+#[test]
+fn the_project_device_doc_list_is_a_surface_and_not_the_render_path() {
     let mut envelope = fixture();
     let baseline = render_hash(&envelope, 16);
 
@@ -207,8 +231,8 @@ fn the_alphas_effect_device_is_stored_but_not_in_the_signal_path() {
     let moved = render_hash(&envelope, 16);
     assert_eq!(
         baseline, moved,
-        "gloam reached the render; the alpha's effect is no longer inert and the R4-6 exit row, \
-         NEXT.md slice 9, and r4-qa-protocol.md must all be rewritten to say so"
+        "the DeviceDoc list reached the render; if that is now intended, this test and the \
+         two-representation note above must be rewritten together"
     );
 }
 

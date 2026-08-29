@@ -25,7 +25,9 @@ pub use fs::{
     MAX_PROJECT_FILE_BYTES, SAVE_TEMP_NAME_ATTEMPTS,
 };
 pub use routing::{build_track_graph, track_device_factory, RoutingError, TrackPathNodes};
-pub use track::{Track, TrackError, TrackInstrument, TrackList, MAX_TRACKS};
+pub use track::{
+    Track, TrackEffect, TrackError, TrackInsert, TrackInstrument, TrackList, MAX_TRACKS,
+};
 
 // Current schema version written by this build. Schema identifiers, not numeric limits, so
 // PROD-003 does not govern them. The bump to 2 is required rather than cosmetic: schema 2 adds

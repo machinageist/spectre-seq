@@ -87,7 +87,7 @@ VST3 hosting, recording, automation and modulation, session/live slots, mixer se
 - ~~`./spectre` opens the qualified backend and produces sound through the existing compiled plan, with no second render path~~ — **partially closed 2026-08-24.** The open path, the render, and the no-second-path claim are all evidenced; the app's own drill rendered 88 real driver blocks. Audible confirmation and the manual protocol are outstanding, so this row is `implemented`, not closed.
 - ~~Decision 22's parameter seam is implemented, so a UI edit changes live audio~~ — **closed 2026-08-24.** `a_shape_edit_changes_live_audio_and_nothing_stays_pending` asserts exactly this: the rendered hash changes and `parameters_pending` is 0.
 - ~~A MIDI clip plays through a track into master~~ — **partially closed 2026-08-28.** The clip model, the baked schedule, and the merge rule are evidenced; `crates/spectre-offline/tests/e2e_alpha.rs` renders three tracks' clips into master offline. The live path composes too: `the_live_bridge_plays_every_instrument_track` drives all three tracks' clips through `RenderBridge` and matches the offline hash exactly, at zero callback allocations. **Closed in the product too:** `./spectre` bakes each track's clips before the stream opens and plays them; Play sends the transport command alone, so the project's material replaces the audition note rather than merging with it. A project with no clips still auditions, so R4-1's evidence is unchanged. What remains open on this row is the manual protocol — nobody has confirmed by ear that a clip is what they hear.
-- ~~One small original synth and one original effect ship as the alpha's voice~~ — **closed 2026-08-28.** `Filament` and `Gloam` landed at R4-6 with thirteen DEV ledger rows; R4-9 added `TrackInstrument::Filament`, so the synth is reachable from a track and is what the alpha fixture renders rather than a device that exists beside the product.
+- ~~One small original synth and one original effect ship as the alpha's voice~~ — **closed 2026-08-28, corrected the same day.** `Filament` and `Gloam` landed at R4-6 with thirteen DEV ledger rows. The row was first marked closed when R4-9 added `TrackInstrument::Filament`, which made only the **synth** reachable; `Gloam` was still constructed nowhere, so "one original effect ships as the alpha's voice" was not true of any render. The track insert slot closes it properly: every alpha track is `Filament → Gloam`, and `the_tracks_gloam_insert_is_in_the_signal_path` proves the effect is audible rather than merely stored.
 - ~~Atomic save and reload round-trip a project containing tracks, clips, and device parameters (CORE-004 implementation, CORE-001 reorder evidence)~~ — **closed 2026-08-28.** Schema 2 persists tracks, clips, device parameters, the view context, and the ID generator's position; `save_reload_render_produces_the_same_hash` proves a round trip does not change what the composed project computes, and `track_ids_survive_reorder_across_a_save` closes CORE-001's persisted half. Crash durability is R5's and is not claimed.
 - ~~Offline bounce renders the same project deterministically and matches the live path's computation~~ — **closed 2026-08-28.** `a_multi_block_bounce_matches_the_live_path_block_for_block` renders sixteen blocks each way to one hash, and the `--bounce` CLI reproduces that hash from a separate process. **Mechanism corrected 2026-08-28:** both assertions originally compared against a `LIVE_PATH_HASH` literal produced on macOS, which failed on Linux while every rendered sample still agreed — the row's own non-claim about libm predicted exactly that. The expected hash is now derived in-process, and the round trip holds as CLI == bounce (`bounce_cli`) and bounce == live (`bounce_equivalence`). Scoped to one process and one build: cross-machine bit-reproducibility is still not claimed.
 - An end-to-end fixture plus a written manual QA protocol both pass — **half closed 2026-08-28.** The fixture exists and passes: `crates/spectre-offline/tests/fixtures/r4-alpha.json` with 15 assertions in `e2e_alpha.rs`. The protocol exists at `docs/05-quality/r4-qa-protocol.md`, and its standing constraints were corrected on 2026-08-28 after two of them were lifted by code before the protocol had ever run. `docs/05-quality/r4-qa-records.md` now carries block Q-1: the automated half on Arch Linux, Flow A passing 16/16, a clean workspace gate, and thirteen manual rows recorded `NOT RUN`, outcome `INCONCLUSIVE`. **No operator pass exists on any platform**, so this row stays open — and it is now the only R4 exit row that is.
@@ -161,39 +161,46 @@ platform ranking.
 **Every number above, on both platforms, was measured on the three-node Pulse → Gain → Saturator
 chain in `lifecycle_health.rs` — not on the plan the product runs.** That gap is now measured
 rather than suspected. `crates/spectre-offline/tests/alpha_hardware.rs` drives the composed alpha
-(8 nodes: three tracks of instrument → track gain, one sum bus, one master) through the same
-device, the same lifecycle, and the same telemetry:
+through the same device, the same lifecycle, and the same telemetry:
 
-| Plan | Nodes | Worst headroom, 6 runs | Median | xruns |
-|---|---|---|---|---|
-| Pulse → Gain → Saturator | 3 | 0.687 – 0.876 | 0.834 | 0 |
-| Composed alpha | 8 | 0.502 – 0.686 | 0.599 | 0 |
+| Plan | Nodes | Worst headroom | Median | Runs | xruns |
+|---|---|---|---|---|---|
+| Pulse → Gain → Saturator | 3 | 0.687 – 0.876 | 0.834 | 6 | 0 |
+| Alpha, before the insert slot | 8 | 0.502 – 0.686 | 0.599 | 6 | 0 |
+| **Alpha as specified, with Gloam inserts** | **11** | **0.165 – 0.582** | **0.404** | 11 | 0 |
 
-The alpha costs roughly **2.4× the callback budget** the qualification chain does, and the two
-ranges barely overlap. It still leaves about 60% of the budget free with no xruns, no plan errors,
-no contamination, and no refused clip events, so nothing here is unsafe — but no prior headroom
-figure described the alpha's workload, and none should be quoted as if it did.
+The product's real plan consumes about **60% of its callback budget at the median**, against the
+17% the qualification chain suggested, and the worst single sample left 16.5%. No run recorded an
+xrun, a plan error, a contaminated node, a frame-capacity rejection, or a refused clip event, so
+nothing here is unsafe on this host — but the margin is a fifth of what the record implied, and
+this is the number an alpha-readiness judgement should use.
 
 **`worst_headroom` is a worst case over blocks and is noisy run to run**, which single-run rows
 above do not show: repeated runs of the same binary on the same device spread across the ranges
 in the table. Read every single-value headroom cell in this document as one sample, not a
-constant. A raw-ALSA alpha run on the onboard ALC285 measured 0.805, within the same spread.
+constant. That noise is also why the middle row is retained: it is the same code path measured
+before and after the insert landed, so the three rows isolate the cost of each change rather than
+mixing them.
 
-**One finding this slice was not looking for.** The composed alpha contains no effect. R4-6
-shipped `Gloam`; R4-9 made the *synth* reachable by adding `TrackInstrument::Filament`, and the
-R4-6 exit row was then written as though both devices had become reachable. `build_track_graph`
-wires instrument → track gain → sum → master and constructs nothing else, so the fixture's stored
-`gloam` device — carrying a deliberately non-default depth that `e2e_alpha.rs` asserts survives a
-save — reaches no render at all. `the_alphas_effect_device_is_stored_but_not_in_the_signal_path`
-moves that parameter and proves the audio does not change, with
-`a_parameter_that_is_in_the_signal_path_does_change_the_render` as its control. The test is
-written to fail the day a track effect slot lands. **Until then the alpha's headroom figure is
-also an under-measurement of the intended product**, which is one instrument and one effect per
-track, not one instrument.
+**The alpha contained no effect until 2026-08-28, and R4-9's spec required one.** R4-6 shipped
+`Gloam`; R4-9 §"Devices per track" specifies *"one `Filament` instrument and one `Gloam` insert"*
+and §Traceability asserts *"Flow A renders through `Filament → Gloam`"*. `build_track_graph` wired
+instrument → track gain → sum → master and constructed no effect at all, so the fixture's stored
+`gloam` device reached no render, live or offline. Two smaller defects hid inside that one:
+`alpha_fixture.rs` declared `GLOAM_DEPTH: usize = 0`, but index 0 is `damp_hz`, so the fixture
+wrote `0.44` under a key whose range is 20..=20000 — an out-of-range value no constructor ever
+saw — and `e2e_alpha.rs`'s assertion compared it against the wrong descriptor's default and
+passed. `spectre-app`'s `parameter_route_nodes` also computed target indices as `index * 2`,
+which addressed the wrong parameter the moment a track's stride stopped being two.
 
-Linux **build** qualification ran on 2026-08-09 in a Linux aarch64 container with `libasound2-dev`, and its "the workspace compiles" wording was **too broad — corrected 2026-08-28**. The workspace did not compile on Linux on that date and had not since the rebuild foundation: `spectre-app` declared `eframe` with `default-features = false` and named neither `x11` nor `wayland`, so winit matched no platform and emitted `compile_error!`. macOS was unaffected because `macos_platform` keys off `target_os` rather than a feature. GitHub Actions ran the full gate on `ubuntu-latest` and failed on exactly this error on 2026-08-06 and again on 2026-08-16; the failures went unread, and the R4 slices landed on a branch CI does not watch, since `ci.yml` triggers only on `main`. What the 2026-08-09 run actually established is narrower and still true: `spectre-audio` compiles and links against ALSA and its non-hardware tests pass. `spectre-app` now names both platform backends and the whole workspace compiles on Linux. That is a build and portability result, **not** a device qualification. The same run confirmed the drill fails closed on a machine with no audio device, panicking with "no output device to qualify against" rather than reporting a false pass — so the Linux row cannot be satisfied by a container or a VM without real audio.
-
-The macOS run is the first time a live driver has ever been opened in this project. It confirms the callback bridge executes the compiled plan under a real driver, that RT-001 holds there, and that the render consumes about 1% of its time budget on this fixture.
+All of it is closed. `Track` carries an optional `TrackInsert`, `build_track_graph` wires
+instrument → insert → gain where a track declares one, the parameter lane routes the insert's
+depth so `r4-qa-protocol.md` row 3 has a live control to drag, and the target-index layout is
+defined once on `TrackList` beside the ordering it indexes.
+`the_target_index_helpers_agree_with_the_emitted_ordering` fails against the old `index * 2`
+formula, and `a_list_without_inserts_keeps_the_node_identities_it_had_before_the_slot_existed`
+holds the compatibility line: a track with no insert allocates nothing extra, so a project written
+before the slot existed serializes byte-identically (CORE-003) and rebuilds the same node IDs.
 
 ## Single-platform exit and the debt it creates
 

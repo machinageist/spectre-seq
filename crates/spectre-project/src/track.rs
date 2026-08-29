@@ -7,7 +7,7 @@
 use crate::clip::{ClipError, MidiClip, TrackClips};
 use serde::{Deserialize, Serialize};
 use spectre_core::ObjectId;
-use spectre_dsp::{GAIN_PARAMETERS, PULSE_PARAMETERS};
+use spectre_dsp::{GAIN_PARAMETERS, GLOAM_DEPTH, GLOAM_PARAMETERS, PULSE_PARAMETERS};
 
 // Maximum tracks a v1 project may sum into the master bus
 // Rationale row in docs/01-requirements/requirements-ledger.md (PROD-003, decision 16). A bound
@@ -27,6 +27,42 @@ pub enum TrackInstrument {
     // is what NEXT.md slice 6 recorded as open. R4's exit row asks for one original synth in the
     // product, not one that exists beside it
     Filament,
+}
+
+// The one insert kind a v1 track may host, mirroring TrackInstrument's shape. R4-6 shipped
+// Gloam and R4-9's spec requires one per track; before this slot existed the effect was
+// constructed nowhere, so a stored gloam parameter reached no render
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TrackEffect {
+    Gloam,
+}
+
+// A track's insert: the device and its headline parameter, stored the way instrument and
+// instrument_level are. Gloam's depth is the stored one because it is the control that decides
+// whether the insert is audible at all -- its descriptor default is 0.0, fully dry -- and it is
+// the parameter r4-qa-protocol.md row 3 drags. Damp and track take their descriptor defaults
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct TrackInsert {
+    effect: TrackEffect,
+    depth: f32,
+}
+
+impl TrackInsert {
+    // Create an insert with its depth clamped through the effect's own descriptor
+    pub fn new(effect: TrackEffect, depth: f32) -> Self {
+        Self {
+            effect,
+            depth: GLOAM_PARAMETERS[GLOAM_DEPTH].clamp(depth),
+        }
+    }
+
+    pub fn effect(&self) -> TrackEffect {
+        self.effect
+    }
+
+    pub fn depth(&self) -> f32 {
+        self.depth
+    }
 }
 
 // App-thread track failure; every variant leaves the model unmutated
@@ -72,6 +108,11 @@ pub struct Track {
     // table so R4-7 persists one thing: the track model already travels into the document whole
     #[serde(default)]
     clips: TrackClips,
+    // The insert this track's signal passes through between instrument and track gain. Absent
+    // keeps the R4-4 path byte-for-byte and node-for-node as it was, so a project written before
+    // the slot existed serializes identically (CORE-003) and rebuilds the same node IDs
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    insert: Option<TrackInsert>,
 }
 
 impl Track {
@@ -92,6 +133,7 @@ impl Track {
             muted: false,
             soloed: false,
             clips: TrackClips::new(),
+            insert: None,
         })
     }
 
@@ -149,6 +191,17 @@ impl Track {
     // Clamp through the instrument's own descriptor
     pub fn set_instrument_level(&mut self, level: f32) {
         self.instrument_level = PULSE_PARAMETERS[0].clamp(level);
+    }
+
+    pub fn insert(&self) -> Option<TrackInsert> {
+        self.insert
+    }
+
+    // Clamp through the effect's own descriptor
+    pub fn set_insert_depth(&mut self, depth: f32) {
+        if let Some(insert) = self.insert.as_mut() {
+            insert.depth = GLOAM_PARAMETERS[GLOAM_DEPTH].clamp(depth);
+        }
     }
 
     pub fn set_muted(&mut self, muted: bool) {
@@ -299,6 +352,65 @@ impl TrackList {
             self.structure_revision += 1;
         }
         Ok(())
+    }
+
+    // Replace one track's insert; changes the graph's shape, so the revision advances for the
+    // same reason set_instrument does -- adding or removing the node is a rebuild, not a
+    // parameter edit. Changing only the depth of an existing insert is NOT a shape change
+    pub fn set_insert(
+        &mut self,
+        id: ObjectId,
+        insert: Option<TrackInsert>,
+    ) -> Result<(), TrackError> {
+        let track = self.get_mut(id).ok_or(TrackError::UnknownTrack(id))?;
+        let shape_changed = track.insert.map(|slot| slot.effect) != insert.map(|slot| slot.effect);
+        track.insert = insert;
+        if shape_changed {
+            self.structure_revision += 1;
+        }
+        Ok(())
+    }
+
+    // Where one track's parameters sit inside the ordering build_track_graph's
+    // TrackPathNodes::parameter_targets emits: per track, instrument level, then the insert depth
+    // WHERE THE TRACK HAS ONE, then track gain; master last.
+    //
+    // Defined here, on the list, because the layout is a fact about which tracks declare inserts
+    // and every caller already holds the list. It used to be `index * 2` in spectre-app, which
+    // silently addressed the wrong parameter the moment a stride stopped being two
+    pub fn instrument_target_index(&self, track_index: usize) -> usize {
+        self.targets_before(track_index)
+    }
+
+    // None where the track declares no insert
+    pub fn insert_target_index(&self, track_index: usize) -> Option<usize> {
+        self.tracks
+            .get(track_index)?
+            .insert()
+            .map(|_| self.targets_before(track_index) + 1)
+    }
+
+    pub fn gain_target_index(&self, track_index: usize) -> usize {
+        let insert = usize::from(
+            self.tracks
+                .get(track_index)
+                .is_some_and(|track| track.insert().is_some()),
+        );
+        self.targets_before(track_index) + 1 + insert
+    }
+
+    pub fn master_target_index(&self) -> usize {
+        self.targets_before(self.tracks.len())
+    }
+
+    // How many targets precede the given track, counting each earlier track's own insert
+    fn targets_before(&self, track_index: usize) -> usize {
+        let upto = track_index.min(self.tracks.len());
+        let inserts = self.tracks[..upto]
+            .iter()
+            .filter(|track| track.insert().is_some())
+            .count();
+        track_index * 2 + inserts
     }
 
     pub fn any_soloed(&self) -> bool {

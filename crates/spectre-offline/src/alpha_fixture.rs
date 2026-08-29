@@ -7,10 +7,10 @@
 //   a muted track — and nothing more.
 
 use spectre_core::{BeatTicks, IdGen, TempoMap, Transport};
-use spectre_dsp::{FILAMENT_PARAMETERS, GLOAM_PARAMETERS};
+use spectre_dsp::{FILAMENT_PARAMETERS, GLOAM_DEPTH, GLOAM_PARAMETERS};
 use spectre_project::{
     ClipNote, ClipPlacement, DeviceDoc, MidiClip, ParameterDoc, ProjectDoc, ProjectEnvelope, Track,
-    TrackInstrument, TrackList, ViewDoc, SCHEMA_VERSION,
+    TrackEffect, TrackInsert, TrackInstrument, TrackList, ViewDoc, SCHEMA_VERSION,
 };
 
 // The seed this fixture's identities come from. A fixed value, so regenerating the file after a
@@ -26,9 +26,12 @@ pub const ALPHA_TRACK_NAMES: [&str; 3] = ["Lead", "Pad", "Ref"];
 pub const ALPHA_FILAMENT_LEAN: f32 = 0.72;
 pub const ALPHA_GLOAM_DEPTH: f32 = 0.44;
 
-// Descriptor positions, named so a reordering of either array cannot silently swap two controls
+// Descriptor positions, named so a reordering of either array cannot silently swap two controls.
+// Gloam's depth is index 1; this file declared it as 0 until 2026-08-28, which wrote 0.44 under
+// the `damp_hz` key -- a value outside that descriptor's 20..=20000 range. Nothing caught it
+// because nothing constructed the device: see the track insert slot this fixture now declares
 const FILAMENT_LEAN: usize = 0;
-const GLOAM_DEPTH: usize = 0;
+const GLOAM_DEPTH_INDEX: usize = GLOAM_DEPTH;
 
 // Build the R4 alpha fixture project
 pub fn alpha_project() -> ProjectEnvelope {
@@ -95,6 +98,19 @@ pub fn alpha_project() -> ProjectEnvelope {
         tracks.add_clip(clip).expect("one clip per track fits");
     }
 
+    // R4-9 §"Devices per track": one Filament instrument and one Gloam insert. Applied after the
+    // tracks exist so the insert's own node identities are allocated by the graph builder, not
+    // here -- the fixture declares the slot, the router owns the nodes
+    let track_ids: Vec<_> = tracks.tracks().iter().map(|track| track.id()).collect();
+    for id in track_ids {
+        tracks
+            .set_insert(
+                id,
+                Some(TrackInsert::new(TrackEffect::Gloam, ALPHA_GLOAM_DEPTH)),
+            )
+            .expect("the track was just created");
+    }
+
     let filament_device = ids.next_id();
     let filament_parameter = ids.next_id();
     let gloam_device = ids.next_id();
@@ -126,7 +142,7 @@ pub fn alpha_project() -> ProjectEnvelope {
                     key: "gloam".into(),
                     parameters: vec![ParameterDoc {
                         id: gloam_parameter,
-                        key: GLOAM_PARAMETERS[GLOAM_DEPTH].key.as_str().into(),
+                        key: GLOAM_PARAMETERS[GLOAM_DEPTH_INDEX].key.as_str().into(),
                         value: ALPHA_GLOAM_DEPTH,
                         unknown: serde_json::Map::new(),
                     }],

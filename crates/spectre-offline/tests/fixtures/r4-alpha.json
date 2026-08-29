@@ -40,6 +40,10 @@
             "lengths": [
               160
             ]
+          },
+          "insert": {
+            "effect": "Gloam",
+            "depth": 0.44
           }
         },
         {
@@ -62,6 +66,10 @@
             "lengths": [
               160
             ]
+          },
+          "insert": {
+            "effect": "Gloam",
+            "depth": 0.44
           }
         },
         {
@@ -84,6 +92,10 @@
             "lengths": [
               160
             ]
+          },
+          "insert": {
+            "effect": "Gloam",
+            "depth": 0.44
           }
         }
       ],
@@ -158,7 +170,7 @@
         "parameters": [
           {
             "id": 8663878094645562793,
-            "key": "damp_hz",
+            "key": "depth",
             "value": 0.44
           }
         ]

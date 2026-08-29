@@ -4,10 +4,11 @@
 // Notes: Allocates freely; never callback-reachable. Node identities are allocated in a fixed
 //   order so a rebuild from the same list and seed produces the same graph.
 
-use crate::track::{TrackInstrument, TrackList, MAX_TRACKS};
+use crate::track::{TrackEffect, TrackInsert, TrackInstrument, TrackList, MAX_TRACKS};
 use spectre_core::{IdGen, ObjectId};
 use spectre_dsp::{
-    AudioProcessor, Filament, Gain, PulseInstrument, SumBus, Waveform, FILAMENT_PARAMETERS,
+    AudioProcessor, Filament, Gain, Gloam, PulseInstrument, SumBus, Waveform, FILAMENT_PARAMETERS,
+    GLOAM_DAMP_HZ, GLOAM_PARAMETERS, GLOAM_TRACK_MS,
 };
 
 // Descriptor positions in FILAMENT_PARAMETERS. Named rather than inlined, so a reordering of the
@@ -31,10 +32,20 @@ pub struct InstrumentNode {
     pub level_parameter: ObjectId,
 }
 
-// Node identities for one built track graph; index i corresponds to TrackList::tracks()[i]
+// One compiled insert node and the instance ID of its depth parameter
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InsertNode {
+    pub node: NodeId,
+    pub depth_parameter: ObjectId,
+}
+
+// Node identities for one built track graph; index i corresponds to TrackList::tracks()[i].
+// `inserts[i]` is None for a track with no insert, which is every track written before the slot
+// existed -- that track's graph is byte-identical to the R4-4 shape
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrackPathNodes {
     pub instruments: Vec<InstrumentNode>,
+    pub inserts: Vec<Option<InsertNode>>,
     pub track_gains: Vec<GainNode>,
     pub sum: NodeId,
     pub master: GainNode,
@@ -72,9 +83,20 @@ impl TrackPathNodes {
     // (device ObjectId, parameter ObjectId) pairs, in track order then master. Returned as plain
     // IDs rather than a spectre-audio type so spectre-project never depends on the audio crate
     pub fn parameter_targets(&self) -> Vec<(ObjectId, ObjectId)> {
-        let mut targets = Vec::with_capacity(self.instruments.len() * 2 + 1);
-        for (instrument, gain) in self.instruments.iter().zip(&self.track_gains) {
+        let mut targets = Vec::with_capacity(self.instruments.len() * 3 + 1);
+        for ((instrument, insert), gain) in self
+            .instruments
+            .iter()
+            .zip(&self.inserts)
+            .zip(&self.track_gains)
+        {
             targets.push((instrument.node.object_id(), instrument.level_parameter));
+            // Emitted between instrument and gain, and only where a track has one, so this stays
+            // in lockstep with spectre-app's parameter_route_nodes. A track without an insert
+            // emits exactly the pair it emitted before the slot existed
+            if let Some(insert) = insert {
+                targets.push((insert.node.object_id(), insert.depth_parameter));
+            }
             targets.push((gain.node.object_id(), gain.gain_parameter));
         }
         targets.push((self.master.node.object_id(), self.master.gain_parameter));
@@ -85,9 +107,11 @@ impl TrackPathNodes {
 // Build the editable graph for a track list. Allocates; app thread only.
 //
 // Node identities are allocated from `ids` in a fixed order — for each track in list order:
-// instrument node, instrument parameter, gain node, gain parameter — then the sum bus, then the
-// master gain and its parameter. That order is the contract: it is what makes a rebuild from the
-// same list with the same seed produce the same node IDs
+// instrument node, instrument parameter, then the insert node and its depth parameter WHERE THE
+// TRACK DECLARES ONE, then gain node, gain parameter — then the sum bus, then the master gain and
+// its parameter. That order is the contract: it is what makes a rebuild from the same list with
+// the same seed produce the same node IDs. A track with no insert allocates nothing extra, so it
+// reproduces the identities the pre-insert order produced
 pub fn build_track_graph(
     tracks: &TrackList,
     ids: &mut IdGen,
@@ -101,11 +125,17 @@ pub fn build_track_graph(
 
     let mut graph = EditableGraph::new();
     let mut instruments = Vec::with_capacity(tracks.len());
+    let mut inserts = Vec::with_capacity(tracks.len());
     let mut track_gains = Vec::with_capacity(tracks.len());
 
     for track in tracks.tracks() {
         let instrument_node = NodeId::new(ids.next_id());
         let level_parameter = ids.next_id();
+        // Allocated between instrument and gain, and ONLY when the track declares an insert, so
+        // a track without one produces exactly the identities the R4-4 order produced
+        let insert_slot = track
+            .insert()
+            .map(|slot| (slot, NodeId::new(ids.next_id()), ids.next_id()));
         let gain_node = NodeId::new(ids.next_id());
         let gain_parameter = ids.next_id();
 
@@ -123,9 +153,29 @@ pub fn build_track_graph(
         graph
             .add_node(gain_node, gain.io())
             .map_err(RoutingError::Graph)?;
+        // instrument -> [insert] -> gain. The insert is a stereo in/out device, so it drops into
+        // the existing single connection rather than changing the path's shape
+        let gain_source = match insert_slot {
+            None => instrument_node,
+            Some((slot, insert_node, _)) => {
+                let effect = effect_for(slot)?;
+                graph
+                    .add_node(insert_node, effect.io())
+                    .map_err(RoutingError::Graph)?;
+                graph
+                    .connect(Connection {
+                        from: instrument_node,
+                        from_bus: 0,
+                        to: insert_node,
+                        to_bus: 0,
+                    })
+                    .map_err(RoutingError::Graph)?;
+                insert_node
+            }
+        };
         graph
             .connect(Connection {
-                from: instrument_node,
+                from: gain_source,
                 from_bus: 0,
                 to: gain_node,
                 to_bus: 0,
@@ -136,6 +186,10 @@ pub fn build_track_graph(
             node: instrument_node,
             level_parameter,
         });
+        inserts.push(insert_slot.map(|(_, node, depth_parameter)| InsertNode {
+            node,
+            depth_parameter,
+        }));
         track_gains.push(GainNode {
             node: gain_node,
             gain_parameter,
@@ -179,6 +233,7 @@ pub fn build_track_graph(
         graph,
         TrackPathNodes {
             instruments,
+            inserts,
             track_gains,
             sum: sum_node,
             master: GainNode {
@@ -204,6 +259,15 @@ pub fn track_device_factory<'a>(
                     .map_err(|_| "instrument construction failed");
             }
         }
+        for (index, insert) in nodes.inserts.iter().enumerate() {
+            let Some(insert) = insert else { continue };
+            if insert.node == node {
+                let slot = tracks.tracks()[index]
+                    .insert()
+                    .expect("a node in inserts means the track declares one");
+                return effect_for(slot).map_err(|_| "effect construction failed");
+            }
+        }
         for (index, gain) in nodes.track_gains.iter().enumerate() {
             if gain.node == node {
                 let id = tracks.tracks()[index].id();
@@ -218,6 +282,21 @@ pub fn track_device_factory<'a>(
             return Ok(Box::new(Gain::new(tracks.master_level())?));
         }
         Err("node is not part of this track graph")
+    }
+}
+
+// Build the insert a track slot declares. Damp and track take their descriptor defaults; the
+// stored depth is the one value the track model carries, for the reason TrackInsert states
+fn effect_for(slot: TrackInsert) -> Result<Box<dyn AudioProcessor>, RoutingError> {
+    match slot.effect() {
+        TrackEffect::Gloam => Ok(Box::new(
+            Gloam::new(
+                GLOAM_PARAMETERS[GLOAM_DAMP_HZ].default(),
+                slot.depth(),
+                GLOAM_PARAMETERS[GLOAM_TRACK_MS].default(),
+            )
+            .map_err(RoutingError::Device)?,
+        )),
     }
 }
 

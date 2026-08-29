@@ -24,9 +24,15 @@ const GLOAM_IO: DeviceIo = DeviceIo {
 };
 
 // Descriptor slots; one definition each, shared by the constructor, the setter, and the reader
-const DAMP_HZ: usize = 0;
-const DEPTH: usize = 1;
-const TRACK_MS: usize = 2;
+// Public so a caller addressing one of Gloam's parameters names the index rather than restating
+// it. spectre-project's track insert stores DEPTH and needs to say which one that is
+pub const GLOAM_DAMP_HZ: usize = 0;
+pub const GLOAM_DEPTH: usize = 1;
+pub const GLOAM_TRACK_MS: usize = 2;
+
+const DAMP_HZ: usize = GLOAM_DAMP_HZ;
+const DEPTH: usize = GLOAM_DEPTH;
+const TRACK_MS: usize = GLOAM_TRACK_MS;
 
 pub const GLOAM_PARAMETERS: [DspParameter; 3] = [
     parameter("damp_hz", "Damp", ParamUnit::Hertz, 20.0, 20_000.0, 632.5),

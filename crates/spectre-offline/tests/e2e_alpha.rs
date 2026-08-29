@@ -13,7 +13,7 @@ use spectre_audio::clip::{ClipPlayer, ClipSchedule, CLIP_EVENT_RESERVE, CLIP_SEQ
 use spectre_audio::control::control_channel;
 use spectre_audio::RenderBlock;
 use spectre_core::{IdGen, SampleRate, TempoMap};
-use spectre_dsp::{FILAMENT_PARAMETERS, GLOAM_PARAMETERS};
+use spectre_dsp::{FILAMENT_PARAMETERS, GLOAM_DEPTH, GLOAM_PARAMETERS};
 use spectre_graph::{CompiledPlan, NodeId, PlanNoteInput};
 use spectre_offline::alpha_fixture::{
     ALPHA_FILAMENT_LEAN, ALPHA_GLOAM_DEPTH, ALPHA_PROJECT_NAME, ALPHA_TRACK_NAMES,
@@ -21,7 +21,7 @@ use spectre_offline::alpha_fixture::{
 use spectre_offline::hash::{hash_block, hash_planar_quantum, SampleHasher};
 use spectre_project::{
     build_track_graph, from_bytes, load_project, save_project_atomic, track_device_factory,
-    validate_envelope, ProjectEnvelope, TrackInstrument, TrackList,
+    validate_envelope, ProjectEnvelope, TrackEffect, TrackInstrument, TrackList,
 };
 use std::collections::HashSet;
 
@@ -246,8 +246,24 @@ fn fixture_content_is_exactly_what_the_protocol_documents() {
         .iter()
         .find(|d| d.key == "gloam")
         .unwrap();
+    // GLOAM_DEPTH, not 0: index 0 is damp_hz, whose range is 20..=20000. The fixture wrote 0.44
+    // under that key until 2026-08-28 and this assertion still passed, because it compared
+    // against the wrong descriptor's default
+    assert_eq!(
+        gloam.parameters[0].key,
+        GLOAM_PARAMETERS[GLOAM_DEPTH].key.as_str()
+    );
     assert_eq!(gloam.parameters[0].value, ALPHA_GLOAM_DEPTH);
-    assert_ne!(ALPHA_GLOAM_DEPTH, GLOAM_PARAMETERS[0].default());
+    assert_ne!(ALPHA_GLOAM_DEPTH, GLOAM_PARAMETERS[GLOAM_DEPTH].default());
+
+    // R4-9 §"Devices per track": one Filament instrument and one Gloam insert, on every track
+    for track in envelope.project.tracks.tracks() {
+        let insert = track
+            .insert()
+            .expect("every alpha track declares a Gloam insert");
+        assert_eq!(insert.effect(), TrackEffect::Gloam);
+        assert_eq!(insert.depth(), ALPHA_GLOAM_DEPTH);
+    }
 }
 
 // U-3

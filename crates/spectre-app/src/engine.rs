@@ -16,7 +16,8 @@ use spectre_audio::{AudioBackend, AudioStream, BackendError, RenderBlock, Stream
 use spectre_core::{IdGen, TransportCommand};
 use spectre_dsp::{
     AudioProcessor, DeviceParameterSnapshot, Gain, NoteEvent, NoteEventKind, PulseInstrument,
-    Saturator, Waveform, GAIN_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS,
+    Saturator, Waveform, GAIN_PARAMETERS, GLOAM_DEPTH, GLOAM_PARAMETERS, PULSE_PARAMETERS,
+    SATURATOR_PARAMETERS,
 };
 use spectre_graph::{Connection, EditableGraph, NodeId};
 use std::sync::Arc;
@@ -838,9 +839,20 @@ fn bake_track_schedule(
 fn parameter_route_nodes(
     nodes: &spectre_project::TrackPathNodes,
 ) -> Vec<(NodeId, spectre_dsp::DeviceParameterKey)> {
-    let mut routes = Vec::with_capacity(nodes.instruments.len() * 2 + 1);
-    for (instrument, gain) in nodes.instruments.iter().zip(&nodes.track_gains) {
+    let mut routes = Vec::with_capacity(nodes.instruments.len() * 3 + 1);
+    for ((instrument, insert), gain) in nodes
+        .instruments
+        .iter()
+        .zip(&nodes.inserts)
+        .zip(&nodes.track_gains)
+    {
         routes.push((instrument.node, PULSE_PARAMETERS[0].key));
+        // Without this an insert's depth reaches no live node, which is exactly what
+        // r4-qa-protocol.md row 3 drags. Emitted in parameter_targets' order, which this function
+        // must match pair for pair
+        if let Some(insert) = insert {
+            routes.push((insert.node, GLOAM_PARAMETERS[GLOAM_DEPTH].key));
+        }
         routes.push((gain.node, GAIN_PARAMETERS[0].key));
     }
     routes.push((nodes.master.node, GAIN_PARAMETERS[0].key));
@@ -869,21 +881,6 @@ pub fn open_track_engine(
     open_with_parts(backend, &device.id, device.name, parts)
 }
 
-// Where one track's parameters sit in the ordered target set build_track_engine_parts registers.
-// The order is the contract TrackPathNodes::parameter_targets declares: per track, instrument
-// level then track gain, then the master gain last
-pub const fn track_instrument_target_index(track_index: usize) -> usize {
-    track_index * 2
-}
-
-pub const fn track_gain_target_index(track_index: usize) -> usize {
-    track_index * 2 + 1
-}
-
-pub const fn master_gain_target_index(track_count: usize) -> usize {
-    track_count * 2
-}
-
 // Publish every effective gain a mixer edit invalidated.
 //
 // The publication set is part of the contract, not an implementation detail: effective_gain
@@ -903,7 +900,7 @@ pub fn publish_track_gains<S: AudioStream + ?Sized>(
         let Some(gain) = tracks.effective_gain(*id) else {
             continue;
         };
-        let Some(target) = engine.targets().get(track_gain_target_index(index)) else {
+        let Some(target) = engine.targets().get(tracks.gain_target_index(index)) else {
             continue;
         };
         engine.send_parameter(*target, gain)?;
@@ -916,7 +913,7 @@ pub fn publish_master_gain<S: AudioStream + ?Sized>(
     engine: &LiveEngine<S>,
     tracks: &spectre_project::TrackList,
 ) -> Result<(), ControlError> {
-    let Some(target) = engine.targets().get(master_gain_target_index(tracks.len())) else {
+    let Some(target) = engine.targets().get(tracks.master_target_index()) else {
         return Ok(());
     };
     engine.send_parameter(*target, tracks.master_level())

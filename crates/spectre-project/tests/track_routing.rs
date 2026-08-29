@@ -6,7 +6,10 @@
 use spectre_core::{IdGen, ObjectId};
 use spectre_dsp::{NoteEvent, NoteEventKind};
 use spectre_graph::PlanNoteInput;
-use spectre_project::{build_track_graph, track_device_factory, Track, TrackInstrument, TrackList};
+use spectre_project::{
+    build_track_graph, track_device_factory, Track, TrackEffect, TrackInsert, TrackInstrument,
+    TrackList,
+};
 
 const SEED: u64 = 0x0052_4f55_5449_4e47;
 const SAMPLE_RATE: f64 = 48_000.0;
@@ -150,5 +153,116 @@ fn an_empty_track_list_compiles_to_a_plan_that_renders_exact_silence() {
             // construction, not an error state
             assert_eq!(sample.to_bits(), 0.0_f32.to_bits());
         }
+    }
+}
+
+// Build a list where the tracks named by `with_insert` carry a Gloam insert
+fn list_with_inserts(count: usize, with_insert: &[usize]) -> (TrackList, Vec<ObjectId>) {
+    let (mut list, ids) = list_with(&vec![0.5_f32; count]);
+    for index in with_insert {
+        let id = ids[*index];
+        list.set_insert(id, Some(TrackInsert::new(TrackEffect::Gloam, 0.6)))
+            .unwrap();
+    }
+    (list, ids)
+}
+
+// 12 — the insert is a node, and it is between the instrument and the gain
+#[test]
+fn a_track_insert_adds_one_node_between_the_instrument_and_the_gain() {
+    let (plain, _) = list_with_inserts(2, &[]);
+    let (inserted, _) = list_with_inserts(2, &[0, 1]);
+
+    let mut gen = IdGen::new(SEED);
+    let (_, plain_nodes) = build_track_graph(&plain, &mut gen).unwrap();
+    let mut gen = IdGen::new(SEED);
+    let (graph, insert_nodes) = build_track_graph(&inserted, &mut gen).unwrap();
+
+    assert!(plain_nodes.inserts.iter().all(Option::is_none));
+    assert!(insert_nodes.inserts.iter().all(|slot| slot.is_some()));
+
+    let mut factory = track_device_factory(&inserted, &insert_nodes);
+    let plan = graph
+        .compile(insert_nodes.master.node, FRAMES, &mut factory)
+        .unwrap();
+    // Two tracks of instrument -> insert -> gain, plus sum and master
+    assert_eq!(plan.step_count(), 8);
+
+    let mut gen = IdGen::new(SEED);
+    let (plain_graph, plain_nodes) = build_track_graph(&plain, &mut gen).unwrap();
+    let mut plain_factory = track_device_factory(&plain, &plain_nodes);
+    let plain_plan = plain_graph
+        .compile(plain_nodes.master.node, FRAMES, &mut plain_factory)
+        .unwrap();
+    assert_eq!(plain_plan.step_count(), 6);
+}
+
+// 13 — a track that declares no insert allocates nothing extra, so a project written before the
+// slot existed rebuilds to exactly the identities it rebuilt to before
+#[test]
+fn a_list_without_inserts_keeps_the_node_identities_it_had_before_the_slot_existed() {
+    let (list, _) = list_with_inserts(3, &[]);
+    let mut gen = IdGen::new(SEED);
+    let (_, nodes) = build_track_graph(&list, &mut gen).unwrap();
+
+    // The pre-insert allocation order: per track, instrument node, instrument parameter, gain
+    // node, gain parameter; then sum; then master node and its parameter
+    let mut expected = IdGen::new(SEED);
+    for index in 0..3 {
+        assert_eq!(
+            nodes.instruments[index].node.object_id(),
+            expected.next_id()
+        );
+        assert_eq!(nodes.instruments[index].level_parameter, expected.next_id());
+        assert_eq!(
+            nodes.track_gains[index].node.object_id(),
+            expected.next_id()
+        );
+        assert_eq!(nodes.track_gains[index].gain_parameter, expected.next_id());
+    }
+    assert_eq!(nodes.sum.object_id(), expected.next_id());
+    assert_eq!(nodes.master.node.object_id(), expected.next_id());
+    assert_eq!(nodes.master.gain_parameter, expected.next_id());
+}
+
+// 14 — the index helpers and the emitted ordering must not drift apart. This is the assertion
+// that would have caught `index * 2` addressing an insert's depth as though it were a track gain
+#[test]
+fn the_target_index_helpers_agree_with_the_emitted_ordering() {
+    for shape in [vec![], vec![0], vec![1], vec![0, 2], vec![0, 1, 2]] {
+        let (list, _) = list_with_inserts(3, &shape);
+        let mut gen = IdGen::new(SEED);
+        let (_, nodes) = build_track_graph(&list, &mut gen).unwrap();
+        let targets = nodes.parameter_targets();
+
+        for index in 0..list.len() {
+            let instrument = &nodes.instruments[index];
+            assert_eq!(
+                targets[list.instrument_target_index(index)],
+                (instrument.node.object_id(), instrument.level_parameter),
+                "instrument index disagrees for shape {shape:?} at track {index}"
+            );
+            let gain = &nodes.track_gains[index];
+            assert_eq!(
+                targets[list.gain_target_index(index)],
+                (gain.node.object_id(), gain.gain_parameter),
+                "gain index disagrees for shape {shape:?} at track {index}"
+            );
+            match (list.insert_target_index(index), nodes.inserts[index]) {
+                (None, None) => {}
+                (Some(at), Some(insert)) => assert_eq!(
+                    targets[at],
+                    (insert.node.object_id(), insert.depth_parameter),
+                    "insert index disagrees for shape {shape:?} at track {index}"
+                ),
+                other => panic!("insert presence disagrees for shape {shape:?}: {other:?}"),
+            }
+        }
+        assert_eq!(
+            targets[list.master_target_index()],
+            (nodes.master.node.object_id(), nodes.master.gain_parameter),
+            "master index disagrees for shape {shape:?}"
+        );
+        assert_eq!(targets.len(), list.master_target_index() + 1);
     }
 }

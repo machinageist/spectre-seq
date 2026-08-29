@@ -24,6 +24,13 @@ Block Q-1 is the automated half only. R4's end-to-end exit row stays open.
 
 ## Q-1 — 2026-08-28, Linux, automated half only
 
+> **Superseded in scope the same day.** Q-1 was recorded against an alpha whose tracks were
+> `Filament` alone, because `build_track_graph` constructed no effect. The insert slot landed
+> after this block was written, so the fixture Q-1 describes is not the fixture a later run will
+> load: its plan was 8 nodes, not 11, and its Flow A hash was taken on a render with no `Gloam`
+> in it. The environment fields E1–E8 and E10 still describe this host; Q-A does not describe the
+> current fixture.
+
 **Performed by an agent session, not an operator.** Rows 1–13 of §Manual checks require a human
 at the keyboard — hearing pitch and onset, dragging a slider, unplugging an interface, running a
 screen reader. They are recorded `NOT RUN` below rather than inferred from tests, which is the
