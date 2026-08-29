@@ -610,6 +610,59 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
 // `Option<&LiveEngine>` defaults to `LiveEngine<dyn AudioStream>`, and since `stream: Box<S>`
 // the two have different layouts, so the reference does not coerce. The app still passes the
 // erased type; only the tests need the concrete one.
+// Which lane target, if any, a flat-device-list edit addresses on the selected track.
+//
+// The app's Build/Shape list is flat and its ObjectIds are the model's own; the track engine's
+// lane targets are ObjectIds the graph builder allocated. The two spaces are disjoint, so an edit
+// published under a model ID addressed a target that was never registered and every Shape edit
+// reported "stored but did not reach live audio". This binds the two by ROLE on the selected
+// track instead: the flat list's instrument row drives that track's instrument, its gloam row
+// that track's insert, its gain row that track's gain.
+//
+// This is deliberately NOT R4-4 §8 Q2's device-browser re-parenting, which stays R6 work. Build
+// and Shape still present the same flat list and no surface moves; only the destination of an
+// edit is resolved. A device with no counterpart on the track -- `saturator`, which no track
+// hosts -- returns None and its edit stays model-only, which is the honest answer rather than a
+// silent misroute onto some other node.
+fn selected_track_target_index(
+    tracks: &spectre_project::TrackList,
+    selected: Option<spectre_core::ObjectId>,
+    device_key: &str,
+    parameter_key: &str,
+) -> Option<usize> {
+    use spectre_project::{TrackEffect, TrackInstrument};
+
+    let index = tracks.index_of(selected?)?;
+    let track = tracks.tracks().get(index)?;
+
+    let instrument_key = match track.instrument() {
+        TrackInstrument::Pulse => "pulse",
+        TrackInstrument::Filament => "filament",
+    };
+    if device_key == instrument_key {
+        // Each instrument's own first descriptor is its level; naming the index rather than the
+        // key literal keeps this correct if a descriptor is renamed
+        let level = match track.instrument() {
+            TrackInstrument::Pulse => PULSE_PARAMETERS[0].key,
+            TrackInstrument::Filament => spectre_dsp::FILAMENT_PARAMETERS[0].key,
+        };
+        return (parameter_key == level.as_str()).then(|| tracks.instrument_target_index(index));
+    }
+    if device_key == "gloam"
+        && matches!(
+            track.insert().map(|slot| slot.effect()),
+            Some(TrackEffect::Gloam)
+        )
+        && parameter_key == GLOAM_PARAMETERS[GLOAM_DEPTH].key.as_str()
+    {
+        return tracks.insert_target_index(index);
+    }
+    if device_key == "gain" && parameter_key == GAIN_PARAMETERS[0].key.as_str() {
+        return Some(tracks.gain_target_index(index));
+    }
+    None
+}
+
 pub fn apply_parameter_edit<S: AudioStream + ?Sized>(
     model: &mut AppModel,
     engine: Option<&LiveEngine<S>>,
@@ -631,10 +684,20 @@ pub fn apply_parameter_edit<S: AudioStream + ?Sized>(
     let Some(engine) = engine else {
         return;
     };
-    let target = ParameterTarget {
+    // Resolve the live destination by role on the selected track when one is registered there,
+    // falling back to the model's own identity for the fixture engine, whose targets ARE the
+    // model's IDs. Without the first branch nothing a user drags reaches the render thread
+    let target = selected_track_target_index(
+        model.track_list(),
+        model.selected_track_id(),
+        device_key,
+        parameter_key,
+    )
+    .and_then(|index| engine.targets().get(index).copied())
+    .unwrap_or(ParameterTarget {
         device: edit.device_instance_id,
         parameter: edit.parameter_instance_id,
-    };
+    });
     if let Err(error) = engine.send_parameter(target, edit.value) {
         // The model keeps the edit: it is the value of record, and offline rendering will use it.
         // Only the live copy failed to publish, and the message says exactly that

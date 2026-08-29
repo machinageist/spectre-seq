@@ -789,20 +789,59 @@ fn play_then_stop_in_one_block_stays_silent_with_clips_attached() {
 //
 // Test 16 builds its engine with build_engine_parts, whose lane targets are derived from the
 // model's own device snapshot, so a Shape edit addresses a target that exists by construction.
-// main.rs calls open_track_engine, whose targets come from TrackPathNodes::parameter_targets --
-// ObjectIds allocated by the graph builder from APP_GRAPH_SEED. The model's device IDs and the
-// graph's node IDs are disjoint ID spaces, so an edit routed through the app's real engine
-// addresses a target that was never registered.
-//
-// If this test ever fails, the two ID spaces have been reconciled and R4-2's exit row can finally
-// be claimed of the product rather than of a test-only configuration
+// main.rs calls open_track_engine, whose targets are ObjectIds the graph builder allocated from
+// APP_GRAPH_SEED. Those two ID spaces are disjoint, and until 2026-08-28 every Shape edit in the
+// product was refused as an unknown target -- R4-2's exit row was closed against a configuration
+// the app does not use. apply_parameter_edit now resolves the destination by ROLE on the selected
+// track, and this asserts the criterion where it actually matters.
 #[test]
-fn a_shape_edit_does_not_reach_live_audio_through_the_engine_the_app_opens() {
+fn a_shape_edit_changes_live_audio_through_the_engine_the_app_opens() {
     let mut model = AppModel::prototype();
     let parts = build_track_engine_parts(
         model.track_list(),
         model.tempo_map(),
-        0x0053_5045_4354_5245,
+        spectre_app::engine::APP_GRAPH_SEED,
+        model.selected_track_id(),
+        config(),
+    )
+    .unwrap();
+    let mut engine = engine_over_null(parts);
+
+    engine.start_audition().unwrap();
+    engine.stream_mut().pump().unwrap();
+    let before = hash_interleaved(engine.stream_mut().last_block(), CHANNELS, FRAMES);
+
+    let mut status = String::new();
+    apply_parameter_edit(&mut model, Some(&engine), "gain", "gain", 0.1, &mut status);
+    assert!(
+        status.is_empty(),
+        "a routed edit must report no failure: {status}"
+    );
+
+    engine.stream_mut().pump().unwrap();
+    let after = hash_interleaved(engine.stream_mut().last_block(), CHANNELS, FRAMES);
+    assert_ne!(
+        before, after,
+        "the edit did not change what the render thread produced"
+    );
+    assert_eq!(
+        engine.health().parameters_pending,
+        0,
+        "R4-2: an edit the lane could not apply is still pending"
+    );
+}
+
+// A device the track does not host must NOT be silently misrouted onto some other node. The flat
+// list carries a saturator and no track hosts one, so its edit stays model-only and says so --
+// which is the honest answer, and the control that proves the binding above is by role rather
+// than by position in a list
+#[test]
+fn an_edit_for_a_device_no_track_hosts_stays_model_only() {
+    let mut model = AppModel::prototype();
+    let parts = build_track_engine_parts(
+        model.track_list(),
+        model.tempo_map(),
+        spectre_app::engine::APP_GRAPH_SEED,
         model.selected_track_id(),
         config(),
     )
@@ -810,11 +849,32 @@ fn a_shape_edit_does_not_reach_live_audio_through_the_engine_the_app_opens() {
     let engine = engine_over_null(parts);
 
     let mut status = String::new();
-    apply_parameter_edit(&mut model, Some(&engine), "gain", "gain", 0.1, &mut status);
-
+    apply_parameter_edit(
+        &mut model,
+        Some(&engine),
+        "saturator",
+        "drive",
+        3.0,
+        &mut status,
+    );
     assert!(
         status.contains("did not reach live audio"),
-        "expected the publish to be refused as an unknown target, got: {status:?}"
+        "a device absent from the track path must not claim to have been published: {status:?}"
+    );
+    // The model still keeps the edit; it is the value of record for offline rendering
+    assert!(
+        model
+            .devices()
+            .iter()
+            .find(|device| device.key == "saturator")
+            .and_then(|device| {
+                device
+                    .parameters
+                    .iter()
+                    .find(|p| p.descriptor.key.as_str() == "drive")
+            })
+            .is_some_and(|p| p.value == 3.0),
+        "the model must keep an edit the lane could not carry"
     );
 }
 

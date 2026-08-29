@@ -310,6 +310,17 @@ amending them; `feature-tree.md`'s nine features were confirmed in the same brea
 
 ### D-R5 — R4-4's Q2 deferral invalidated an exit row that was already closed
 
+> **The product defect is fixed, 2026-08-28; the process question stands.** `apply_parameter_edit`
+> now resolves an edit's destination by role on the selected track, so a Shape edit reaches live
+> audio through the engine `main.rs` opens. That needed no R6 work and no decision here — Build
+> and Shape still show the same flat list, and R4-4 §8 Q2's visible seam is untouched.
+>
+> What this entry still asks is unchanged and is not answered by the fix: whether an exit row
+> closed against a configuration the product later stopped using should be re-verified at each
+> milestone exit. Four rows in one run were closed on paths the product does not take — R4-6's
+> effect, R4-2's seam, R4-5's five surfaces, and R4-1's driver drill. Every one had a passing test.
+
+
 **Raised:** 2026-08-28, by an implementation session, not by a spec.
 **Blocks:** nothing new. It corrects a claim rather than opening a choice.
 
