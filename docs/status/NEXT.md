@@ -23,10 +23,17 @@ Notes: Only active-milestone slices belong here
 R5 opened 2026-08-29. R4's queue is retained below as its exit record; its one open row needs an
 operator, not code.
 
-1. **Crash-qualify the atomic save (CORE-004 full).** Kill a real process at each save stage and
-   assert the destination is entirely the old project or entirely the new one, and that no
-   temporary survives in a state a loader would accept. R4-7's fault injection unwinds; a crash
-   does not, and the difference is the whole requirement.
+1. ~~**Crash-qualify the atomic save (CORE-004 full).**~~ **Landed 2026-08-29** as
+   `crates/spectre-project/tests/crash_qualification.rs` and the `crash_saver` example it kills.
+   24 trials SIGKILL a real process at a randomized phase of a measured ~23 ms save cycle; every
+   destination that exists decodes and equals the reference project, and every surviving file that
+   is not the target carries the temp suffix rather than the target's own name.
+   **The drill's own negative control is the part worth keeping.** The first version saved a
+   three-track kilobyte project and killed at sub-millisecond offsets; all three tests passed —
+   and `the_drill_detects_a_save_that_is_not_atomic`, which runs the same kill against a
+   truncate-then-write saver, **failed**, reporting that 14 destinations had all decoded cleanly.
+   The write was finishing before the kill could land, so the drill would have passed against any
+   implementation. The project is now sized from a measurement rather than a guess.
 2. **Journal an autosave to a sidecar** per decision 14, without touching the project file.
 3. **Recover from an unclean exit**, and state what was and was not recovered rather than
    presenting a recovered project as if it were the saved one.
