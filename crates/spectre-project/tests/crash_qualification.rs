@@ -12,6 +12,7 @@
 //   probe sound evidence rather than a coin flip.
 
 use spectre_project::{from_bytes, load_project, ProjectEnvelope};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -29,9 +30,10 @@ fn scratch(name: &str) -> PathBuf {
 // Locate the example binary cargo built beside this test.
 //
 // CARGO_BIN_EXE_* is set for [[bin]] targets only, and crash_saver is deliberately an example:
-// making it a bin would put a test fixture into a library crate's shipped surface. The test
-// executable lives at target/<profile>/deps/<name>-<hash>, so the example is two levels up in
-// examples/
+// making it a bin would put a test fixture into a library crate's shipped surface. The full gate's
+// all-target Clippy step builds examples before tests. A standalone run must first use
+// `cargo build --locked -p spectre-project --example crash_saver`. The test executable lives at
+// target/<profile>/deps/<name>-<hash>, so the example is two levels up in examples/
 fn saver_exe() -> PathBuf {
     let mut path = std::env::current_exe().expect("the test executable has a path");
     path.pop(); // deps/
@@ -44,15 +46,57 @@ fn saver_exe() -> PathBuf {
     });
     assert!(
         path.exists(),
-        "the crash_saver example is not built at {}; `cargo test` builds examples, so this means \
-         the target layout changed",
+        "the crash_saver example is not built at {}; build it with `cargo build --locked -p \
+         spectre-project --example crash_saver` before this standalone test",
         path.display()
     );
     path
 }
 
-fn saver(path: &Path, seed: u64) -> Child {
-    spawn_saver(path, seed, false)
+// Start a saver and wait until it has completed at least one save, then return it.
+//
+// A fixed sleep before the kill is load-dependent and this drill proved it: under
+// `cargo test --workspace`, with many test binaries competing, the saver is starved and a 60 ms
+// window that samples the cycle on an idle machine samples nothing at all. Waiting for this
+// child's completed-save signal makes the kill window relative to its own progress rather than a
+// destination that may belong to an earlier trial
+fn saver_past_first_save(path: &Path, seed: u64, torn: bool) -> Child {
+    let mut child = spawn_saver(path, seed, torn);
+    let stdout = child
+        .stdout
+        .take()
+        .expect("the saver handshake pipe must be present");
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let mut line = String::new();
+        let result = BufReader::new(stdout)
+            .read_line(&mut line)
+            .map(|bytes| (bytes, line));
+        let _ = sender.send(result);
+    });
+
+    let failure = match receiver.recv_timeout(Duration::from_secs(30)) {
+        Ok(Ok((bytes, line))) if bytes > 0 && line.trim_end_matches(['\r', '\n']) == "saved" => {
+            None
+        }
+        Ok(Ok((0, _))) => Some("the saver closed stdout before completing a save".to_owned()),
+        Ok(Ok((_, line))) => Some(format!(
+            "the saver emitted an unexpected handshake: {line:?}"
+        )),
+        Ok(Err(error)) => Some(format!("the saver handshake could not be read: {error}")),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            Some("the saver completed no save within 30 s; it is starved or broken".to_owned())
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Some("the saver handshake reader stopped without a result".to_owned())
+        }
+    };
+    if let Some(failure) = failure {
+        let _ = child.kill();
+        let _ = child.wait();
+        panic!("{failure}");
+    }
+    child
 }
 
 fn spawn_saver(path: &Path, seed: u64, torn: bool) -> Child {
@@ -72,11 +116,9 @@ fn spawn_saver(path: &Path, seed: u64, torn: bool) -> Child {
 // content here -- two descriptions of one fixture is how they drift apart
 fn expected(directory: &Path) -> ProjectEnvelope {
     let settled = directory.join("settled.spectre");
-    let mut child = saver(&settled, SEED);
-    // One completed save, then stop: no kill, so this is the reference artifact
-    // One save of this project measures ~23 ms and the first completes at ~56 ms, so 400 ms
-    // leaves several completed saves and no doubt about whether one finished
-    std::thread::sleep(Duration::from_millis(400));
+    // One completed save, then stop: the signal is emitted after the whole reference artifact
+    // exists, so no load-dependent grace period is needed
+    let mut child = saver_past_first_save(&settled, SEED, false);
     let _ = child.kill();
     let _ = child.wait();
     load_project(&settled).expect("an unkilled saver must leave a loadable project")
@@ -90,13 +132,11 @@ fn a_killed_save_never_leaves_a_partial_project() {
 
     let mut killed_with_target_present = 0_usize;
     for trial in 0..TRIALS {
-        let mut child = saver(&target, SEED);
-        // Land the kill at a random phase of the measured ~23 ms save cycle, after the first
-        // save is underway. The offsets are coprime-ish multipliers rather than a PRNG so a
-        // failing trial is reproducible by its index
-        let delay =
-            Duration::from_millis(60) + Duration::from_micros((trial as u64 * 7_919) % 23_000);
-        std::thread::sleep(delay);
+        // Wait for a completed save, THEN kill at a random phase of the next cycle. The offsets
+        // are coprime-ish multipliers rather than a PRNG so a failing trial is reproducible by
+        // its index
+        let mut child = saver_past_first_save(&target, SEED, false);
+        std::thread::sleep(Duration::from_micros((trial as u64 * 7_919) % 23_000));
         child.kill().expect("the saver must be killable");
         child.wait().expect("the saver must be reapable");
 
@@ -137,10 +177,8 @@ fn a_crash_leaves_no_temporary_that_could_pass_for_the_project() {
     let target = directory.join("take.spectre");
 
     for trial in 0..TRIALS {
-        let mut child = saver(&target, SEED);
-        std::thread::sleep(
-            Duration::from_millis(60) + Duration::from_micros((trial as u64 * 6_143) % 23_000),
-        );
+        let mut child = saver_past_first_save(&target, SEED, false);
+        std::thread::sleep(Duration::from_micros((trial as u64 * 6_143) % 23_000));
         child.kill().expect("the saver must be killable");
         child.wait().expect("the saver must be reapable");
     }
@@ -186,10 +224,8 @@ fn the_drill_detects_a_save_that_is_not_atomic() {
     let mut torn_observed = 0_usize;
     let mut present = 0_usize;
     for trial in 0..TRIALS {
-        let mut child = spawn_saver(&target, SEED, true);
-        std::thread::sleep(
-            Duration::from_millis(60) + Duration::from_micros((trial as u64 * 5_407) % 23_000),
-        );
+        let mut child = saver_past_first_save(&target, SEED, true);
+        std::thread::sleep(Duration::from_micros((trial as u64 * 5_407) % 23_000));
         child.kill().expect("the saver must be killable");
         child.wait().expect("the saver must be reapable");
 

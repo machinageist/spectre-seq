@@ -14,6 +14,7 @@ pub mod clip;
 pub mod command;
 pub mod fs;
 pub mod journal;
+pub mod migration;
 pub mod recovery;
 pub mod routing;
 pub mod track;
@@ -27,6 +28,7 @@ pub use fs::{
     MAX_PROJECT_FILE_BYTES, SAVE_TEMP_NAME_ATTEMPTS,
 };
 pub use journal::{discard_autosave, journal_path, read_autosave, write_autosave, AutosaveError};
+pub use migration::{migrate_to_current, MigrationError, MigrationReceipt};
 pub use routing::{build_track_graph, track_device_factory, RoutingError, TrackPathNodes};
 pub use track::{
     Track, TrackEffect, TrackError, TrackInsert, TrackInstrument, TrackList, MAX_TRACKS,

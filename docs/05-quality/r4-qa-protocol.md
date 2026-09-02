@@ -10,14 +10,14 @@ Notes: Flow B. The automated half is `cargo test -p spectre-offline --test e2e_a
 # R4 QA protocol
 
 - **Status:** accepted
-- **Last verified:** 2026-08-28
+- **Last verified:** 2026-08-31
 - **Scope:** the manual half of R4's end-to-end exit evidence
 - **Decision authority:** Jeff
 - **Upstream sources:** `../06-plans/current-milestone.md` §"Exit evidence"; `../01-requirements/decision-gates.md` rows 1, 17, 23; `../00-product/vision.md`
 - **Downstream dependents:** `r4-qa-records.md`, R4 exit review
 - **Supersedes:** none
 - **Superseded by:** none
-- **Open decisions:** whether R4's exit narrows while Linux device qualification is undischarged — decision 23's shape, and Jeff's call
+- **Open decisions:** none; Linux device qualification is discharged and D-R6 defines how R5 proceeds while this operator evidence remains open
 - **Known gaps:** no operator run has been performed on any platform; `r4-qa-records.md` carries one `INCONCLUSIVE` automated-half record (block Q-1)
 
 ## Standing constraints at the time of writing
@@ -42,7 +42,8 @@ must say so rather than record a failure against the operator.
   auditions, so row 1 records which of the two it heard rather than assuming the audition voice.
 - **The alpha's tracks are `Filament → Gloam` as of 2026-08-28**, and were `Filament` alone before that: `build_track_graph` constructed no effect, so row 3's "drag a `Gloam` parameter" had no live control to drag and row 9's bounce carried no effect. A run recorded before that date measured a different product.
 - **Row 3 can pass as of 2026-08-28, and could not before it.** `./spectre` opens the track engine, whose lane targets are graph-node ObjectIds, while a Shape slider addresses the flat `AppModel::devices` list's own IDs. Every Shape edit was refused as an unknown target until `apply_parameter_edit` began resolving the destination by role on the selected track. Drag an **instrument level, a Gloam depth, or a gain** — those are the three roles a track hosts. `Saturator` is on no track, so its edit is still model-only and reports so; that is correct behaviour, not a row-3 failure.
-- **`Gain` does not smooth**, though the accepted device contract says it does. Open as D-R3.
+- **`Gain` smooths over one block as of 2026-08-28.** D-R3 was resolved by implementing the
+  accepted device contract without introducing a second render path or a new numeric bound.
 - ~~**No autosave, journal, or recovery exists.**~~ **Changed 2026-08-29:** `spectre-project` now has `journal.rs` and `recovery.rs`, though **no shell surface calls either yet**, so an operator running this protocol today still sees no sidecar. Row 8 is amended for the day one appears. Row 8 checks replacement, not crash durability;
   crash injection is R5's.
 
@@ -75,8 +76,8 @@ from direct observation — never from `docs/status/STATUS.md`, a sibling spec, 
    undecided, because device math routes through the platform's libm.
 3. Write the fixture project to a scratch path so rows 7–9 have a file to work with:
    `cargo run --locked -p spectre-offline -- --write-alpha-fixture --out /tmp/r4-alpha.json`
-4. Launch the app **with system volume low**: `./spectre`. The audition voice is a held saw with
-   no amplitude envelope and it clicks at note edges.
+4. Launch the app **with system volume low**: `./spectre`. The checked-in alpha project plays its
+   clips; a project with no clips uses the held audition voice.
 
    **On a host with no ALSA default, `./spectre` will report the engine unavailable.** Check with
    `grep -rl 'pcm.!default' /etc/alsa/conf.d/`; an empty result means ALSA falls back to
@@ -108,7 +109,7 @@ from direct observation — never from `docs/status/STATUS.md`, a sibling spec, 
 
 | # | Row | What the operator does and records |
 |---|---|---|
-| 1 | **Audibility** | Press Play. Record **what was heard** — pitch, character, whether it matched what was expected — not that "audio worked". Record whether the onset felt immediate or delayed as an operator judgement; **no latency threshold is defined**, so record the judgement and no number. Note explicitly that this is the audition voice, not the fixture's clips |
+| 1 | **Audibility** | Press Play. Record **what was heard** — pitch, character, whether it matched what was expected — not that "audio worked". Record whether the onset felt immediate or delayed as an operator judgement; **no latency threshold is defined**, so record the judgement and no number. State whether the loaded project played clips or, if it had none, used the audition voice |
 | 2 | **Silence at rest and after Stop** | No sound before Play. After Stop, **exact** silence — not a fading tail and not a low hum |
 | 3 | **A slider drag reaches live audio** | With sound playing, drag a device parameter in Shape. The sound changes, and the transport counters read `params pending 0`. This row is the only coverage the app's binding rule has, because it lives in `main.rs` |
 | 4 | **Transport honesty** | The position readout does not show a frozen or fabricated position when the engine is not running. **Changed 2026-08-28:** it now reads bars.beats.sixteenths from the render thread's own published playhead. Confirm it reads `—` before any block has rendered — not `1.1.1` — and that it advances while rolling. A project with no clips does not advance the playhead, so a still readout there is correct, not frozen |
@@ -162,8 +163,10 @@ A `PASS` on one platform authorizes exactly one sentence, of this shape and no b
 
 It does **not** authorize, and the record's Q-D field states each of these that applies:
 
-1. **"R4 has exited."** R4's exit is a ten-row conjunction. This produces evidence for one row
-   and contributes to several others; it produces **none** for Linux device qualification.
+1. **"R4 has exited."** A complete operator PASS supplies the missing evidence for the audible
+   product-output row and the end-to-end/manual-protocol row. It does not itself perform the
+   documented exit review, so the milestone remains exit-pending until that review records both
+   rows closed. Linux device qualification is already independently discharged.
 2. **"Spectre works on Linux."** The *device seam* is qualified on Linux as of 2026-08-28; the
    *shell* is not, because no operator has worked these rows on any platform. A combined verdict
    across a filled column and an empty one is still exactly the unauthorized claim decision 23

@@ -8,7 +8,7 @@ Notes: Milestones close on demonstrable capability, not compilation alone
 # Rebuild Roadmap
 
 - **Status:** accepted
-- **Last verified:** 2026-08-09
+- **Last verified:** 2026-08-31
 - **Scope:** milestone order, outcomes, and exit gates
 - **Decision authority:** Jeff
 - **Upstream sources:** accepted vision and requirements
@@ -16,7 +16,7 @@ Notes: Milestones close on demonstrable capability, not compilation alone
 - **Supersedes:** all removed prototype roadmaps
 - **Superseded by:** none
 - **Open decisions:** milestone-gated rows in `../01-requirements/decision-gates.md`
-- **Known gaps:** R5+ detail is intentionally deferred to milestone intake
+- **Known gaps:** R6+ detail is intentionally deferred to each milestone intake; R5 is active
 
 The repository root is the sole implementation workspace.
 
@@ -36,6 +36,25 @@ The repository root is the sole implementation workspace.
 | R11 — Spectre identity | Original modular surface, flagship synth, deep MIDI, effect catalog | identity intake | identity-layer QA |
 | R12 — release qualification | Performance/soak, accessibility, recovery, packaging, documentation | release intake | published release gates |
 
-Reordering requires documented dependency reasoning. R4 is active. R0/R1 exited 2026-07-17, R2 exited 2026-08-09 on its four render gates, and R3 exited 2026-08-09 with all ten rows closed — two of them on macOS hardware only, per decision 23, with the Linux device drill carried to R4 as debt.
+## Concurrent milestone rule
+
+Jeff accepted this general rule on 2026-08-31. A successor milestone MAY open while its
+predecessor remains exit-pending only when every open predecessor row:
+
+1. is explicitly named and retained in `current-milestone.md` and `status/NEXT.md`;
+2. is blocked on external, operator, or qualification evidence rather than unfinished engineering
+   that the successor depends on;
+3. has no claim of exit, verification, or aggregate PASS while it remains open; and
+4. is re-run against the product path when later work changes anything the pending protocol covers.
+
+The successor becomes the active engineering milestone. The predecessor becomes an
+`exit-pending` evidence obligation, not a second source of implementation scope. A later milestone
+MUST NOT use this rule to bypass a code, architecture, safety, or migration dependency.
+
+Reordering requires documented dependency reasoning. Under the concurrent milestone rule, R5 is
+the active engineering milestone and R4 remains exit-pending on its operator protocol. R0/R1
+exited 2026-07-17, R2 exited 2026-08-09 on its four render gates, and R3 exited 2026-08-09 with all
+ten rows closed — two of them on macOS hardware only, per decision 23, with the Linux device drill
+carried to R4 and discharged there.
 
 Two exits carry explicit unclaimed scope. R2's exit does not claim full GRAPH-002 satisfaction: explicit priced feedback stays gated at decision row 7 before R11. R3's exit did not claim Linux support, and that carried debt is now **discharged**: the drill ran on Arch Linux hardware on 2026-08-28 across three qualification rows, one of them on the raw ALSA path with no sound server. Decision 1's co-first-class commitment is discharged for the device seam and still open for the shell, whose manual protocol has no operator pass on any platform.

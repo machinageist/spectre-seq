@@ -1,30 +1,72 @@
 <!--
 Author: Jeff
 Date: 2026-08-09
-Description: The single active Spectre milestone
-Notes: Exactly one milestone is active; the roadmap owns ordering
+Description: Active Spectre engineering milestone and retained predecessor exit debt
+Notes: The roadmap owns ordering and the concurrent-milestone rule
 -->
 
-# Current Milestone — R4 Credible Alpha
+# Current Milestones — R5 Project Safety; R4 Exit-Pending
 
 - **Status:** accepted
-- **Last verified:** 2026-08-28
-- **Scope:** track to master, MIDI clip, a small original synth/effect, minimal UI, save/reload, bounce
+- **Last verified:** 2026-08-31
+- **Scope:** active R5 project-safety engineering plus R4's retained operator-evidence obligation
 - **Decision authority:** Jeff
-- **Upstream sources:** `rebuild-roadmap.md`, product seeds, decisions 8/13/14/22, CORE-004
+- **Upstream sources:** `rebuild-roadmap.md`, product seeds, decisions 8/13/14/22, CORE-004, resolved D-R6
 - **Downstream dependents:** `../status/NEXT.md`, implementation slices
-- **Supersedes:** the R3 live-shell milestone, exited 2026-08-09
-- **Open decisions:** none new at intake; decisions 13 and 17 gate later milestones
-- **Known gaps:** all nine slices are implemented; slice 3 closed 2026-08-28 on Arch Linux hardware. **No slice has an operator protocol pass** — the protocol exists at `../05-quality/r4-qa-protocol.md` and `../05-quality/r4-qa-records.md` holds one `INCONCLUSIVE` automated-half record. **Exactly one of the ten exit rows is open**, and it needs an operator rather than hardware. **D-R4's premise is void:** it asked what R4's exit means while the Linux row cannot close, and the Linux row closed
+- **Supersedes:** R4 as the sole engineering milestone; R4 remains exit-pending rather than exited
+- **Open decisions:** none blocking R5 engineering; decision 13 is gated at R5 exit and decision 17 before beta
+- **Known gaps:** R4 has one retained activity: its operator protocol has never passed. R5's crash-save, sidecar-autosave, and explicit-recovery seams exist, but none of the autosave/recovery behavior is reachable from `./spectre`; deeper forward fields on track/clip/view types are not represented by the current codec
 
-## Inherited debt
+## Milestone state
 
-R4 carries four obligations from earlier milestones. None is optional and none should be rediscovered later:
+Jeff accepted the roadmap's concurrent-milestone rule on 2026-08-31, resolving D-R6. R5 is the
+active engineering milestone. R4 is `exit-pending`, not exited: no operator has completed
+`../05-quality/r4-qa-protocol.md`, so no document may claim an aggregate R4 PASS.
+
+The rule does not waive dependencies. R5 may proceed because R4's remaining work is operator
+evidence, while R5's safety work does not require that evidence to be implemented. Any R5 shell
+change covered by the R4 protocol keeps the affected manual rows pending and must be exercised by
+the eventual operator run.
+
+## R5 Project Safety — active queue
+
+Outcome: atomic save, journaled autosave, explicit recovery, migrations, bounded undo/redo, and
+missing-media diagnostics. Exit requires crash and recovery drills over the product path.
+
+1. ~~Crash-qualify atomic replacement against real process death.~~ Landed in `0883929`; the
+   current follow-up replaces load-dependent sleeps with a completed-save handshake and retains
+   the torn-write negative control.
+2. ~~Write autosaves to an atomic sidecar without touching the saved project.~~ Landed in
+   `f58c06b` as `spectre-project::journal`.
+3. ~~Inspect, describe, accept, or decline recovery without applying it silently.~~ Landed with
+   `64bb8c8` as `spectre-project::recovery` and its drill.
+4. ~~Preserve feasible unknown fields through the shell's open → edit → save boundary before that
+   boundary is reused by autosave.~~ Landed 2026-08-31 for envelope, project, device, and parameter
+   maps, carried by stable identity without accepting unknown devices or parameters.
+5. ~~Implement the first explicit schema migration with CORE-001 identity evidence and CORE-003
+   forward-field preservation.~~ Landed 2026-08-31: schema 1 → 2 is an explicit product adoption
+   step, preserves project identity and represented unknown fields, resumes the ID generator, and
+   refuses a schema-1 label carrying schema-2 state.
+6. Wire autosave and an explicit recovery offer into `./spectre`; use content change rather than an
+   invented timer. Recover loads the autosaved state into memory as unsaved and retains both disk
+   versions until a later successful manual Save, per Jeff's 2026-08-31 decision.
+7. Bind the existing bounded command history to product mutations and verify grouped undo/redo
+   across save, reload, and recovery.
+8. Add missing-media diagnostics once persisted media references exist; until then the slice is
+   gated rather than represented by a fake fixture.
+9. Run product-path crash/recovery drills, the full workspace gate, and the R5 exit review.
+
+## R4 Credible Alpha — exit-pending record
+
+## R4 inherited-debt record — all four discharged
+
+R4 carried four obligations from earlier milestones. All four are discharged; they remain here as
+historical evidence and must not be rediscovered as current work:
 
 1. ~~**Linux device qualification (decision 23).**~~ **Discharged 2026-08-28.** R3 exited on macOS hardware alone; the drill has now run on Arch Linux across three rows, one on the raw ALSA path with no sound server. It was not the single command the debt described — it first exposed a real `find_device` defect on ALSA. Decision 1's co-first-class commitment is discharged for the device seam and still open for the shell, which has no operator pass on any platform.
-2. ~~**Runtime parameter seam (decision 22).**~~ **Discharged 2026-08-24 by slice 2.** The RT-002 parameter lane is now consumed end to end: `AudioProcessor::set_parameter`, `CompiledPlan::set_parameter`, and a render-side route table applied once per block before `process`. `parameters_pending` stays zero in a correctly wired build and a Shape edit changes rendered output. **One thing this did not settle:** the accepted contract asserts twice that `Gain` smooths and the shipped `Gain` does not. Slice 2 refused to resolve that by assertion — adding smoothing would break the bit-exact live/offline hash equality — so it stands as D-R3 for Jeff.
-3. ~~**CORE-004 atomic save.**~~ **Discharged 2026-08-28 by slice 7.** `crates/spectre-project/src/fs.rs` implements the accepted contract's eight ordered steps; the destination is never deleted, truncated, or moved aside first, and the only non-`Unchanged` failure is the parent-directory sync after a successful replacement. Six of the seven save stages are fault-injected through a private seam; `EncodeSnapshot` is deliberately uncovered, because a validated envelope cannot fail to encode with the current encoder and the test could not fail. **Crash qualification remains R5's** and is not claimed anywhere.
-4. ~~**CORE-001 reorder evidence.**~~ **Discharged 2026-08-28 by slice 7.** `reorder_preserves_identity_across_save_and_reload` and `undone_reorder_reloads_in_the_original_order` prove identity and every field survive a reorder *through a real file*, and survive an undo after it. Migration evidence remains gated on the first schema migration, at R5.
+2. ~~**Runtime parameter seam (decision 22).**~~ **Discharged 2026-08-24 by slice 2.** The RT-002 parameter lane is consumed end to end. Slice 2 left the accepted `Gain` smoothing clause unresolved; **D-R3 was later closed by implementation on 2026-08-28**, using the existing block boundary and preserving live/offline equality.
+3. ~~**CORE-004 atomic save.**~~ **Discharged 2026-08-28 by slice 7.** `crates/spectre-project/src/fs.rs` implements the accepted ordered replacement contract. **R5 process-death crash qualification landed 2026-08-29**, with its per-child completed-save synchronization repaired 2026-08-31; this paragraph remains the inherited R4 record, not a current gap.
+4. ~~**CORE-001 reorder evidence.**~~ **Discharged 2026-08-28 by slice 7.** Persisted reorder and undo preserve identity. **The first migration evidence landed at R5 on 2026-08-31** against the checked-in schema-1 fixture and product adoption path.
 
 ## Wiring gap — closed 2026-08-24
 
@@ -72,7 +114,11 @@ Ordering at equal timestamps reuses the accepted contract key rather than restat
 
 Slice 9 landed the health telemetry. `BridgeTelemetry` publishes fractional headroom per block as `f32` bits in an atomic, tracks the worst case, and counts any block consuming its whole budget as an xrun. Worst-case headroom starts at infinity so the first block establishes the real minimum; a zero default would have looked indistinguishable from a saturated callback. `Instant::now` reads a monotonic clock through the vDSO/commpage, so measurement stays callback-safe, and the RT-001 guard covers the measured path.
 
-Slice 7's lifecycle drill is implemented and its deterministic half passes against the null backend: three start/stop/restart cycles with rendering preserved across each gap, sample-rate changes reopening without losing the device, and device loss reported through `BackendError::Closed` on every subsequent operation with recovery on a fresh stream. That covers the state machine, not a driver. No live driver has been opened, so backend qualification and the hardware drill both remain open.
+Slice 7's lifecycle drill is implemented and its deterministic half passes against the null backend:
+three start/stop/restart cycles with rendering preserved across each gap, sample-rate changes
+reopening without losing the device, and device loss reported through `BackendError::Closed` on
+every subsequent operation with recovery on a fresh stream. Hardware qualification later passed
+on both macOS and Linux; the exact rows remain in the qualification record below.
 
 ## Requirements in scope
 

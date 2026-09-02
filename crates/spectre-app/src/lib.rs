@@ -67,6 +67,9 @@ pub struct ParameterControl {
     pub instance_id: ObjectId,
     pub descriptor: DspParameter,
     pub value: f32,
+    // Forward fields travel with the stable parameter identity through open → edit → save.
+    // Private because the UI must not interpret fields this build does not own
+    unknown: serde_json::Map<String, serde_json::Value>,
 }
 
 // One device card rendered from the stabilized backend contract
@@ -77,6 +80,8 @@ pub struct DeviceControl {
     pub name: &'static str,
     pub role: &'static str,
     pub parameters: Vec<ParameterControl>,
+    // Same preservation boundary as ParameterControl; never used to invent device behaviour
+    unknown: serde_json::Map<String, serde_json::Value>,
 }
 
 impl DeviceControl {
@@ -99,8 +104,10 @@ impl DeviceControl {
                     instance_id: ids.next_id(),
                     value: descriptor.default(),
                     descriptor,
+                    unknown: serde_json::Map::new(),
                 })
                 .collect(),
+            unknown: serde_json::Map::new(),
         }
     }
 }
@@ -231,6 +238,10 @@ pub struct AppModel {
     // reset the tempo to the prototype's. A project ID that changes on every save makes
     // CORE-001's project-level identity meaningless, which is worse than one field
     project_id: ObjectId,
+    // Unknown envelope and project fields survive the product path without becoming app state.
+    // Known behavior still comes only from typed fields below
+    envelope_unknown: serde_json::Map<String, serde_json::Value>,
+    project_unknown: serde_json::Map<String, serde_json::Value>,
     tempo_map: TempoMap,
     // The project's meter. Held rather than assumed so the transport's bars-beats readout and
     // its "4 / 4" label read one source; meter editing arrives with the arrangement
@@ -303,6 +314,8 @@ impl AppModel {
         let selected_device = devices.first().map(|device| device.instance_id);
         Self {
             project_id: ids.next_id(),
+            envelope_unknown: serde_json::Map::new(),
+            project_unknown: serde_json::Map::new(),
             tempo_map: TempoMap::constant(PROTOTYPE_BPM).expect("a constant tempo is valid"),
             meter_map: MeterMap::constant(
                 TimeSignature::new(4, 4).expect("4/4 is a valid signature"),

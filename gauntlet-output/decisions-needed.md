@@ -8,7 +8,7 @@ Notes: Questions that outgrow a spec's section 8 land here; nothing here blocks 
 # Decisions Needed
 
 - **Status:** accepted
-- **Last verified:** 2026-08-14
+- **Last verified:** 2026-08-31
 - **Scope:** decisions the gauntlet cannot make for itself
 - **Decision authority:** Jeff
 - **Upstream sources:** spec §8 entries, scorecard escalations
@@ -385,10 +385,17 @@ takes.
 
 ### D-R6 — May a milestone open while its predecessor's exit rows are open?
 
+> **RESOLVED BY JEFF, 2026-08-31.** A general concurrent-milestone rule is accepted and recorded
+> in `docs/06-plans/rebuild-roadmap.md`. A successor may become the active engineering milestone
+> only when the predecessor's named open rows require external/operator evidence rather than
+> unfinished dependency work. The predecessor remains `exit-pending`; no PASS or exit claim is
+> allowed, and later changes covered by its protocol remain subject to that protocol. Under this
+> rule R5 opens while R4 retains its unrun operator QA obligation.
+
 **Raised:** 2026-08-29, by an implementation session that answered it by assertion, got it wrong,
 and is routing it properly on the second attempt.
-**Blocks:** starting R5. Nothing else; the persistence work described below already exists and
-discharges evidence CORE-004 names, whatever milestone label it eventually carries.
+**Blocks:** resolved; R5 is open under the accepted concurrent-milestone rule. The persistence work
+described below remains evidence for its named requirements.
 
 **What happened, stated plainly because the failure is the useful part.** R5 was opened on
 2026-08-29 in `current-milestone.md`, and the justification cited disposition (c) of D-R4 above.

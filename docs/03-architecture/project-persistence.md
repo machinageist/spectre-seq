@@ -7,16 +7,16 @@ Notes: R1 design authority for R4 persistence and R5 crash-recovery qualificatio
 
 # Project Persistence Contract
 
-- **Status:** accepted for R4/R5 implementation
-- **Last verified:** 2026-07-16
+- **Status:** accepted and implemented through the current R5 slices
+- **Last verified:** 2026-08-31
 - **Scope:** synchronous project-file load and atomic replacement boundaries
 - **Decision authority:** Jeff
 - **Upstream sources:** [CORE-001, CORE-003, and CORE-004](../01-requirements/requirements-ledger.md), [decision gates 3, 4, and 14](../01-requirements/decision-gates.md), [rebuild roadmap](../06-plans/rebuild-roadmap.md)
 - **Downstream dependents:** `spectre-project`, app project lifecycle, autosave/recovery, persistence tests
 - **Supersedes:** no prior active project-persistence architecture contract
 - **Superseded by:** none
-- **Open decisions:** exact OS API mapping and qualified filesystem matrix at R5 intake
-- **Known gaps:** filesystem implementation, crash injection, autosave journal, recovery, migration, and missing-media handling are not part of R1
+- **Open decisions:** a broader qualified filesystem matrix remains future evidence
+- **Known gaps:** autosave/recovery are not wired into the shell; process death is qualified but power-loss hardware is not; missing-media handling is gated until a persisted media reference exists
 
 ## Boundary and execution model
 

@@ -16,6 +16,7 @@ use spectre_project::{
     load_project, save_project_atomic, ProjectDoc, ProjectEnvelope, Track, TrackInstrument,
     TrackList, ViewDoc, SCHEMA_VERSION,
 };
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
 fn scratch(name: &str) -> PathBuf {
@@ -163,7 +164,11 @@ fn an_unclean_exit_during_a_save_still_yields_a_whole_project() {
         p.push("crash_saver");
         p
     };
-    assert!(exe.exists(), "the crash_saver example must be built");
+    assert!(
+        exe.exists(),
+        "build crash_saver with `cargo build --locked -p spectre-project --example crash_saver` \
+         before this standalone test"
+    );
 
     for trial in 0..8 {
         let mut child = std::process::Command::new(&exe)
@@ -172,10 +177,47 @@ fn an_unclean_exit_during_a_save_still_yields_a_whole_project() {
             .stdout(std::process::Stdio::piped())
             .spawn()
             .expect("the saver runs");
-        std::thread::sleep(
-            std::time::Duration::from_millis(60)
-                + std::time::Duration::from_micros((trial as u64 * 7_919) % 23_000),
-        );
+        // Wait for this child's completed save before killing, for the reason
+        // crash_qualification.rs records: a fixed pre-kill sleep is load-dependent, while the
+        // destination may still exist from an earlier trial
+        let stdout = child
+            .stdout
+            .take()
+            .expect("the saver handshake pipe must be present");
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let mut line = String::new();
+            let result = BufReader::new(stdout)
+                .read_line(&mut line)
+                .map(|bytes| (bytes, line));
+            let _ = sender.send(result);
+        });
+        let failure = match receiver.recv_timeout(std::time::Duration::from_secs(30)) {
+            Ok(Ok((bytes, line)))
+                if bytes > 0 && line.trim_end_matches(['\r', '\n']) == "saved" =>
+            {
+                None
+            }
+            Ok(Ok((0, _))) => Some("the saver closed stdout before completing a save".to_owned()),
+            Ok(Ok((_, line))) => Some(format!(
+                "the saver emitted an unexpected handshake: {line:?}"
+            )),
+            Ok(Err(error)) => Some(format!("the saver handshake could not be read: {error}")),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                Some("the saver completed no save within 30 s; it is starved or broken".to_owned())
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                Some("the saver handshake reader stopped without a result".to_owned())
+            }
+        };
+        if let Some(failure) = failure {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("trial {trial}: {failure}");
+        }
+        std::thread::sleep(std::time::Duration::from_micros(
+            (trial as u64 * 7_919) % 23_000,
+        ));
         child.kill().expect("killable");
         child.wait().expect("reapable");
 

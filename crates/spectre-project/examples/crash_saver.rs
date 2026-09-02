@@ -10,6 +10,7 @@ use spectre_project::{
     save_project_atomic, ClipNote, ClipPlacement, MidiClip, ProjectDoc, ProjectEnvelope, Track,
     TrackInstrument, TrackList, ViewDoc, SCHEMA_VERSION,
 };
+use std::io::Write;
 use std::path::PathBuf;
 
 // Sized so one save takes long enough for a randomized kill to land inside its write, and short
@@ -78,6 +79,20 @@ fn envelope(seed: u64) -> ProjectEnvelope {
     }
 }
 
+// Emit exactly one bounded handshake after the first whole destination has been written. The
+// parent times the following save from this child's progress, not from a stale destination left by
+// an earlier trial. Explicit flushing makes the pipe notification independent of stdout buffering
+fn signal_first_save_complete() {
+    let stdout = std::io::stdout();
+    let mut stdout = stdout.lock();
+    stdout
+        .write_all(b"saved\n")
+        .expect("the parent must keep the handshake pipe open");
+    stdout
+        .flush()
+        .expect("the completed-save handshake must flush");
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let path = PathBuf::from(args.next().expect("usage: crash_saver <path> <seed>"));
@@ -91,27 +106,29 @@ fn main() {
     // drill can prove it detects non-atomicity; nothing in Spectre saves this way
     let torn = args.next().is_some_and(|mode| mode == "torn");
 
-    // Signal readiness so the parent's kill window starts at the first save rather than during
-    // process startup, where nothing is being written and a kill proves nothing
-    println!("ready");
-
     let encoded = spectre_project::to_bytes(&snapshot).expect("a validated envelope encodes");
+    let mut first_save_complete = false;
     loop {
-        if torn {
+        let saved = if torn {
             // Truncate-then-write: the destination is observable half-written for as long as the
             // write takes, which is exactly what atomic replacement exists to prevent
-            use std::io::Write;
-            if let Ok(mut file) = std::fs::File::create(&path) {
+            (|| -> std::io::Result<()> {
+                let mut file = std::fs::File::create(&path)?;
                 for chunk in encoded.chunks(64) {
-                    if file.write_all(chunk).is_err() {
-                        break;
-                    }
+                    file.write_all(chunk)?;
                 }
-            }
+                Ok(())
+            })()
+            .is_ok()
         } else {
             // Errors are ignored on purpose: this process exists to be killed, and a save that
             // returns at all has already satisfied its own contract
-            let _ = save_project_atomic(&path, &snapshot);
+            save_project_atomic(&path, &snapshot).is_ok()
+        };
+
+        if saved && !first_save_complete {
+            signal_first_save_complete();
+            first_save_complete = true;
         }
     }
 }

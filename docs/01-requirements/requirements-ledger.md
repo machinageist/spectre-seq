@@ -8,7 +8,7 @@ Notes: Seeded with foundation requirements for R0-R1; grows only with provenance
 # Requirements Ledger
 
 - **Status:** accepted
-- **Last verified:** 2026-08-24
+- **Last verified:** 2026-08-31
 - **Scope:** accepted-for-work normative requirements; each row carries provenance and required evidence
 - **Decision authority:** Jeff
 - **Upstream sources:** `docs/00-product/vision.md`; `docs/01-requirements/decision-gates.md`; `docs/02-reference-research/*observations*.md`
@@ -43,7 +43,7 @@ Statuses: `proposed`, `accepted`, `implemented`, `verified`.
 
 | ID | Requirement | Provenance | Acceptance evidence | Status |
 |---|---|---|---|---|
-| CORE-001 | Every user-visible object (track, clip, device, parameter, marker…) MUST have a stable 64-bit ID unique within its project, preserved across save/load, undo, reorder, and migration. | mandate §8.1; gate 4 | ID-stability tests across round-trip and mutation sequences. R1 disposition (2026-07-17): save/load and undo identity are evidenced; reorder evidence is gated on the first persisted object collection (R4 intake) and migration evidence on the first real schema migration (R5). Not verifiable before then. | implemented |
+| CORE-001 | Every user-visible object (track, clip, device, parameter, marker…) MUST have a stable 64-bit ID unique within its project, preserved across save/load, undo, reorder, and migration. | mandate §8.1; gate 4 | ID-stability tests across round-trip and mutation sequences. Save/load, undo, and persisted reorder are evidenced. **Migration evidence landed 2026-08-31:** the checked-in schema-1 fixture upgrades explicitly to schema 2 without changing project identity, resumes the generator, and runs through the product adoption path. | implemented |
 | CORE-002 | Parameters MUST carry stable identity, typed range, default, display mapping, and unit; normalized value semantics are defined once in spectre-core. | mandate §8.2 device model; OBS-BW53-AUTO-* (override model needs identity) | parameter descriptor unit tests + API review | implemented |
 | CORE-003 | The project envelope MUST carry an explicit schema version from the first byte written; unknown newer fields MUST be preserved on rewrite where feasible. | accepted project-safety contract | round-trip fixtures incl. newer-schema preservation test | verified |
 | CORE-004 | Saves MUST be atomic (write-new + rename) with no partially written project ever observable. | mandate §12.6; vision project-safety pillar | crash-injection save tests at R5 — **landed 2026-08-29** as `crates/spectre-project/tests/crash_qualification.rs`: a real process is SIGKILLed at a randomized phase of a measured ~23 ms save cycle, and the destination is asserted to decode and equal the reference project every time. The drill carries its own negative control — `the_drill_detects_a_save_that_is_not_atomic` runs the same kill against a truncate-then-write saver and requires at least one torn destination — because a kill window that misses the write would pass against any implementation, which is exactly what the first sizing did. API design review at R1 — completed 2026-07-17 via the accepted [project-persistence contract](../03-architecture/project-persistence.md) (boundaries, save algorithm, failure vocabulary, target-state guarantees, test seam) | accepted |

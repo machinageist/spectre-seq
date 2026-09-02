@@ -2,10 +2,9 @@
 // Date: 2026-08-28
 // Description: The app-thread bridge between AppModel and the persisted project document
 // Notes: project_envelope reads the model and mutates nothing; adopt replaces the model only
-//   after every mapping has succeeded. Both run on the app thread and neither is reachable from
-//   a callback. This module writes AppModel's private fields directly, which is legal because it
-//   is a descendant of the crate root that declares them — so persistence adds no field and no
-//   accessor to AppModel.
+//   after migration and all mappings have succeeded. Both run on the app thread and neither is
+//   callback-reachable. AppModel owns typed project state plus opaque forward-field maps; this
+//   module is their sole persistence mapping boundary.
 
 use crate::{AppModel, DeviceControl, Lens, ParameterControl};
 use spectre_core::{IdGen, TransportCommand};
@@ -14,13 +13,16 @@ use spectre_dsp::{
     SATURATOR_PARAMETERS,
 };
 use spectre_project::{
-    DeviceDoc, LensDoc, ParameterDoc, ProjectDoc, ProjectEnvelope, ViewDoc, SCHEMA_VERSION,
+    migrate_to_current, DeviceDoc, LensDoc, MigrationError, ParameterDoc, ProjectDoc,
+    ProjectEnvelope, ViewDoc, SCHEMA_VERSION,
 };
 
 // Why a loaded project could not become the live one. Every variant is a refusal, never a
 // silent repair: a file must not be able to smuggle a value the UI cannot produce
 #[derive(Debug, Clone, PartialEq)]
 pub enum AdoptError {
+    Migration(MigrationError),
+    InvalidMeterMap,
     UnknownDevice {
         key: String,
     },
@@ -38,6 +40,8 @@ pub enum AdoptError {
 impl std::fmt::Display for AdoptError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Migration(source) => write!(f, "project migration failed: {source}"),
+            Self::InvalidMeterMap => f.write_str("project meter map is invalid"),
             Self::UnknownDevice { key } => {
                 write!(f, "this build has no device named {key}")
             }
@@ -140,10 +144,10 @@ pub fn project_envelope(model: &AppModel, name: &str) -> ProjectEnvelope {
                             id: parameter.instance_id,
                             key: parameter.descriptor.key.as_str().to_string(),
                             value: parameter.value,
-                            unknown: serde_json::Map::new(),
+                            unknown: parameter.unknown.clone(),
                         })
                         .collect(),
-                    unknown: serde_json::Map::new(),
+                    unknown: device.unknown.clone(),
                 })
                 .collect(),
             view: ViewDoc {
@@ -151,21 +155,25 @@ pub fn project_envelope(model: &AppModel, name: &str) -> ProjectEnvelope {
                 selected_track: model.selected_track_id(),
                 selected_device: model.selected_device_id(),
             },
-            // AppModel has no field for either unknown map, so a snapshot built from it carries
-            // empty ones. An unknown field read from a file survives load_project and survives a
-            // crate-level rewrite, but does NOT survive open -> edit -> save through the shell.
-            // A real hole in CORE-003's preservation at the product level; this slice does not
-            // close it and no test or product string may say otherwise
-            unknown: serde_json::Map::new(),
+            unknown: model.project_unknown.clone(),
         },
-        unknown: serde_json::Map::new(),
+        unknown: model.envelope_unknown.clone(),
     }
 }
 
 // Replace the live model only after a load has fully succeeded. Every mapping is resolved into
 // owned values first; the model is not touched until all of them are known good
 pub fn adopt(model: &mut AppModel, envelope: ProjectEnvelope) -> Result<(), AdoptError> {
+    let envelope = migrate_to_current(envelope)
+        .map_err(AdoptError::Migration)?
+        .envelope;
+    let envelope_unknown = envelope.unknown;
     let document = envelope.project;
+    // Schema 1 stores meter state in the preserved project map. Migration validates it first;
+    // resolve it before any model field changes so adoption remains all-or-nothing.
+    let meter_map = document
+        .meter_map()
+        .map_err(|_| AdoptError::InvalidMeterMap)?;
 
     let mut devices = Vec::with_capacity(document.devices.len());
     for device in &document.devices {
@@ -204,6 +212,7 @@ pub fn adopt(model: &mut AppModel, envelope: ProjectEnvelope) -> Result<(), Adop
                 instance_id: parameter.id,
                 descriptor: *descriptor,
                 value: parameter.value,
+                unknown: parameter.unknown.clone(),
             });
         }
 
@@ -213,6 +222,7 @@ pub fn adopt(model: &mut AppModel, envelope: ProjectEnvelope) -> Result<(), Adop
             name,
             role,
             parameters,
+            unknown: device.unknown.clone(),
         });
     }
 
@@ -231,7 +241,12 @@ pub fn adopt(model: &mut AppModel, envelope: ProjectEnvelope) -> Result<(), Adop
     // selection the file never carried
     model.selected_clip = None;
     model.project_id = document.id;
+    model.envelope_unknown = envelope_unknown;
+    model.project_unknown = document.unknown;
     model.tempo_map = document.tempo_map;
+    if let Some(meter_map) = meter_map {
+        model.meter_map = meter_map;
+    }
     // A schema-1 document carries no generator position. That case is bounded: schema 1 has no
     // collections, so the only ID in it is the project's own, which ObjectId guarantees nonzero
     model.ids = IdGen::new(if document.id_gen_state == 0 {

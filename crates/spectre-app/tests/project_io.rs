@@ -12,6 +12,10 @@ use spectre_core::ObjectId;
 use spectre_dsp::{GAIN_PARAMETERS, SATURATOR_PARAMETERS};
 use spectre_project::{from_bytes, to_bytes, DeviceDoc, ParameterDoc, SCHEMA_VERSION};
 
+fn unknown(key: &str, value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    [(key.to_string(), value)].into_iter().collect()
+}
+
 // Round-trip a model through the encoder into a fresh one, the way the shell's save/open does
 fn round_trip(model: &AppModel) -> Result<AppModel, AdoptError> {
     let bytes = to_bytes(&project_envelope(model, "Round Trip")).unwrap();
@@ -243,6 +247,86 @@ fn the_project_keeps_its_own_identity_across_a_round_trip() {
 
     // And a second round trip does not mint a third identity
     assert_eq!(round_trip(&target).unwrap().project_id(), id);
+}
+
+// CORE-003 must hold through the product path, not only through a codec-level rewrite.
+#[test]
+fn open_edit_save_preserves_feasible_unknown_fields_at_every_supported_level() {
+    let source = AppModel::prototype();
+    let mut envelope = project_envelope(&source, "Forward fields");
+    envelope.unknown = unknown("future_envelope", serde_json::json!({"writer": 3}));
+    envelope.project.unknown = unknown("future_project", serde_json::json!([1, 2, 3]));
+
+    let device = envelope
+        .project
+        .devices
+        .iter_mut()
+        .find(|device| device.key == "gain")
+        .expect("the canonical gain device exists");
+    device.unknown = unknown("future_device", serde_json::json!({"mode": "linked"}));
+    let parameter = device
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.key == "gain")
+        .expect("the canonical gain parameter exists");
+    parameter.unknown = unknown("future_parameter", serde_json::json!({"curve": [0, 1]}));
+
+    let expected_envelope = envelope.unknown.clone();
+    let expected_project = envelope.project.unknown.clone();
+    let expected_device = device.unknown.clone();
+    let expected_parameter = parameter.unknown.clone();
+
+    let mut opened = AppModel::prototype();
+    adopt(&mut opened, envelope).expect("known content with unknown fields adopts");
+    opened.add_track("An ordinary edit").unwrap();
+    opened.set_device_parameter("gain", "gain", 0.25).unwrap();
+
+    let saved = project_envelope(&opened, "Forward fields");
+    assert_eq!(saved.unknown, expected_envelope);
+    assert_eq!(saved.project.unknown, expected_project);
+    let saved_device = saved
+        .project
+        .devices
+        .iter()
+        .find(|device| device.key == "gain")
+        .unwrap();
+    assert_eq!(saved_device.unknown, expected_device);
+    assert_eq!(
+        saved_device
+            .parameters
+            .iter()
+            .find(|parameter| parameter.key == "gain")
+            .unwrap()
+            .unknown,
+        expected_parameter
+    );
+}
+
+#[test]
+fn opening_schema_one_performs_the_explicit_migration_and_preserves_its_identity() {
+    let source = from_bytes(include_bytes!(
+        "../../spectre-project/tests/fixtures/r1-canonical.json"
+    ))
+    .expect("the canonical schema-1 fixture decodes");
+    let project_id = source.project.id;
+    let meter_map = source
+        .project
+        .meter_map()
+        .expect("the fixture meter map is valid")
+        .expect("the fixture carries meter state");
+    let envelope_unknown = source.unknown.clone();
+    let project_unknown = source.project.unknown.clone();
+
+    let mut opened = AppModel::prototype();
+    adopt(&mut opened, source).expect("the product migrates schema 1 while adopting it");
+    let saved = project_envelope(&opened, "Migrated");
+
+    assert_eq!(saved.schema_version, SCHEMA_VERSION);
+    assert_eq!(saved.project.id, project_id);
+    assert_eq!(opened.meter_map(), &meter_map);
+    assert_eq!(saved.unknown, envelope_unknown);
+    assert_eq!(saved.project.unknown, project_unknown);
+    assert_ne!(saved.project.id_gen_state, 0);
 }
 
 // The dirty marker is derived, never asserted. These are the two shell decisions R4-1's review

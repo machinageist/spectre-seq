@@ -8,7 +8,7 @@ Notes: Safe defaults accepted by Jeff through delegated decision authority on 20
 # Decision Gates
 
 - **Status:** accepted
-- **Last verified:** 2026-08-09
+- **Last verified:** 2026-08-31
 - **Scope:** every decision the audits and mandate flagged as open, with recommendation, reversibility, and safe default
 - **Decision authority:** Jeff
 - **Upstream sources:** product vision, implementation evidence, and reference research
@@ -35,7 +35,7 @@ Legend: **SD** = safe default adopted so work can proceed; **GATE** = must be ra
 | 11 | Sample decode/streaming deps | symphonia for decode (pure Rust) evaluated first; OS codecs as fallback; decision recorded at R7 | High | **SD adopted** for planning |
 | 12 | Time-stretch strategy | Own phase-vocoder/transient path long-term (DSPREF-JOS-SASP); no third-party stretch library in the identity path; interim: no stretch until R7 | Medium | **SD adopted** |
 | 13 | Undo architecture | Command-pattern transactions over the project model with grouped edits; no state-snapshot diffing | Low after R5 | **SD adopted**, GATE at R5 exit |
-| 14 | Autosave/recovery model | Journaled autosave to sidecar + atomic rename saves; recovery drill required at R5 exit | Medium | **SD adopted** |
+| 14 | Autosave/recovery model | Journaled autosave to sidecar + atomic rename saves; recovery drill required at R5 exit. **Resolved 2026-08-31:** accepting recovery loads the autosaved state into memory as unsaved, leaves the saved project and sidecar intact, and removes the obsolete sidecar only after a later successful manual Save. | Medium | **Accepted**, recovery-commit semantics ratified by Jeff 2026-08-31 |
 | 15 | Small synth vs flagship relationship | R4 ships a deliberately small original synth; R11 designs the flagship and modular identity from accepted requirements without prototype-code reuse. | High now | **Accepted** |
 | 16 | Reference-product numeric limits | No copied limits (e.g., wavetable frame sizes, unison caps); every numeric bound in Spectre needs its own rationale row in the requirements ledger | n/a | **SD adopted** (standing rule) |
 | 17 | Accessibility baseline | Keyboard-complete operation and screen-reader labels on all commands/params by beta; scoped audit at R4 | Low if deferred | GATE before beta |
