@@ -896,17 +896,17 @@ fn parameter_route_nodes(
     nodes: &spectre_project::TrackPathNodes,
 ) -> Vec<(NodeId, spectre_dsp::DeviceParameterKey)> {
     let mut routes = Vec::with_capacity(nodes.instruments.len() * 3 + 1);
-    for ((instrument, insert), gain) in nodes
+    for ((instrument, chain), gain) in nodes
         .instruments
         .iter()
         .zip(&nodes.inserts)
         .zip(&nodes.track_gains)
     {
         routes.push((instrument.node, PULSE_PARAMETERS[0].key));
-        // Without this an insert's depth reaches no live node, which is exactly what
-        // r4-qa-protocol.md row 3 drags. Emitted in parameter_targets' order, which this function
-        // must match pair for pair
-        if let Some(insert) = insert {
+        // Without this an effect's depth reaches no live node, which is exactly what
+        // r4-qa-protocol.md row 3 drags. Emitted in parameter_targets' order, one per chained
+        // effect in signal order, which this function must match pair for pair
+        for insert in chain.iter() {
             routes.push((insert.node, GLOAM_PARAMETERS[GLOAM_DEPTH].key));
         }
         routes.push((gain.node, GAIN_PARAMETERS[0].key));

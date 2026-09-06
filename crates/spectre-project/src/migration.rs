@@ -53,6 +53,14 @@ pub fn migrate_to_current(
 
     match from_schema {
         SCHEMA_VERSION => {}
+        2 => {
+            // Schema 3 replaces the single insert slot with an ordered chain. The slot decodes
+            // into a legacy field that nothing reads, so a schema-2 file whose tracks are not
+            // migrated would silently lose every effect -- which is what the alpha fixture's own
+            // test caught the first time this ran
+            adopt_legacy_inserts(&mut envelope);
+            envelope.schema_version = SCHEMA_VERSION;
+        }
         1 => {
             // Schema 1 predates every collection and persisted view. Refuse a mislabeled file
             // rather than seed an ID generator that could collide with hidden schema-2 objects.
@@ -67,6 +75,9 @@ pub fn migrate_to_current(
             // schema-1 project has no other persisted object IDs, so the next generated identity
             // cannot duplicate an existing collection member.
             envelope.project.id_gen_state = envelope.project.id.raw();
+            // A schema-1 document carries no tracks at all, so this is a no-op by construction.
+            // Called anyway so a future schema-1 variant that did carry one cannot slip past
+            adopt_legacy_inserts(&mut envelope);
             envelope.schema_version = SCHEMA_VERSION;
         }
         found => return Err(MigrationError::UnsupportedSchema { found }),
@@ -78,4 +89,12 @@ pub fn migrate_to_current(
         from_schema,
         to_schema: SCHEMA_VERSION,
     })
+}
+
+// Move every track's schema-2 insert slot into its schema-3 chain. Idempotent: a track whose
+// chain is already populated keeps it, and a track with no legacy slot is untouched
+fn adopt_legacy_inserts(envelope: &mut ProjectEnvelope) {
+    for track in envelope.project.tracks.tracks_mut() {
+        track.adopt_legacy_insert();
+    }
 }

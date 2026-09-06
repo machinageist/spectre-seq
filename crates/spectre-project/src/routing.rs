@@ -54,7 +54,9 @@ pub struct SumNode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrackPathNodes {
     pub instruments: Vec<InstrumentNode>,
-    pub inserts: Vec<Option<InsertNode>>,
+    // inserts[i] is track i's chain, in signal order. Empty for a track with no effects, which
+    // is every track written before the chain existed
+    pub inserts: Vec<Vec<InsertNode>>,
     pub track_gains: Vec<GainNode>,
     // The tree's root, which is what the master reads from. Kept as its own field because every
     // existing caller asks for "the sum" and means this one
@@ -98,17 +100,18 @@ impl TrackPathNodes {
     // IDs rather than a spectre-audio type so spectre-project never depends on the audio crate
     pub fn parameter_targets(&self) -> Vec<(ObjectId, ObjectId)> {
         let mut targets = Vec::with_capacity(self.instruments.len() * 3 + 1);
-        for ((instrument, insert), gain) in self
+        for ((instrument, chain), gain) in self
             .instruments
             .iter()
             .zip(&self.inserts)
             .zip(&self.track_gains)
         {
             targets.push((instrument.node.object_id(), instrument.level_parameter));
-            // Emitted between instrument and gain, and only where a track has one, so this stays
-            // in lockstep with spectre-app's parameter_route_nodes. A track without an insert
-            // emits exactly the pair it emitted before the slot existed
-            if let Some(insert) = insert {
+            // Emitted between instrument and gain, one per chained effect in signal order, so
+            // this stays in lockstep with spectre-app's parameter_route_nodes and with
+            // TrackList::targets_before. A track with an empty chain emits exactly the pair it
+            // emitted before the chain existed
+            for insert in chain.iter() {
                 targets.push((insert.node.object_id(), insert.depth_parameter));
             }
             targets.push((gain.node.object_id(), gain.gain_parameter));
@@ -145,11 +148,15 @@ pub fn build_track_graph(
     for track in tracks.tracks() {
         let instrument_node = NodeId::new(ids.next_id());
         let level_parameter = ids.next_id();
-        // Allocated between instrument and gain, and ONLY when the track declares an insert, so
-        // a track without one produces exactly the identities the R4-4 order produced
-        let insert_slot = track
-            .insert()
-            .map(|slot| (slot, NodeId::new(ids.next_id()), ids.next_id()));
+        // One node and one parameter per chained effect, allocated between instrument and gain
+        // in signal order. A track with an empty chain produces exactly the identities the R4-4
+        // order produced, and a one-effect chain produces exactly the R4-6 ones -- the identity
+        // sequence is a function of the chain length, so nothing shifts for existing projects
+        let chain_slots: Vec<(TrackInsert, NodeId, ObjectId)> = track
+            .inserts()
+            .iter()
+            .map(|slot| (*slot, NodeId::new(ids.next_id()), ids.next_id()))
+            .collect();
         let gain_node = NodeId::new(ids.next_id());
         let gain_parameter = ids.next_id();
 
@@ -167,26 +174,25 @@ pub fn build_track_graph(
         graph
             .add_node(gain_node, gain.io())
             .map_err(RoutingError::Graph)?;
-        // instrument -> [insert] -> gain. The insert is a stereo in/out device, so it drops into
-        // the existing single connection rather than changing the path's shape
-        let gain_source = match insert_slot {
-            None => instrument_node,
-            Some((slot, insert_node, _)) => {
-                let effect = effect_for(slot)?;
-                graph
-                    .add_node(insert_node, effect.io())
-                    .map_err(RoutingError::Graph)?;
-                graph
-                    .connect(Connection {
-                        from: instrument_node,
-                        from_bus: 0,
-                        to: insert_node,
-                        to_bus: 0,
-                    })
-                    .map_err(RoutingError::Graph)?;
-                insert_node
-            }
-        };
+        // instrument -> effect -> effect -> ... -> gain. Each is a stereo in/out device with
+        // exactly one input bus, so an arbitrarily long chain needs nothing from the graph that
+        // a single insert did not already need: no fan-in bound applies to a serial path
+        let mut gain_source = instrument_node;
+        for (slot, insert_node, _) in chain_slots.iter() {
+            let effect = effect_for(*slot)?;
+            graph
+                .add_node(*insert_node, effect.io())
+                .map_err(RoutingError::Graph)?;
+            graph
+                .connect(Connection {
+                    from: gain_source,
+                    from_bus: 0,
+                    to: *insert_node,
+                    to_bus: 0,
+                })
+                .map_err(RoutingError::Graph)?;
+            gain_source = *insert_node;
+        }
         graph
             .connect(Connection {
                 from: gain_source,
@@ -200,10 +206,15 @@ pub fn build_track_graph(
             node: instrument_node,
             level_parameter,
         });
-        inserts.push(insert_slot.map(|(_, node, depth_parameter)| InsertNode {
-            node,
-            depth_parameter,
-        }));
+        inserts.push(
+            chain_slots
+                .iter()
+                .map(|(_, node, depth_parameter)| InsertNode {
+                    node: *node,
+                    depth_parameter: *depth_parameter,
+                })
+                .collect::<Vec<_>>(),
+        );
         track_gains.push(GainNode {
             node: gain_node,
             gain_parameter,
@@ -259,13 +270,12 @@ pub fn track_device_factory<'a>(
                     .map_err(|_| "instrument construction failed");
             }
         }
-        for (index, insert) in nodes.inserts.iter().enumerate() {
-            let Some(insert) = insert else { continue };
-            if insert.node == node {
-                let slot = tracks.tracks()[index]
-                    .insert()
-                    .expect("a node in inserts means the track declares one");
-                return effect_for(slot).map_err(|_| "effect construction failed");
+        for (index, chain) in nodes.inserts.iter().enumerate() {
+            for (position, insert) in chain.iter().enumerate() {
+                if insert.node == node {
+                    let slot = tracks.tracks()[index].inserts()[position];
+                    return effect_for(slot).map_err(|_| "effect construction failed");
+                }
             }
         }
         for (index, gain) in nodes.track_gains.iter().enumerate() {

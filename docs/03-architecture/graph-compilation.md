@@ -34,7 +34,7 @@ The smallest app-to-offline seam transfers device values without exposing mutabl
 
 ## V1 editable-graph semantics
 
-- Buses are stereo. A device layout is valid when flattened outputs equal two and flattened inputs are even and at most four (source/instrument: zero inputs; insert: one bus; sidechain: two buses).
+- Buses are stereo. A device layout is valid when flattened outputs equal two and flattened inputs are even and at most `MAX_FLAT_INPUTS` (source/instrument: zero inputs; insert: one bus; sidechain: two buses; summing: one bus per source). **Corrected 2026-09-06:** this read "at most four" long after ENGINE-006 raised the bound to 32 for the summing device, so the contract described a graph the code had stopped compiling. It is stated as the named constant rather than a literal, because that is the drift this row just paid for.
 - Node identity wraps the project-stable `ObjectId` (`NodeId`), preserving CORE-001 identity through graph edits.
 - Each input bus accepts exactly one connection. Summing multiple sources into one input is an explicit later decision, not an implicit behavior.
 - Self-connections are rejected at edit time. Multi-node implicit cycles are rejected at compile time with a diagnostic naming a node on the cycle; feedback will require an explicit priced edge (GRAPH-002).

@@ -17,7 +17,8 @@ use spectre_audio::RenderBlock;
 use spectre_core::{IdGen, SampleRate, TempoMap};
 use spectre_dsp::GAIN_PARAMETERS;
 use spectre_project::{
-    build_track_graph, from_bytes, track_device_factory, ProjectEnvelope, TrackList,
+    build_track_graph, from_bytes, migrate_to_current, track_device_factory, ProjectEnvelope,
+    TrackList,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -66,7 +67,13 @@ fn rt_section<T>(body: impl FnOnce() -> T) -> (T, u64) {
 }
 
 fn fixture() -> ProjectEnvelope {
-    from_bytes(FIXTURE).expect("the checked-in alpha fixture must decode")
+    // The fixture is a checked-in SCHEMA 2 document and is deliberately left that way: it is
+    // the project's only regression evidence that a file written before the effect chain
+    // existed still loads with its effects intact. Migration is what the shell's own adopt
+    // path runs, so running it here tests the product's route rather than a shortcut
+    migrate_to_current(from_bytes(FIXTURE).expect("the checked-in alpha fixture must decode"))
+        .expect("the schema-2 fixture migrates")
+        .envelope
 }
 
 // Bake one track's clip material through the one tick-to-sample conversion the workspace has

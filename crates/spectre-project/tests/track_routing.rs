@@ -178,8 +178,8 @@ fn a_track_insert_adds_one_node_between_the_instrument_and_the_gain() {
     let mut gen = IdGen::new(SEED);
     let (graph, insert_nodes) = build_track_graph(&inserted, &mut gen).unwrap();
 
-    assert!(plain_nodes.inserts.iter().all(Option::is_none));
-    assert!(insert_nodes.inserts.iter().all(|slot| slot.is_some()));
+    assert!(plain_nodes.inserts.iter().all(|chain| chain.is_empty()));
+    assert!(insert_nodes.inserts.iter().all(|chain| chain.len() == 1));
 
     let mut factory = track_device_factory(&inserted, &insert_nodes);
     let plan = graph
@@ -248,15 +248,27 @@ fn the_target_index_helpers_agree_with_the_emitted_ordering() {
                 (gain.node.object_id(), gain.gain_parameter),
                 "gain index disagrees for shape {shape:?} at track {index}"
             );
-            match (list.insert_target_index(index), nodes.inserts[index]) {
-                (None, None) => {}
-                (Some(at), Some(insert)) => assert_eq!(
+            // Every chained effect, by position, so a chain longer than one is covered by the
+            // same agreement this row has always asserted
+            for (position, insert) in nodes.inserts[index].iter().enumerate() {
+                let at = list
+                    .insert_target_index_at(index, position)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "no target index for shape {shape:?} track {index} effect {position}"
+                        )
+                    });
+                assert_eq!(
                     targets[at],
                     (insert.node.object_id(), insert.depth_parameter),
                     "insert index disagrees for shape {shape:?} at track {index}"
-                ),
-                other => panic!("insert presence disagrees for shape {shape:?}: {other:?}"),
+                );
             }
+            assert_eq!(
+                list.insert_target_index_at(index, nodes.inserts[index].len()),
+                None,
+                "a position past the chain reported a target for shape {shape:?}"
+            );
         }
         assert_eq!(
             targets[list.master_target_index()],

@@ -216,8 +216,10 @@ fn an_app_built_snapshot_carries_the_current_schema_version() {
     spectre_project::save_project_atomic(&path, &envelope).unwrap();
     let loaded = spectre_project::load_project(&path).unwrap();
     assert_eq!(loaded.schema_version, SCHEMA_VERSION);
-    // A literal too, so a silent bump fails here rather than agreeing with itself
-    assert_eq!(loaded.schema_version, 2);
+    // A literal too, so a silent bump fails here rather than agreeing with itself.
+    // Moved 2 -> 3 on 2026-09-06 with the track effect chain, deliberately: this row is the
+    // gate that made the bump visible rather than something noticed later
+    assert_eq!(loaded.schema_version, 3);
 }
 
 // The restored working context is the musician's own, not the prototype's

@@ -31,17 +31,18 @@ pub use journal::{discard_autosave, journal_path, read_autosave, write_autosave,
 pub use migration::{migrate_to_current, MigrationError, MigrationReceipt};
 pub use routing::{build_track_graph, track_device_factory, RoutingError, TrackPathNodes};
 pub use track::{
-    Track, TrackEffect, TrackError, TrackInsert, TrackInstrument, TrackList, MAX_TRACKS,
+    Track, TrackEffect, TrackError, TrackInsert, TrackInstrument, TrackList, MAX_CHAIN_DEVICES,
+    MAX_TRACKS,
 };
 
 // Current schema version written by this build. Schema identifiers, not numeric limits, so
 // PROD-003 does not govern them. The bump to 2 is required rather than cosmetic: schema 2 adds
 // persisted object collections, and a build that cannot render them must refuse the file rather
 // than show the musician an empty project it would then let them overwrite
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 // Newest schema this build can read
-pub const MAX_READABLE_SCHEMA: u32 = 2;
+pub const MAX_READABLE_SCHEMA: u32 = 3;
 
 // Envelope wrapping every persisted project
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

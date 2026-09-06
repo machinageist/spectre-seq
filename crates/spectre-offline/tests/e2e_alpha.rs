@@ -20,8 +20,9 @@ use spectre_offline::alpha_fixture::{
 };
 use spectre_offline::hash::{hash_block, hash_planar_quantum, SampleHasher};
 use spectre_project::{
-    build_track_graph, from_bytes, load_project, save_project_atomic, track_device_factory,
-    validate_envelope, ProjectEnvelope, TrackEffect, TrackInstrument, TrackList,
+    build_track_graph, from_bytes, load_project, migrate_to_current, save_project_atomic,
+    track_device_factory, validate_envelope, ProjectEnvelope, TrackEffect, TrackInstrument,
+    TrackList,
 };
 use std::collections::HashSet;
 
@@ -47,7 +48,13 @@ const E2E_TOTAL_BLOCKS: usize = E2E_NOTE_BLOCKS + E2E_TAIL_BLOCKS;
 const E2E_GRAPH_SEED: u64 = 0x0045_3245_414c_5048;
 
 fn fixture() -> ProjectEnvelope {
-    from_bytes(FIXTURE).expect("the checked-in alpha fixture must decode")
+    // The fixture is a checked-in SCHEMA 2 document and is deliberately left that way: it is
+    // the project's only regression evidence that a file written before the effect chain
+    // existed still loads with its effects intact. Migration is what the shell's own adopt
+    // path runs, so running it here tests the product's route rather than a shortcut
+    migrate_to_current(from_bytes(FIXTURE).expect("the checked-in alpha fixture must decode"))
+        .expect("the schema-2 fixture migrates")
+        .envelope
 }
 
 // Compile the fixture's own track graph, the way the app's engine does

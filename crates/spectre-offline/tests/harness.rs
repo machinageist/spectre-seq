@@ -23,8 +23,9 @@ fn default_project_report_is_deterministic() {
 
     assert_eq!(first, second);
     // A literal on purpose, not SCHEMA_VERSION: a schema bump is a decision, and this assertion
-    // is where an unannounced one fails. R4-7 moved it from 1 to 2 deliberately
-    assert_eq!(first.schema_version, 2);
+    // is where an unannounced one fails. R4-7 moved it from 1 to 2 deliberately; the track
+    // effect chain moved it 2 -> 3 on 2026-09-06, equally deliberately
+    assert_eq!(first.schema_version, 3);
     assert_eq!(first.project_name, "Untitled");
     assert_eq!(first.tempo_segment_count, 1);
     assert_eq!(first.transport_position_samples, 0);

@@ -19,7 +19,8 @@ use spectre_dsp::{GLOAM_DEPTH, GLOAM_PARAMETERS};
 use spectre_graph::CompiledPlan;
 use spectre_offline::hash::{hash_block, SampleHasher};
 use spectre_project::{
-    build_track_graph, from_bytes, track_device_factory, ProjectEnvelope, TrackList,
+    build_track_graph, from_bytes, migrate_to_current, track_device_factory, ProjectEnvelope,
+    TrackList,
 };
 
 const FIXTURE: &[u8] = include_bytes!("fixtures/r4-alpha.json");
@@ -37,7 +38,13 @@ const PLAN_RESERVE: usize = FRAMES * 2;
 const GRAPH_SEED: u64 = 0x0045_3245_414c_5048;
 
 fn fixture() -> ProjectEnvelope {
-    from_bytes(FIXTURE).expect("the checked-in alpha fixture must decode")
+    // The fixture is a checked-in SCHEMA 2 document and is deliberately left that way: it is
+    // the project's only regression evidence that a file written before the effect chain
+    // existed still loads with its effects intact. Migration is what the shell's own adopt
+    // path runs, so running it here tests the product's route rather than a shortcut
+    migrate_to_current(from_bytes(FIXTURE).expect("the checked-in alpha fixture must decode"))
+        .expect("the schema-2 fixture migrates")
+        .envelope
 }
 
 // Compile the fixture's own track graph, the way the app's engine does

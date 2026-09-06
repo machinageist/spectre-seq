@@ -25,6 +25,16 @@ use spectre_dsp::{GAIN_PARAMETERS, GLOAM_DEPTH, GLOAM_PARAMETERS, PULSE_PARAMETE
 // this is a derived number rather than a chosen one. Removing the array is what removes the cap
 pub const MAX_TRACKS: usize = 32;
 
+// Maximum effects one track may chain between its instrument and its gain
+//
+// A chain is serial, so every node in it has exactly one stereo input bus and none of the
+// graph's fan-in bounds apply. The limit therefore exists for a different reason: a project file
+// is untrusted input, and an unbounded chain length would let one track demand unbounded graph
+// nodes and unbounded preallocated buffers at compile time. 64 is Spectre's own arithmetic --
+// at MAX_TRACKS it admits 2 048 effect nodes, which is far past any musical use and still a
+// bounded allocation the app thread can refuse
+pub const MAX_CHAIN_DEVICES: usize = 64;
+
 // The one instrument kind a v1 track may host. R4-6 replaces the variant; the slot stays
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrackInstrument {
@@ -75,6 +85,8 @@ impl TrackInsert {
 // App-thread track failure; every variant leaves the model unmutated
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackError {
+    ChainLimit { limit: usize },
+    ChainIndex { index: usize, len: usize },
     BlankName,
     TrackLimit { limit: usize },
     UnknownTrack(ObjectId),
@@ -86,6 +98,15 @@ impl std::fmt::Display for TrackError {
     // Render an actionable app-thread diagnostic
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::ChainLimit { limit } => {
+                write!(formatter, "a track may chain at most {limit} effects")
+            }
+            Self::ChainIndex { index, len } => {
+                write!(
+                    formatter,
+                    "effect position {index} is outside a chain of {len}"
+                )
+            }
             Self::BlankName => formatter.write_str("track name must not be blank"),
             Self::TrackLimit { limit } => {
                 write!(formatter, "a project may hold at most {limit} tracks")
@@ -115,11 +136,23 @@ pub struct Track {
     // table so R4-7 persists one thing: the track model already travels into the document whole
     #[serde(default)]
     clips: TrackClips,
-    // The insert this track's signal passes through between instrument and track gain. Absent
-    // keeps the R4-4 path byte-for-byte and node-for-node as it was, so a project written before
-    // the slot existed serializes identically (CORE-003) and rebuilds the same node IDs
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    insert: Option<TrackInsert>,
+    // Schema-2's single insert slot. Read on decode and moved into `inserts` by the schema 3
+    // migration, then never written again. Retained as a field rather than deleted because
+    // deserialization is the one path that bypasses every constructor, and a schema-2 file on
+    // disk still carries this key
+    // The serde key stays "insert" -- it is what schema-2 files on disk carry. Renaming the
+    // Rust field without this made every existing effect vanish at decode, because Track has no
+    // unknown-field map to catch it: serde simply ignored a key it no longer recognized
+    #[serde(rename = "insert", default, skip_serializing_if = "Option::is_none")]
+    legacy_insert: Option<TrackInsert>,
+    // The ordered effect chain this track's signal passes through between instrument and track
+    // gain. Empty keeps the R4-4 path byte-for-byte and node-for-node as it was, so a project
+    // written before any effect existed serializes identically (CORE-003) and rebuilds the same
+    // node IDs. Length is bounded only by MAX_CHAIN_DEVICES, which exists so a project cannot
+    // demand unbounded graph nodes, not because the render path needs a fixed array: a chain is
+    // serial, so every node in it has exactly one input bus
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    inserts: Vec<TrackInsert>,
 }
 
 impl Track {
@@ -140,7 +173,8 @@ impl Track {
             muted: false,
             soloed: false,
             clips: TrackClips::new(),
-            insert: None,
+            legacy_insert: None,
+            inserts: Vec::new(),
         })
     }
 
@@ -200,14 +234,87 @@ impl Track {
         self.instrument_level = PULSE_PARAMETERS[0].clamp(level);
     }
 
+    // The track's effect chain, in signal order
+    pub fn inserts(&self) -> &[TrackInsert] {
+        &self.inserts
+    }
+
+    // The schema-2 accessor, kept because most callers still mean "the first effect". It reads
+    // the chain rather than a second field, so the two cannot disagree
     pub fn insert(&self) -> Option<TrackInsert> {
-        self.insert
+        self.inserts.first().copied()
+    }
+
+    // Append one effect to the end of the chain; refuses past MAX_CHAIN_DEVICES
+    pub fn push_insert(&mut self, insert: TrackInsert) -> Result<(), TrackError> {
+        if self.inserts.len() >= MAX_CHAIN_DEVICES {
+            return Err(TrackError::ChainLimit {
+                limit: MAX_CHAIN_DEVICES,
+            });
+        }
+        self.inserts.push(insert);
+        Ok(())
+    }
+
+    // Insert at a position, so a chain can be built in any order; refuses past the end
+    pub fn insert_at(&mut self, index: usize, insert: TrackInsert) -> Result<(), TrackError> {
+        if index > self.inserts.len() {
+            return Err(TrackError::ChainIndex {
+                index,
+                len: self.inserts.len(),
+            });
+        }
+        if self.inserts.len() >= MAX_CHAIN_DEVICES {
+            return Err(TrackError::ChainLimit {
+                limit: MAX_CHAIN_DEVICES,
+            });
+        }
+        self.inserts.insert(index, insert);
+        Ok(())
+    }
+
+    // Remove by position, returning the effect whole so an undo can put it back unchanged
+    pub fn remove_insert(&mut self, index: usize) -> Result<TrackInsert, TrackError> {
+        if index >= self.inserts.len() {
+            return Err(TrackError::ChainIndex {
+                index,
+                len: self.inserts.len(),
+            });
+        }
+        Ok(self.inserts.remove(index))
+    }
+
+    // Move one effect to another position. Order is the signal path, so this is a real edit
+    pub fn reorder_insert(&mut self, from: usize, to: usize) -> Result<(), TrackError> {
+        if from >= self.inserts.len() || to >= self.inserts.len() {
+            return Err(TrackError::ChainIndex {
+                index: from.max(to),
+                len: self.inserts.len(),
+            });
+        }
+        let moved = self.inserts.remove(from);
+        self.inserts.insert(to, moved);
+        Ok(())
     }
 
     // Clamp through the effect's own descriptor
     pub fn set_insert_depth(&mut self, depth: f32) {
-        if let Some(insert) = self.insert.as_mut() {
+        self.set_insert_depth_at(0, depth);
+    }
+
+    pub fn set_insert_depth_at(&mut self, index: usize, depth: f32) {
+        if let Some(insert) = self.inserts.get_mut(index) {
             insert.depth = GLOAM_PARAMETERS[GLOAM_DEPTH].clamp(depth);
+        }
+    }
+
+    // Move a decoded schema-2 slot into the chain. Called by the schema 3 migration and by the
+    // validator's repair-free check; idempotent, so running it twice changes nothing
+    pub(crate) fn adopt_legacy_insert(&mut self) {
+        if let Some(slot) = self.legacy_insert.take() {
+            if self.inserts.is_empty() {
+                self.inserts.push(slot);
+            }
         }
     }
 
@@ -262,6 +369,12 @@ impl TrackList {
             master_level: GAIN_PARAMETERS[0].default(),
             structure_revision: 0,
         }
+    }
+
+    // Mutable access for the schema migration only. Not public: every product edit goes through
+    // a command so it is reversible, and a public mutable slice would be the hole in that
+    pub(crate) fn tracks_mut(&mut self) -> &mut [Track] {
+        &mut self.tracks
     }
 
     pub fn tracks(&self) -> &[Track] {
@@ -370,8 +483,9 @@ impl TrackList {
         insert: Option<TrackInsert>,
     ) -> Result<(), TrackError> {
         let track = self.get_mut(id).ok_or(TrackError::UnknownTrack(id))?;
-        let shape_changed = track.insert.map(|slot| slot.effect) != insert.map(|slot| slot.effect);
-        track.insert = insert;
+        let shape_changed =
+            track.insert().map(|slot| slot.effect) != insert.map(|slot| slot.effect);
+        track.inserts = insert.into_iter().collect();
         if shape_changed {
             self.structure_revision += 1;
         }
@@ -389,35 +503,40 @@ impl TrackList {
         self.targets_before(track_index)
     }
 
-    // None where the track declares no insert
+    // None where the track declares no effect at that chain position
     pub fn insert_target_index(&self, track_index: usize) -> Option<usize> {
-        self.tracks
-            .get(track_index)?
-            .insert()
-            .map(|_| self.targets_before(track_index) + 1)
+        self.insert_target_index_at(track_index, 0)
+    }
+
+    // One effect's parameter position, by its place in the chain. The instrument's target comes
+    // first, so a chain position is offset by one from the track's own base
+    pub fn insert_target_index_at(&self, track_index: usize, position: usize) -> Option<usize> {
+        let track = self.tracks.get(track_index)?;
+        (position < track.inserts().len()).then(|| self.targets_before(track_index) + 1 + position)
     }
 
     pub fn gain_target_index(&self, track_index: usize) -> usize {
-        let insert = usize::from(
-            self.tracks
-                .get(track_index)
-                .is_some_and(|track| track.insert().is_some()),
-        );
-        self.targets_before(track_index) + 1 + insert
+        let chain = self
+            .tracks
+            .get(track_index)
+            .map_or(0, |track| track.inserts().len());
+        self.targets_before(track_index) + 1 + chain
     }
 
     pub fn master_target_index(&self) -> usize {
         self.targets_before(self.tracks.len())
     }
 
-    // How many targets precede the given track, counting each earlier track's own insert
+    // How many targets precede the given track: a real prefix sum over each earlier track's own
+    // chain length, not a fixed stride. It was `index * 2 + inserts` while a track could hold at
+    // most one effect; with a chain of any length that arithmetic silently addresses the wrong
+    // parameter from the second track onward
     fn targets_before(&self, track_index: usize) -> usize {
         let upto = track_index.min(self.tracks.len());
-        let inserts = self.tracks[..upto]
+        self.tracks[..upto]
             .iter()
-            .filter(|track| track.insert().is_some())
-            .count();
-        track_index * 2 + inserts
+            .map(|track| 2 + track.inserts().len())
+            .sum()
     }
 
     pub fn any_soloed(&self) -> bool {

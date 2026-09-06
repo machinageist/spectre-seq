@@ -140,6 +140,16 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **The dirty marker is derived, not maintained.** It compares the bytes a save would write right now against the bytes last written, rather than being set by hand at each mutation site — a flag maintained at call sites is a flag someone forgets at the next one, and a marker reading "Saved" over unsaved work is exactly the defect the project-safety pillar names. The two shell decisions that are not drawing — that comparison and the one-press-never-discards rule — live in `spectre_app::project` rather than in `main.rs`, because `main.rs` is a binary target no test can reach; that is the lesson R4-1's review already paid for.
 
+**A track holds an ordered effect chain as of 2026-09-06, at schema 3.** `Track.insert:
+Option<TrackInsert>` became `inserts: Vec<TrackInsert>`, `build_track_graph` folds it instead of
+branching on one slot, and `targets_before` became a real prefix sum over chain lengths — the old
+`index * 2 + inserts` addressed the wrong parameter from the second track onward the moment a
+chain could exceed one. `MAX_CHAIN_DEVICES` is 64, and it exists to bound untrusted input rather
+than to serve the render path: a chain is serial, so every node in it has exactly one input bus
+and no fan-in bound applies. The schema-2 slot is migrated into the chain; the checked-in
+`r4-alpha.json` stays a **schema-2** document on purpose, so the project keeps one real regression
+fixture proving a file written before chains still loads with its effects.
+
 **R5's engineering queue closed 2026-09-06 with eight of nine slices done; the milestone has not
 exited.** Slice 8, missing-media diagnostics, is blocked on a persisted media reference the
 workspace does not contain — there is no audio clip, sample, or media type in the project model at
