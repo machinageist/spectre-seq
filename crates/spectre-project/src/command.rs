@@ -3,7 +3,7 @@
 // Description: Atomic project commands, grouped transactions, and bounded undo/redo history
 // Notes: App-thread project mutation seam; never callback-reachable
 
-use crate::{ProjectDoc, TrackError};
+use crate::{ProjectDoc, Track, TrackError};
 use spectre_core::ObjectId;
 use std::collections::VecDeque;
 
@@ -32,14 +32,27 @@ impl std::fmt::Display for CommandError {
 
 impl std::error::Error for CommandError {}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+// Eq is deliberately absent from here down. Track levels are f32, and a type that claimed Eq
+// over them would be claiming an equality the values do not have
+#[derive(Debug, Clone, PartialEq)]
 enum CommandKind {
     SetProjectName { name: String, validate: bool },
     ReorderTrack { id: ObjectId, to_index: usize },
+    // InsertTrack and RemoveTrack are exact mutual inverses because TrackList::remove returns
+    // the whole Track and insert takes one back at an index -- nothing about the track has to
+    // be reconstructed, so an undone remove restores clips, level, mute, solo, and identity
+    InsertTrack { index: usize, track: Box<Track> },
+    RemoveTrack { id: ObjectId },
+    SetTrackName { id: ObjectId, name: String },
+    SetTrackLevel { id: ObjectId, level: f32 },
+    SetTrackInstrumentLevel { id: ObjectId, level: f32 },
+    SetTrackMuted { id: ObjectId, muted: bool },
+    SetTrackSoloed { id: ObjectId, soloed: bool },
+    SetMasterLevel { level: f32 },
 }
 
 // One reversible project-model mutation
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ProjectCommand {
     kind: CommandKind,
 }
@@ -60,6 +73,63 @@ impl ProjectCommand {
     pub fn reorder_tracks(id: ObjectId, to_index: usize) -> Self {
         Self {
             kind: CommandKind::ReorderTrack { id, to_index },
+        }
+    }
+
+    // Add a track at an index. The Track arrives fully formed, with its ObjectId already
+    // minted, so the command is deterministic and its inverse addresses a stable identity
+    pub fn insert_track(index: usize, track: Track) -> Self {
+        Self {
+            kind: CommandKind::InsertTrack {
+                index,
+                track: Box::new(track),
+            },
+        }
+    }
+
+    // Remove a track by identity. The inverse carries the removed track whole
+    pub fn remove_track(id: ObjectId) -> Self {
+        Self {
+            kind: CommandKind::RemoveTrack { id },
+        }
+    }
+
+    pub fn set_track_name(id: ObjectId, name: impl Into<String>) -> Self {
+        Self {
+            kind: CommandKind::SetTrackName {
+                id,
+                name: name.into(),
+            },
+        }
+    }
+
+    pub fn set_track_level(id: ObjectId, level: f32) -> Self {
+        Self {
+            kind: CommandKind::SetTrackLevel { id, level },
+        }
+    }
+
+    pub fn set_track_instrument_level(id: ObjectId, level: f32) -> Self {
+        Self {
+            kind: CommandKind::SetTrackInstrumentLevel { id, level },
+        }
+    }
+
+    pub fn set_track_muted(id: ObjectId, muted: bool) -> Self {
+        Self {
+            kind: CommandKind::SetTrackMuted { id, muted },
+        }
+    }
+
+    pub fn set_track_soloed(id: ObjectId, soloed: bool) -> Self {
+        Self {
+            kind: CommandKind::SetTrackSoloed { id, soloed },
+        }
+    }
+
+    pub fn set_master_level(level: f32) -> Self {
+        Self {
+            kind: CommandKind::SetMasterLevel { level },
         }
     }
 
@@ -93,12 +163,119 @@ impl ProjectCommand {
                     },
                 })
             }
+            // TrackList::insert refuses a duplicate id, an out-of-range index, and a full list
+            // before mutating, so a refusal here leaves the transaction's rollback exact
+            CommandKind::InsertTrack { index, track } => {
+                let id = track.id();
+                project
+                    .tracks
+                    .insert(*index, (**track).clone())
+                    .map_err(CommandError::Track)?;
+                Ok(Self {
+                    kind: CommandKind::RemoveTrack { id },
+                })
+            }
+            // The removed track travels into the inverse whole, so undoing a delete restores
+            // clips, mixer state, and identity rather than a track that merely resembles it
+            CommandKind::RemoveTrack { id } => {
+                let index = project
+                    .tracks
+                    .index_of(*id)
+                    .ok_or(CommandError::Track(TrackError::UnknownTrack(*id)))?;
+                let track = project.tracks.remove(*id).map_err(CommandError::Track)?;
+                Ok(Self {
+                    kind: CommandKind::InsertTrack {
+                        index,
+                        track: Box::new(track),
+                    },
+                })
+            }
+            CommandKind::SetTrackName { id, name } => {
+                let track = project
+                    .tracks
+                    .get_mut(*id)
+                    .ok_or(CommandError::Track(TrackError::UnknownTrack(*id)))?;
+                let previous = track.name().to_string();
+                track.set_name(name).map_err(CommandError::Track)?;
+                Ok(Self {
+                    kind: CommandKind::SetTrackName {
+                        id: *id,
+                        name: previous,
+                    },
+                })
+            }
+            // Every level inverse captures the STORED value, read before the mutation and
+            // therefore already clamped. Capturing the requested value instead would make undo
+            // restore a number the track never held
+            CommandKind::SetTrackLevel { id, level } => {
+                let track = project
+                    .tracks
+                    .get_mut(*id)
+                    .ok_or(CommandError::Track(TrackError::UnknownTrack(*id)))?;
+                let previous = track.level();
+                track.set_level(*level);
+                Ok(Self {
+                    kind: CommandKind::SetTrackLevel {
+                        id: *id,
+                        level: previous,
+                    },
+                })
+            }
+            CommandKind::SetTrackInstrumentLevel { id, level } => {
+                let track = project
+                    .tracks
+                    .get_mut(*id)
+                    .ok_or(CommandError::Track(TrackError::UnknownTrack(*id)))?;
+                let previous = track.instrument_level();
+                track.set_instrument_level(*level);
+                Ok(Self {
+                    kind: CommandKind::SetTrackInstrumentLevel {
+                        id: *id,
+                        level: previous,
+                    },
+                })
+            }
+            CommandKind::SetTrackMuted { id, muted } => {
+                let track = project
+                    .tracks
+                    .get_mut(*id)
+                    .ok_or(CommandError::Track(TrackError::UnknownTrack(*id)))?;
+                let previous = track.is_muted();
+                track.set_muted(*muted);
+                Ok(Self {
+                    kind: CommandKind::SetTrackMuted {
+                        id: *id,
+                        muted: previous,
+                    },
+                })
+            }
+            CommandKind::SetTrackSoloed { id, soloed } => {
+                let track = project
+                    .tracks
+                    .get_mut(*id)
+                    .ok_or(CommandError::Track(TrackError::UnknownTrack(*id)))?;
+                let previous = track.is_soloed();
+                track.set_soloed(*soloed);
+                Ok(Self {
+                    kind: CommandKind::SetTrackSoloed {
+                        id: *id,
+                        soloed: previous,
+                    },
+                })
+            }
+            CommandKind::SetMasterLevel { level } => {
+                let previous = project.tracks.master_level();
+                project.tracks.set_master_level(*level);
+                Ok(Self {
+                    kind: CommandKind::SetMasterLevel { level: previous },
+                })
+            }
         }
     }
 }
 
 // Ordered command group that applies and reverses atomically
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Transaction {
     commands: Vec<ProjectCommand>,
 }
