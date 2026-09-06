@@ -492,6 +492,61 @@ impl TrackList {
         Ok(())
     }
 
+    // Chain edits, on the list rather than on Track, because adding or removing a node changes
+    // the compiled graph's shape and only the list owns the revision that says so. Depth is the
+    // exception and deliberately so: it travels the parameter lane and rebuilds nothing
+    pub fn insert_effect(
+        &mut self,
+        id: ObjectId,
+        position: usize,
+        insert: TrackInsert,
+    ) -> Result<(), TrackError> {
+        let track = self.get_mut(id).ok_or(TrackError::UnknownTrack(id))?;
+        track.insert_at(position, insert)?;
+        self.structure_revision += 1;
+        Ok(())
+    }
+
+    // Returns the effect whole, so an undo puts back what was there rather than a rebuild of it
+    pub fn remove_effect(
+        &mut self,
+        id: ObjectId,
+        position: usize,
+    ) -> Result<TrackInsert, TrackError> {
+        let track = self.get_mut(id).ok_or(TrackError::UnknownTrack(id))?;
+        let removed = track.remove_insert(position)?;
+        self.structure_revision += 1;
+        Ok(removed)
+    }
+
+    // Order is the signal path, so moving an effect changes what the track sounds like
+    pub fn move_effect(&mut self, id: ObjectId, from: usize, to: usize) -> Result<(), TrackError> {
+        let track = self.get_mut(id).ok_or(TrackError::UnknownTrack(id))?;
+        track.reorder_insert(from, to)?;
+        self.structure_revision += 1;
+        Ok(())
+    }
+
+    // A parameter edit, not a shape change: the revision deliberately does not advance
+    pub fn set_effect_depth(
+        &mut self,
+        id: ObjectId,
+        position: usize,
+        depth: f32,
+    ) -> Result<f32, TrackError> {
+        let track = self.get_mut(id).ok_or(TrackError::UnknownTrack(id))?;
+        let previous = track
+            .inserts()
+            .get(position)
+            .ok_or(TrackError::ChainIndex {
+                index: position,
+                len: track.inserts().len(),
+            })?
+            .depth();
+        track.set_insert_depth_at(position, depth);
+        Ok(previous)
+    }
+
     // Where one track's parameters sit inside the ordering build_track_graph's
     // TrackPathNodes::parameter_targets emits: per track, instrument level, then the insert depth
     // WHERE THE TRACK HAS ONE, then track gain; master last.

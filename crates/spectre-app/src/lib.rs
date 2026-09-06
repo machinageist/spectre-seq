@@ -18,7 +18,7 @@ use spectre_dsp::{
 };
 use spectre_project::command::{CommandError, EditHistory, ProjectCommand, Transaction};
 use spectre_project::{
-    ClipError, ClipPlacement, MidiClip, Track, TrackError, TrackInstrument, TrackList,
+    ClipError, ClipPlacement, MidiClip, Track, TrackError, TrackInsert, TrackInstrument, TrackList,
 };
 
 // How many edits the model can reverse. Bounded because an unbounded history is a memory leak
@@ -642,6 +642,60 @@ impl AppModel {
         self.edit(ProjectCommand::set_track_instrument_level(id, level))
             .map_err(unwrap_track_error)?;
         Ok(vec![id])
+    }
+
+    // Add one effect to a track's chain at a position. Order is the signal path, so appending
+    // and inserting are the same operation with a different index rather than two methods
+    pub fn add_effect(
+        &mut self,
+        track: ObjectId,
+        position: usize,
+        insert: TrackInsert,
+    ) -> Result<(), TrackError> {
+        self.edit(ProjectCommand::insert_effect(track, position, insert))
+            .map_err(unwrap_track_error)
+    }
+
+    // Append to the end, which is what a browser's "add" means
+    pub fn append_effect(
+        &mut self,
+        track: ObjectId,
+        insert: TrackInsert,
+    ) -> Result<(), TrackError> {
+        let position = self
+            .tracks
+            .get(track)
+            .ok_or(TrackError::UnknownTrack(track))?
+            .inserts()
+            .len();
+        self.add_effect(track, position, insert)
+    }
+
+    pub fn remove_effect(&mut self, track: ObjectId, position: usize) -> Result<(), TrackError> {
+        self.edit(ProjectCommand::remove_effect(track, position))
+            .map_err(unwrap_track_error)
+    }
+
+    pub fn move_effect(
+        &mut self,
+        track: ObjectId,
+        from: usize,
+        to: usize,
+    ) -> Result<(), TrackError> {
+        self.edit(ProjectCommand::move_effect(track, from, to))
+            .map_err(unwrap_track_error)
+    }
+
+    // Returns the ids whose effective gain changed, which is none: a depth edit reaches the
+    // effect's own parameter target and no track's gain
+    pub fn set_effect_depth(
+        &mut self,
+        track: ObjectId,
+        position: usize,
+        depth: f32,
+    ) -> Result<(), TrackError> {
+        self.edit(ProjectCommand::set_effect_depth(track, position, depth))
+            .map_err(unwrap_track_error)
     }
 
     // Move one track to an absolute index; identity and every field survive (CORE-001)

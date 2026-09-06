@@ -3,7 +3,7 @@
 // Description: Atomic project commands, grouped transactions, and bounded undo/redo history
 // Notes: App-thread project mutation seam; never callback-reachable
 
-use crate::{ProjectDoc, Track, TrackError, TrackList};
+use crate::{ProjectDoc, Track, TrackError, TrackInsert, TrackList};
 use spectre_core::ObjectId;
 use std::collections::VecDeque;
 
@@ -78,19 +78,69 @@ impl Editable for TrackList {
 // over them would be claiming an equality the values do not have
 #[derive(Debug, Clone, PartialEq)]
 enum CommandKind {
-    SetProjectName { name: String, validate: bool },
-    ReorderTrack { id: ObjectId, to_index: usize },
+    SetProjectName {
+        name: String,
+        validate: bool,
+    },
+    ReorderTrack {
+        id: ObjectId,
+        to_index: usize,
+    },
     // InsertTrack and RemoveTrack are exact mutual inverses because TrackList::remove returns
     // the whole Track and insert takes one back at an index -- nothing about the track has to
     // be reconstructed, so an undone remove restores clips, level, mute, solo, and identity
-    InsertTrack { index: usize, track: Box<Track> },
-    RemoveTrack { id: ObjectId },
-    SetTrackName { id: ObjectId, name: String },
-    SetTrackLevel { id: ObjectId, level: f32 },
-    SetTrackInstrumentLevel { id: ObjectId, level: f32 },
-    SetTrackMuted { id: ObjectId, muted: bool },
-    SetTrackSoloed { id: ObjectId, soloed: bool },
-    SetMasterLevel { level: f32 },
+    InsertTrack {
+        index: usize,
+        track: Box<Track>,
+    },
+    RemoveTrack {
+        id: ObjectId,
+    },
+    SetTrackName {
+        id: ObjectId,
+        name: String,
+    },
+    SetTrackLevel {
+        id: ObjectId,
+        level: f32,
+    },
+    SetTrackInstrumentLevel {
+        id: ObjectId,
+        level: f32,
+    },
+    SetTrackMuted {
+        id: ObjectId,
+        muted: bool,
+    },
+    SetTrackSoloed {
+        id: ObjectId,
+        soloed: bool,
+    },
+    SetMasterLevel {
+        level: f32,
+    },
+    // InsertEffect and RemoveEffect are exact mutual inverses for the same reason the track pair
+    // is: TrackList::remove_effect returns the effect whole, so an undone delete restores the
+    // effect that was there rather than a rebuild that resembles it
+    InsertEffect {
+        track: ObjectId,
+        position: usize,
+        insert: TrackInsert,
+    },
+    RemoveEffect {
+        track: ObjectId,
+        position: usize,
+    },
+    MoveEffect {
+        track: ObjectId,
+        from: usize,
+        to: usize,
+    },
+    SetEffectDepth {
+        track: ObjectId,
+        position: usize,
+        depth: f32,
+    },
 }
 
 // One reversible project-model mutation
@@ -166,6 +216,40 @@ impl ProjectCommand {
     pub fn set_track_soloed(id: ObjectId, soloed: bool) -> Self {
         Self {
             kind: CommandKind::SetTrackSoloed { id, soloed },
+        }
+    }
+
+    // Add one effect at a position in a track's chain. Order is the signal path, so the
+    // position is part of the edit rather than an implementation detail
+    pub fn insert_effect(track: ObjectId, position: usize, insert: TrackInsert) -> Self {
+        Self {
+            kind: CommandKind::InsertEffect {
+                track,
+                position,
+                insert,
+            },
+        }
+    }
+
+    pub fn remove_effect(track: ObjectId, position: usize) -> Self {
+        Self {
+            kind: CommandKind::RemoveEffect { track, position },
+        }
+    }
+
+    pub fn move_effect(track: ObjectId, from: usize, to: usize) -> Self {
+        Self {
+            kind: CommandKind::MoveEffect { track, from, to },
+        }
+    }
+
+    pub fn set_effect_depth(track: ObjectId, position: usize, depth: f32) -> Self {
+        Self {
+            kind: CommandKind::SetEffectDepth {
+                track,
+                position,
+                depth,
+            },
         }
     }
 
@@ -305,6 +389,69 @@ impl ProjectCommand {
                     kind: CommandKind::SetTrackSoloed {
                         id: *id,
                         soloed: previous,
+                    },
+                })
+            }
+            CommandKind::InsertEffect {
+                track,
+                position,
+                insert,
+            } => {
+                scope
+                    .tracks
+                    .insert_effect(*track, *position, *insert)
+                    .map_err(CommandError::Track)?;
+                Ok(Self {
+                    kind: CommandKind::RemoveEffect {
+                        track: *track,
+                        position: *position,
+                    },
+                })
+            }
+            CommandKind::RemoveEffect { track, position } => {
+                let removed = scope
+                    .tracks
+                    .remove_effect(*track, *position)
+                    .map_err(CommandError::Track)?;
+                Ok(Self {
+                    kind: CommandKind::InsertEffect {
+                        track: *track,
+                        position: *position,
+                        insert: removed,
+                    },
+                })
+            }
+            // Its own inverse with the ends swapped. remove-then-insert is not symmetric for an
+            // arbitrary pair, so the inverse is stated rather than assumed: moving from `to` back
+            // to `from` restores the original order for any pair of positions
+            CommandKind::MoveEffect { track, from, to } => {
+                scope
+                    .tracks
+                    .move_effect(*track, *from, *to)
+                    .map_err(CommandError::Track)?;
+                Ok(Self {
+                    kind: CommandKind::MoveEffect {
+                        track: *track,
+                        from: *to,
+                        to: *from,
+                    },
+                })
+            }
+            // The stored, already-clamped depth, read before the mutation
+            CommandKind::SetEffectDepth {
+                track,
+                position,
+                depth,
+            } => {
+                let previous = scope
+                    .tracks
+                    .set_effect_depth(*track, *position, *depth)
+                    .map_err(CommandError::Track)?;
+                Ok(Self {
+                    kind: CommandKind::SetEffectDepth {
+                        track: *track,
+                        position: *position,
+                        depth: previous,
                     },
                 })
             }

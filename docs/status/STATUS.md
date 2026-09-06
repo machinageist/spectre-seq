@@ -140,6 +140,17 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **The dirty marker is derived, not maintained.** It compares the bytes a save would write right now against the bytes last written, rather than being set by hand at each mutation site — a flag maintained at call sites is a flag someone forgets at the next one, and a marker reading "Saved" over unsaved work is exactly the defect the project-safety pillar names. The two shell decisions that are not drawing — that comparison and the one-press-never-discards rule — live in `spectre_app::project` rather than in `main.rs`, because `main.rs` is a binary target no test can reach; that is the lesson R4-1's review already paid for.
 
+**The chain is editable from the model as of 2026-09-06, and every edit is reversible.**
+`AppModel` gained add / append / remove / move / set-depth, all routed through the same
+`edit` funnel every track mutation uses, so a chain edit cannot reach the track list without
+entering the undo history. `InsertEffect` and `RemoveEffect` are exact mutual inverses because
+the inverse carries the removed `TrackInsert` whole; `MoveEffect` is its own inverse with the
+ends swapped, stated rather than assumed because remove-then-insert is not symmetric for an
+arbitrary pair. **Add, remove and move advance `structure_revision`; a depth edit deliberately
+does not** — it travels the parameter lane, and advancing it there would force a needless stream
+restart on every knob turn. **Not drawn:** no GUI surface calls any of it; the Build lens is
+still the flat five-device list that belongs to no track.
+
 **A track holds an ordered effect chain as of 2026-09-06, at schema 3.** `Track.insert:
 Option<TrackInsert>` became `inserts: Vec<TrackInsert>`, `build_track_graph` folds it instead of
 branching on one slot, and `targets_before` became a real prefix sum over chain lengths — the old
