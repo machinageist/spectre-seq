@@ -6,6 +6,7 @@
 //   difference the requirement is about. This binary exists only to be killed.
 
 use spectre_core::{BeatTicks, IdGen, TempoMap, Transport};
+use spectre_project::journal::write_autosave;
 use spectre_project::{
     save_project_atomic, ClipNote, ClipPlacement, MidiClip, ProjectDoc, ProjectEnvelope, Track,
     TrackInstrument, TrackList, ViewDoc, SCHEMA_VERSION,
@@ -23,6 +24,14 @@ const NOTES_PER_CLIP: usize = 512;
 // Build the one project every trial writes, so the parent knows exactly what a completed save
 // must contain and can reject anything else as partial
 fn envelope(seed: u64) -> ProjectEnvelope {
+    envelope_of(seed, TRACKS)
+}
+
+// The same project identity at a different size. `autosave` mode needs a saved baseline and an
+// unsaved state that DIFFER while sharing a project id, because read_autosave matches a sidecar
+// to its project by id and would otherwise report an unrelated file rather than unsaved work.
+// The project id is minted first, so it does not move with the track count
+fn envelope_of(seed: u64, track_count: usize) -> ProjectEnvelope {
     let mut ids = IdGen::new(seed);
     let project_id = ids.next_id();
     let mut tracks = TrackList::new();
@@ -31,7 +40,7 @@ fn envelope(seed: u64) -> ProjectEnvelope {
     // negative control proved that window is never sampled at that size, so the drill would have
     // passed against a truncating save. Twelve tracks each carrying a clip of MAX_NOTES_PER_CLIP
     // notes encodes to megabytes, which takes long enough that a random kill lands inside it
-    for index in 0..TRACKS {
+    for index in 0..track_count {
         let id = ids.next_id();
         let mut track = Track::new(id, &format!("T{index}"), TrackInstrument::Pulse)
             .expect("the generated name is valid");
@@ -104,12 +113,27 @@ fn main() {
     let snapshot = envelope(seed);
     // "torn" writes the destination directly, the way a naive save would. It exists so the crash
     // drill can prove it detects non-atomicity; nothing in Spectre saves this way
-    let torn = args.next().is_some_and(|mode| mode == "torn");
+    let mode = args.next().unwrap_or_default();
+    let torn = mode == "torn";
+    // R5's product path is edit -> autosave -> crash -> offer, and it makes a claim the seam
+    // drill does not: journal.rs never opens the project file. A kill inside an autosave is how
+    // that claim is tested against process death rather than against a returned error
+    let autosave = mode == "autosave";
+
+    // Write the saved baseline once, before any autosave runs. Everything after this must leave
+    // it byte-identical; the parent reads it before the kill loop and compares afterwards
+    if autosave {
+        let baseline = envelope_of(seed, 1);
+        save_project_atomic(&path, &baseline).expect("the baseline project must be written");
+    }
 
     let encoded = spectre_project::to_bytes(&snapshot).expect("a validated envelope encodes");
     let mut first_save_complete = false;
     loop {
-        let saved = if torn {
+        let saved = if autosave {
+            // The project file is not opened by this branch. That is the property under test
+            write_autosave(&path, &snapshot).is_ok()
+        } else if torn {
             // Truncate-then-write: the destination is observable half-written for as long as the
             // write takes, which is exactly what atomic replacement exists to prevent
             (|| -> std::io::Result<()> {

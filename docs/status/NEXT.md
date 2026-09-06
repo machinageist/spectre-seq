@@ -90,8 +90,16 @@ Next dependency-ordered slices:
    undoing across an open would resurrect the previous project's work. 12 tests; three mutations
    fail it — bypassing the history, dropping the clear-on-open, and rebuilding a deleted track
    from its name.
-8. Add missing-media diagnostics when a persisted media reference exists; do not invent one early.
-9. Run the R5 crash/recovery exit drill and full gate.
+8. **Carried into the instrument milestone.** Missing-media diagnostics need a persisted media
+   reference, and no audio clip, sample, or media type exists anywhere in the project model. The
+   dependency is the drum sampler. Gating it is the accepted treatment; a diagnostic proved
+   against an invented fixture proves nothing about the reference that ships.
+9. ~~Run the R5 crash/recovery exit drill and full gate.~~ Landed 2026-09-06 as
+   `crates/spectre-project/tests/recovery_qualification.rs`, which kills a process writing **the
+   sidecar** rather than the project. Three drills, 24 randomized-phase kills each: the saved
+   project is byte-identical after every kill, any sidecar present decodes whole, and the next
+   launch is offered the work with both files intact. A mutation that tears the project file
+   inside the autosave fails two of the three. Gate: 516 passed / 0 failed / 3 ignored.
 
 **Recovery is not yet reachable from `./spectre`; autosave is.** The shell calls `write_autosave`
 and `discard_autosave` as of 2026-09-06, so an operator running the QA protocol now sees a

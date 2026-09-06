@@ -140,6 +140,17 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **The dirty marker is derived, not maintained.** It compares the bytes a save would write right now against the bytes last written, rather than being set by hand at each mutation site — a flag maintained at call sites is a flag someone forgets at the next one, and a marker reading "Saved" over unsaved work is exactly the defect the project-safety pillar names. The two shell decisions that are not drawing — that comparison and the one-press-never-discards rule — live in `spectre_app::project` rather than in `main.rs`, because `main.rs` is a binary target no test can reach; that is the lesson R4-1's review already paid for.
 
+**R5's engineering queue closed 2026-09-06 with eight of nine slices done; the milestone has not
+exited.** Slice 8, missing-media diagnostics, is blocked on a persisted media reference the
+workspace does not contain — there is no audio clip, sample, or media type in the project model at
+all — so it is carried to the instrument milestone under the concurrent-milestone rule rather than
+faked against an invented fixture. Decision 13 (command-pattern undo) was gated at R5 exit and is
+ratified on this milestone's own evidence. The product-path drill
+(`crates/spectre-project/tests/recovery_qualification.rs`) kills a process writing **the sidecar**
+rather than the project, which tests a claim the older crash drill does not make: `journal.rs`
+never opens the project file. Three drills, 24 randomized-phase kills each; a mutation that tears
+the project file inside the autosave fails two of them.
+
 **Autosave became product-reachable 2026-09-06.** `./spectre` journals unsaved work to the
 sidecar on a content trigger and retires it on a durable save. The trigger is
 `spectre_app::project::autosave_action`, a pure function of four inputs, deliberately not a timer

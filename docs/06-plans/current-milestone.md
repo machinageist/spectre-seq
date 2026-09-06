@@ -8,7 +8,7 @@ Notes: The roadmap owns ordering and the concurrent-milestone rule
 # Current Milestones — R5 Project Safety; R4 Exit-Pending
 
 - **Status:** accepted
-- **Last verified:** 2026-08-31
+- **Last verified:** 2026-09-06
 - **Scope:** active R5 project-safety engineering plus R4's retained operator-evidence obligation
 - **Decision authority:** Jeff
 - **Upstream sources:** `rebuild-roadmap.md`, product seeds, decisions 8/13/14/22, CORE-004, resolved D-R6
@@ -33,6 +33,27 @@ the eventual operator run.
 Outcome: atomic save, journaled autosave, explicit recovery, migrations, bounded undo/redo, and
 missing-media diagnostics. Exit requires crash and recovery drills over the product path.
 
+### Exit review, 2026-09-06
+
+Eight of nine slices are closed. **R5 has not exited**, and the reason is named rather than
+averaged away: slice 8 is blocked on a type the workspace does not contain. Under the roadmap's
+concurrent-milestone rule that is a legitimate carry — it is explicitly named here and in
+`status/NEXT.md`, it is blocked on a later milestone's dependency rather than unfinished
+engineering a successor needs, and no aggregate PASS is claimed while it stands open.
+
+**Decision 13 (command-pattern undo, no snapshot diffing) is ratified by this milestone's
+evidence.** It was gated at R5 exit and the gate is now answerable: the vocabulary generates its
+inverses at apply time, `InsertTrack`/`RemoveTrack` are exact mutual inverses because the inverse
+carries the removed `Track` whole, and every level inverse captures the stored — already clamped —
+value. A snapshot-diffing design was never built, so nothing is being retro-justified.
+
+Gate at review: formatting clean, strict workspace/all-target Clippy clean, **516 passed / 0
+failed / 3 ignored**. The three ignored rows are hardware and operator drills and are not
+reclassified as passing.
+
+**R4's operator obligation is unchanged by any of this.** Its end-to-end row still needs a human
+to hear the product make sound, and no R5 evidence substitutes for it.
+
 1. ~~Crash-qualify atomic replacement against real process death.~~ Landed in `0883929`; the
    current follow-up replaces load-dependent sleeps with a completed-save handshake and retains
    the torn-write negative control.
@@ -47,14 +68,40 @@ missing-media diagnostics. Exit requires crash and recovery drills over the prod
    forward-field preservation.~~ Landed 2026-08-31: schema 1 → 2 is an explicit product adoption
    step, preserves project identity and represented unknown fields, resumes the ID generator, and
    refuses a schema-1 label carrying schema-2 state.
-6. Wire autosave and an explicit recovery offer into `./spectre`; use content change rather than an
-   invented timer. Recover loads the autosaved state into memory as unsaved and retains both disk
-   versions until a later successful manual Save, per Jeff's 2026-08-31 decision.
-7. Bind the existing bounded command history to product mutations and verify grouped undo/redo
-   across save, reload, and recovery.
-8. Add missing-media diagnostics once persisted media references exist; until then the slice is
-   gated rather than represented by a fake fixture.
-9. Run product-path crash/recovery drills, the full workspace gate, and the R5 exit review.
+6. ~~Wire autosave and an explicit recovery offer into `./spectre`.~~ Landed 2026-09-06.
+   The trigger is content, never a clock: `autosave_action` is a pure function of four inputs, and
+   a timer was refused because an interval is a number with no rationale row (PROD-003). Its third
+   value is the one worth naming — a document edited back to match the saved file returns
+   `Discard`, because a sidecar left there offers work the musician already holds. `commit_save`
+   owns the save-then-retire order and **keeps** the sidecar on a `SyncParentDirectory` failure,
+   where the replacement is in place but its directory entry may not survive a power loss.
+   Recovery is offered on open and never applied: `adopt_recovered` loads the work and returns
+   **the project file's** bytes for the dirty marker, so it lands as unsaved. Autosave is
+   suppressed while an offer is pending, because the model holds the saved project at that moment
+   and journaling it would overwrite the sidecar with the work the offer protects.
+7. ~~Bind the bounded command history to product mutations.~~ Landed 2026-09-06. The vocabulary
+   went from two commands to ten and `AppModel::edit` is the single funnel, so no mutator reaches
+   the track list without becoming reversible. The seam is `EditScope` + `Editable` rather than a
+   `ProjectDoc` on `AppModel`: the app holds resolved `&'static str` device keys and
+   `DspParameter` descriptors while the document holds wire-format strings, a deliberate
+   difference, so commands borrow only the name and the track list. Opening a project clears the
+   history. `./spectre` has Undo and Redo.
+8. **Carried, not closed.** Missing-media diagnostics need a persisted media reference, and none
+   exists in the workspace: there is no audio clip, sample, or media type anywhere in the project
+   model. The dependency is the drum sampler, which arrives with the instrument milestone. Gating
+   it is the accepted treatment — the alternative is a fake fixture, and a diagnostic proved
+   against an invented reference proves nothing about the one that eventually ships.
+9. ~~Run product-path crash/recovery drills and the full workspace gate.~~ Landed 2026-09-06 as
+   `tests/recovery_qualification.rs`. `crash_qualification.rs` kills a process saving **the
+   project**; this one kills a process writing **the sidecar**, which is the path the product runs
+   between saves and which carries a claim the older drill does not make: `journal.rs` never opens
+   the project file. That claim had only ever been checked against a returned error, and a crash
+   returns nothing and runs no cleanup. Three drills over 24 randomized-phase kills each: the
+   saved project is byte-identical after every kill, any sidecar present decodes whole and equals
+   the reference, and the next launch is offered the work with both files still intact. Each drill
+   refuses to pass on too few samples rather than reporting a vacuous green.
+   **Falsified:** a mutation that tears the project file inside the autosave fails two of the
+   three.
 
 ## R4 Credible Alpha — exit-pending record
 
