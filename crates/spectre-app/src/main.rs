@@ -11,7 +11,10 @@ use spectre_app::engine::{
     apply_parameter_edit, engine_status_field, EngineHealth, EngineState, EngineUnavailable,
     LiveEngine,
 };
-use spectre_app::project::{adopt, is_dirty, open_gate, project_envelope, OpenGate};
+use spectre_app::project::{
+    adopt, autosave_action, commit_save, is_dirty, open_gate, project_envelope, run_autosave,
+    AutosaveAction, OpenGate, SaveOutcome,
+};
 use spectre_app::{open_device_in_shape_from_ui, AppModel, Lens};
 use spectre_core::{BeatTicks, ObjectId};
 
@@ -77,6 +80,12 @@ struct SpectrePrototype {
     // One interaction of arming for the discard-and-open confirm. No modal: a modal blocks a
     // workspace that has nothing wrong with it
     discard_armed: bool,
+    // The bytes the sidecar holds, tracked the same derived way saved_snapshot is, so the
+    // autosave trigger compares content rather than consulting a clock
+    autosaved_snapshot: Option<Vec<u8>>,
+    // Last autosave outcome, shown verbatim beside the save status. An autosave that failed
+    // silently would be worse than none, because the musician would believe work was protected
+    autosave_status: String,
 }
 
 impl Default for SpectrePrototype {
@@ -96,6 +105,8 @@ impl Default for SpectrePrototype {
             project_status: String::new(),
             saved_snapshot: None,
             discard_armed: false,
+            autosaved_snapshot: None,
+            autosave_status: String::new(),
         }
     }
 }
@@ -525,6 +536,11 @@ impl SpectrePrototype {
                     self.project_status.as_str()
                 };
                 ui.label(RichText::new(status).color(MUTED));
+                // Stated only when a sidecar exists. Reporting "no autosave" on a clean project
+                // would read as a warning about a condition that is correct
+                if !self.autosave_status.is_empty() {
+                    ui.label(RichText::new(&self.autosave_status).color(MUTED));
+                }
                 // The word changes, not only the colour
                 let (marker, tint) = if dirty {
                     ("Unsaved changes", WARM)
@@ -578,30 +594,78 @@ impl SpectrePrototype {
         // fallback could drift, and then the dirty marker would compare a document built with
         // one name against a file written with another and never read clean
         let snapshot = project_envelope(&self.model, &self.project_name());
-        match spectre_project::save_project_atomic(&path, &snapshot) {
-            Ok(_) => {
+        // commit_save owns the save-then-retire-the-sidecar order; this match only renders it
+        match commit_save(&path, &snapshot) {
+            SaveOutcome::Saved => {
                 self.saved_snapshot = spectre_project::to_bytes(&snapshot).ok();
+                self.autosaved_snapshot = None;
+                self.autosave_status.clear();
                 self.discard_armed = false;
                 self.project_status = format!("Saved to {}", path.display());
             }
-            Err(spectre_project::SaveError::Io {
-                stage: spectre_project::SaveStage::SyncParentDirectory,
-                ..
-            }) => {
+            SaveOutcome::SavedSidecarRetained => {
+                self.saved_snapshot = spectre_project::to_bytes(&snapshot).ok();
+                self.discard_armed = false;
+                self.project_status = format!("Saved to {}", path.display());
+                self.autosave_status =
+                    "Saved, but the autosave sidecar could not be removed. It will be offered \
+                     on the next open and can be declined."
+                        .into();
+            }
+            SaveOutcome::DurabilityUncertain => {
                 // The replacement happened but its directory entry may not survive a power
-                // loss. The project stays dirty and no second replacement is attempted
+                // loss. The project stays dirty, no second replacement is attempted, and the
+                // sidecar is deliberately kept
                 self.project_status = format!(
                     "{} is in place, but the directory entry may not survive a power loss. \
                      Save again.",
                     path.display()
                 );
             }
-            Err(error) => {
+            SaveOutcome::Failed(error) => {
                 self.project_status = format!(
                     "{error}. Nothing was written. {} is unchanged.",
                     path.display()
                 );
             }
+        }
+    }
+
+    // Journal unsaved work to the sidecar when the document's own content says it should be.
+    // Throwaway affordance for R5 slice 6: the decision and the write both live in
+    // spectre_app::project, and only this call site is drawn
+    fn maybe_autosave(&mut self) {
+        let path = self.project_path.trim().to_string();
+        let current = self.current_project_bytes();
+        let action = autosave_action(
+            !path.is_empty(),
+            current.as_deref(),
+            self.saved_snapshot.as_deref(),
+            self.autosaved_snapshot.as_deref(),
+        );
+        let path = std::path::PathBuf::from(&path);
+        match action {
+            AutosaveAction::Write => {
+                let snapshot = project_envelope(&self.model, &self.project_name());
+                match run_autosave(&path, &snapshot) {
+                    Ok(()) => {
+                        self.autosaved_snapshot = current;
+                        self.autosave_status =
+                            format!("Unsaved work journaled beside {}", path.display());
+                    }
+                    Err(error) => {
+                        self.autosave_status = format!("Autosave failed: {error}");
+                    }
+                }
+            }
+            AutosaveAction::Discard => {
+                if self.autosaved_snapshot.is_some() {
+                    let _ = spectre_project::journal::discard_autosave(&path);
+                    self.autosaved_snapshot = None;
+                    self.autosave_status.clear();
+                }
+            }
+            AutosaveAction::Skip => {}
         }
     }
 
@@ -1309,6 +1373,7 @@ impl eframe::App for SpectrePrototype {
         // Collect a finished render on the app thread; never blocks, so a long bounce does not
         // freeze the window
         self.bounce.poll();
+        self.maybe_autosave();
         self.transport(ctx);
         self.lenses(ctx);
         self.track_list(ctx);

@@ -140,6 +140,15 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **The dirty marker is derived, not maintained.** It compares the bytes a save would write right now against the bytes last written, rather than being set by hand at each mutation site — a flag maintained at call sites is a flag someone forgets at the next one, and a marker reading "Saved" over unsaved work is exactly the defect the project-safety pillar names. The two shell decisions that are not drawing — that comparison and the one-press-never-discards rule — live in `spectre_app::project` rather than in `main.rs`, because `main.rs` is a binary target no test can reach; that is the lesson R4-1's review already paid for.
 
+**Autosave became product-reachable 2026-09-06.** `./spectre` journals unsaved work to the
+sidecar on a content trigger and retires it on a durable save. The trigger is
+`spectre_app::project::autosave_action`, a pure function of four inputs, deliberately not a timer
+— an interval would be a number with no rationale row, which PROD-003 forbids. `commit_save` owns
+the save-then-retire order and **keeps** the sidecar when the parent-directory sync fails, since
+that save left the project in place but its directory entry may not survive a power loss. The
+recovery half is still not wired: nothing calls `read_autosave` or `inspect`, so a sidecar this
+slice writes is not yet offered back after a crash.
+
 **R5 persistence seams now exist but are not product-reachable.** Process-death crash qualification,
 sidecar autosave, and explicit recovery inspection/accept/decline landed on 2026-08-29. No shell
 surface calls the autosave or recovery APIs.

@@ -12,10 +12,12 @@ use spectre_dsp::{
     DspParameter, FILAMENT_PARAMETERS, GAIN_PARAMETERS, GLOAM_PARAMETERS, PULSE_PARAMETERS,
     SATURATOR_PARAMETERS,
 };
+use spectre_project::journal::{discard_autosave, write_autosave};
 use spectre_project::{
-    migrate_to_current, DeviceDoc, LensDoc, MigrationError, ParameterDoc, ProjectDoc,
-    ProjectEnvelope, ViewDoc, SCHEMA_VERSION,
+    migrate_to_current, save_project_atomic, DeviceDoc, LensDoc, MigrationError, ParameterDoc,
+    ProjectDoc, ProjectEnvelope, SaveError, SaveStage, ViewDoc, SCHEMA_VERSION,
 };
+use std::path::Path;
 
 // Why a loaded project could not become the live one. Every variant is a refusal, never a
 // silent repair: a file must not be able to smuggle a value the UI cannot produce
@@ -287,5 +289,93 @@ pub fn open_gate(dirty: bool, armed: bool) -> OpenGate {
         OpenGate::ArmDiscard
     } else {
         OpenGate::Proceed
+    }
+}
+
+// What the shell should do about the sidecar right now. Three-valued rather than a boolean,
+// because "there is nothing to protect" and "what is there is already protected" call for
+// different actions on the same sidecar
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutosaveAction {
+    Write,
+    // The document matches what is on disk, so any sidecar describes work that no longer exists
+    Discard,
+    Skip,
+}
+
+// Decide from content, never from a clock. R5 slice 6 requires a content trigger, and a timer
+// would need an interval -- a number with no rationale row, which PROD-003 forbids outright.
+//
+// `current` is None when the document could not be encoded. That is not "unchanged": is_dirty
+// already reports it dirty, and writing a sidecar needs bytes there are none of, so it skips.
+pub fn autosave_action(
+    has_path: bool,
+    current: Option<&[u8]>,
+    saved: Option<&[u8]>,
+    autosaved: Option<&[u8]>,
+) -> AutosaveAction {
+    // journal_path is a pure function of the project path, so with no path there is nowhere a
+    // later launch could look for a sidecar even if one were written
+    if !has_path {
+        return AutosaveAction::Skip;
+    }
+    let Some(current) = current else {
+        return AutosaveAction::Skip;
+    };
+    // Durable already. Any sidecar left here would offer the musician work they have saved
+    if saved == Some(current) {
+        return AutosaveAction::Discard;
+    }
+    // Already journaled; rewriting identical bytes is I/O that protects nothing new
+    if autosaved == Some(current) {
+        return AutosaveAction::Skip;
+    }
+    AutosaveAction::Write
+}
+
+// Write the sidecar and report the bytes it now holds, so the caller tracks what is journaled
+// without re-encoding. The project file is never opened by this path
+pub fn run_autosave(
+    project: &Path,
+    snapshot: &ProjectEnvelope,
+) -> Result<(), spectre_project::journal::AutosaveError> {
+    write_autosave(project, snapshot).map(|_| ())
+}
+
+// What a save attempt did, including what it did about the sidecar. The sidecar half is part of
+// the outcome rather than a side effect, because retiring it is a decision with a reason
+#[derive(Debug)]
+pub enum SaveOutcome {
+    // Replaced durably and the obsolete sidecar is gone
+    Saved,
+    // Replaced durably, but the sidecar could not be removed. Harmless: a stale sidecar is
+    // offered and declined, where a missing save would be lost work
+    SavedSidecarRetained,
+    // The replacement happened; its directory entry may not survive a power loss
+    DurabilityUncertain,
+    // Nothing was written
+    Failed(SaveError),
+}
+
+// Commit a document and retire the sidecar that protected it.
+//
+// The order is load-bearing and is not interchangeable: the sidecar is discarded only after the
+// save has reported a durable replacement. Discarding first would destroy the only other copy
+// of the work at the exact moment the save might fail.
+//
+// A SyncParentDirectory failure keeps the sidecar. That save left the project in place but its
+// directory entry may not survive a power loss, so the sidecar is the only copy that certainly
+// exists -- retiring it there would trade the last backup for tidiness
+pub fn commit_save(project: &Path, snapshot: &ProjectEnvelope) -> SaveOutcome {
+    match save_project_atomic(project, snapshot) {
+        Ok(_) => match discard_autosave(project) {
+            Ok(()) => SaveOutcome::Saved,
+            Err(_) => SaveOutcome::SavedSidecarRetained,
+        },
+        Err(SaveError::Io {
+            stage: SaveStage::SyncParentDirectory,
+            ..
+        }) => SaveOutcome::DurabilityUncertain,
+        Err(error) => SaveOutcome::Failed(error),
     }
 }

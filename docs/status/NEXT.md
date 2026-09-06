@@ -8,7 +8,7 @@ Notes: Only active-milestone slices belong here
 # Next
 
 - **Status:** accepted
-- **Last verified:** 2026-08-31
+- **Last verified:** 2026-09-06
 - **Scope:** active R5 engineering queue plus R4's retained operator-evidence obligation
 - **Decision authority:** Jeff
 - **Upstream sources:** `STATUS.md`, `../06-plans/current-milestone.md`
@@ -45,14 +45,29 @@ Next dependency-ordered slices:
 
 4. ~~Preserve envelope, project, device, and parameter unknown fields through app open → edit → save.~~ Landed 2026-08-31 with product-path evidence.
 5. ~~Implement the first real schema migration and prove stable identity through it.~~ Schema 1 → 2 landed 2026-08-31 with fixture and product-path evidence.
-6. Wire content-triggered sidecar autosave and an explicit recovery offer into the shell. Recovery loads into memory as unsaved and retains both disk versions until manual Save.
+6. **Autosave half landed 2026-09-06; the recovery offer is still open.** `./spectre` now
+   journals unsaved work to the sidecar from a content trigger and retires it on a durable save.
+   The decision is `spectre_app::project::autosave_action` — a pure four-input function, not a
+   timer, because an interval is a number with no rationale row and PROD-003 forbids that. Its
+   third value is the one worth naming: a document edited back to match the saved file returns
+   `Discard`, because a sidecar left there offers work the musician already has. `commit_save`
+   owns the save-then-retire order and keeps the sidecar on a `SyncParentDirectory` failure,
+   where the replacement is in place but its directory entry may not survive a power loss and
+   the sidecar is the only copy that certainly exists. 9 tests. **The ordering rule was
+   falsified twice:** discarding before saving passed the first version of
+   `a_failed_save_keeps_the_sidecar`, because that test's failing save targeted a different path
+   than the sidecar it asserted on — `journal_path` is derived from the project path, so the
+   assertion could not fire. The failing save now targets the same path. **Still open:** no
+   recovery offer is presented, so a sidecar written by this slice is not yet read back.
+   Recovery must load into memory as unsaved and retain both disk versions until manual Save.
 7. Bind bounded command history to product edits and verify grouped undo/redo through persistence.
 8. Add missing-media diagnostics when a persisted media reference exists; do not invent one early.
 9. Run the R5 crash/recovery exit drill and full gate.
 
-**Autosave and recovery are not yet reachable from `./spectre`.** No shell surface calls
-`write_autosave`, `read_autosave`, or `inspect`, so an operator running the QA protocol today sees
-no sidecar. Forward-field preservation and schema migration do run through the shell's adoption
+**Recovery is not yet reachable from `./spectre`; autosave is.** The shell calls `write_autosave`
+and `discard_autosave` as of 2026-09-06, so an operator running the QA protocol now sees a
+sidecar appear beside a dirty project and disappear on save. Nothing calls `read_autosave` or
+`inspect`, so work the sidecar holds after a crash is still not offered back. Forward-field preservation and schema migration do run through the shell's adoption
 path; they are not part of this reachability gap.
 
 ## Closed R4 engineering queue; operator exit pending
