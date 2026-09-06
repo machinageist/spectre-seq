@@ -15,7 +15,7 @@
 //   musician needs to decide. What it must never do is claim equality it did not check, so
 //   `Difference` carries only the fields it actually compared.
 
-use crate::fs::{load_project, save_project_atomic, LoadError};
+use crate::fs::{load_project, LoadError};
 use crate::journal::{discard_autosave, read_autosave, AutosaveError};
 use crate::ProjectEnvelope;
 use std::path::Path;
@@ -49,14 +49,15 @@ pub enum Recovery {
 pub struct RecoveryOffer {
     pub saved: ProjectEnvelope,
     pub autosaved: ProjectEnvelope,
-    // Empty is impossible here: an offer with no differences is reported as `Redundant`
+    // This shallow summary may be empty while exact envelope inequality still requires an offer
     pub differences: Vec<Difference>,
 }
 
 impl RecoveryOffer {
     // One line per difference, phrased so a caller can show it without interpreting it
     pub fn describe(&self) -> Vec<String> {
-        self.differences
+        let described: Vec<_> = self
+            .differences
             .iter()
             .map(|difference| match difference {
                 Difference::ProjectName { saved, autosaved } => {
@@ -75,7 +76,12 @@ impl RecoveryOffer {
                     format!("tempo segments: saved {saved}, unsaved {autosaved}")
                 }
             })
-            .collect()
+            .collect();
+        if described.is_empty() {
+            vec!["other persisted content differs; the shallow summary has no named row".into()]
+        } else {
+            described
+        }
     }
 
     // The fields this offer did NOT compare, stated so a caller cannot present the difference list
@@ -107,10 +113,13 @@ pub fn inspect(project: &Path) -> Result<Recovery, AutosaveError> {
         return Ok(Recovery::Nothing);
     };
 
-    let differences = compare(&saved, &autosaved);
-    if differences.is_empty() {
+    // Redundant means exact persisted equality, not "the shallow summary noticed nothing".
+    // Parameter values, note content, view state, and forward fields are deliberately outside the
+    // summary but are still work and must never be hidden from recovery.
+    if saved == autosaved {
         return Ok(Recovery::Redundant);
     }
+    let differences = compare(&saved, &autosaved);
     Ok(Recovery::Available(Box::new(RecoveryOffer {
         saved,
         autosaved,
@@ -118,12 +127,11 @@ pub fn inspect(project: &Path) -> Result<Recovery, AutosaveError> {
     })))
 }
 
-// Accept unsaved work: write it over the project through the qualified atomic save, then discard
-// the sidecar. The order matters and is not interchangeable -- discarding first would lose the
-// work if the save then failed
-pub fn accept(project: &Path, offer: &RecoveryOffer) -> Result<(), AutosaveError> {
-    save_project_atomic(project, &offer.autosaved).map_err(AutosaveError::Save)?;
-    discard_autosave(project)
+// Accept unsaved work into memory without changing either disk version. A later successful manual
+// Save commits this envelope and only then discards the obsolete sidecar. This keeps "Recover"
+// reversible until the musician explicitly saves, per decision 14.
+pub fn accept(offer: &RecoveryOffer) -> ProjectEnvelope {
+    offer.autosaved.clone()
 }
 
 // Decline unsaved work: the project is left exactly as it was and the sidecar is removed. The

@@ -10,7 +10,7 @@
 //   different thing from one where nothing ran on the way out.
 
 use spectre_core::{IdGen, TempoMap, Transport};
-use spectre_project::journal::{journal_path, write_autosave};
+use spectre_project::journal::{discard_autosave, journal_path, write_autosave};
 use spectre_project::recovery::{accept, decline, inspect, Difference, Recovery};
 use spectre_project::{
     load_project, save_project_atomic, ProjectDoc, ProjectEnvelope, Track, TrackInstrument,
@@ -91,17 +91,26 @@ fn the_recovery_drill_restores_work_after_an_unclean_exit() {
         "inspection must not have applied anything"
     );
 
-    // 5 — accepting writes the recovered work and clears the sidecar
-    accept(&path, &offer).expect("accepting succeeds");
+    // 5 — accepting loads recovered work into memory as UNSAVED. Both disk versions stay until
+    // a later manual Save, so this choice can never destroy the musician's last saved state
+    let recovered = accept(&offer);
     assert_eq!(
         load_project(&path).expect("loads").project.tracks.len(),
-        3,
-        "the recovered work was not written"
+        1,
+        "accepting recovery overwrote the saved project before manual Save"
     );
     assert!(
-        !journal_path(&path).exists(),
-        "an accepted offer left its sidecar behind, so it would be offered again"
+        journal_path(&path).exists(),
+        "accepting recovery removed the only autosaved copy before manual Save"
     );
+    assert_eq!(recovered.project.tracks.len(), 3);
+
+    // A later successful manual Save commits the in-memory recovery, then clears its obsolete
+    // sidecar. The order is load-bearing: deleting first would lose work if Save failed
+    save_project_atomic(&path, &recovered).expect("manual Save commits recovered work");
+    discard_autosave(&path).expect("a durable manual Save clears the obsolete sidecar");
+    assert_eq!(load_project(&path).unwrap().project.tracks.len(), 3);
+    assert!(!journal_path(&path).exists());
 }
 
 // Declining must leave the saved project exactly as it was, byte for byte
@@ -146,6 +155,33 @@ fn an_identical_sidecar_is_redundant_rather_than_an_offer() {
         inspect(&path).expect("inspects"),
         Recovery::Redundant
     ));
+}
+
+#[test]
+fn a_difference_outside_the_shallow_summary_is_still_offered() {
+    let directory = scratch("unsummarized");
+    let path = directory.join("take.spectre");
+    let saved = envelope(0x41, "Session", &["Bass"]);
+    save_project_atomic(&path, &saved).unwrap();
+
+    let mut autosaved = saved.clone();
+    autosaved.project.unknown.insert(
+        "future_edit".into(),
+        serde_json::json!({"parameter_curve": [0.1, 0.8]}),
+    );
+    write_autosave(&path, &autosaved).unwrap();
+
+    let Recovery::Available(offer) = inspect(&path).unwrap() else {
+        panic!("exactly different persisted work was hidden as redundant");
+    };
+    assert!(offer.differences.is_empty());
+    assert!(offer
+        .describe()
+        .iter()
+        .any(|line| line.contains("other persisted content")));
+    assert_eq!(accept(&offer), autosaved);
+    assert_eq!(load_project(&path).unwrap(), saved);
+    assert!(journal_path(&path).exists());
 }
 
 // A crash during a save must not produce a recovery offer built from a half-written project. This

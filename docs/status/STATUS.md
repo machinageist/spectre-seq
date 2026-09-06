@@ -8,7 +8,7 @@ Notes: Claims here link to live evidence; optimistic language is prohibited
 # Status
 
 - **Status:** accepted
-- **Last verified:** 2026-08-31
+- **Last verified:** 2026-09-06
 - **Scope:** current implementation, documentation, and research state
 - **Decision authority:** Jeff
 - **Upstream sources:** workspace tests, `../01-requirements/traceability.md`, research ledgers
@@ -142,7 +142,18 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **R5 persistence seams now exist but are not product-reachable.** Process-death crash qualification,
 sidecar autosave, and explicit recovery inspection/accept/decline landed on 2026-08-29. No shell
-surface calls the autosave or recovery APIs. As of 2026-08-31, the shell carries every unknown map
+surface calls the autosave or recovery APIs.
+
+**Recovery now commits on manual Save rather than on accept, per decision 14 as Jeff ratified it
+on 2026-08-31.** `recovery::accept` previously wrote the autosaved envelope over the project
+through the atomic save and discarded the sidecar; it now returns the envelope and touches
+neither disk version, so both survive until a later successful manual Save. **The change also
+closes a real defect rather than only re-shaping an API:** `inspect` decided redundancy from the
+shallow `compare` summary, so two envelopes that differed only outside the five compared fields —
+parameter values, note content, view state, or forward fields — were reported `Redundant` and the
+unsaved work was silently dropped. Redundancy is now exact envelope equality, and an offer whose
+summary names no row says so in `describe` rather than presenting an empty difference list as
+though nothing differed. As of 2026-08-31, the shell carries every unknown map
 the codec currently represents — envelope, project, device, and parameter — through open → edit →
 save by stable identity. Track, clip, placement, note, and view types expose no flatten map, so no
 deeper preservation claim is made. Nothing in the shell's own `main.rs` — the buttons, the
