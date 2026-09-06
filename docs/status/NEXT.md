@@ -57,9 +57,18 @@ Next dependency-ordered slices:
    falsified twice:** discarding before saving passed the first version of
    `a_failed_save_keeps_the_sidecar`, because that test's failing save targeted a different path
    than the sidecar it asserted on — `journal_path` is derived from the project path, so the
-   assertion could not fire. The failing save now targets the same path. **Still open:** no
-   recovery offer is presented, so a sidecar written by this slice is not yet read back.
-   Recovery must load into memory as unsaved and retain both disk versions until manual Save.
+   assertion could not fire. The failing save now targets the same path. **Recovery half landed the same day.**
+   Opening a project inspects for a sidecar and presents an offer panel carrying the described
+   differences *and* `uncompared()`, so a difference list cannot be read as exhaustive.
+   `adopt_recovered` is the rule: it adopts the autosaved envelope and returns **the project
+   file's** bytes for the dirty marker, never the recovered ones — a shell that took the snapshot
+   from the recovery would read "Saved" over work that exists in no file, which is the
+   product-killing defect arriving from the one direction that looks like success. Neither disk
+   version is written; both survive until a manual Save retires the sidecar. A refused adoption
+   puts the offer back rather than dropping the only handle on the work. **Autosave is suppressed
+   while an offer is pending**, because the model still holds the saved project at that moment and
+   journaling it would overwrite the sidecar with exactly the work the offer exists to protect.
+   4 tests; the snapshot rule fails under mutation.
 7. Bind bounded command history to product edits and verify grouped undo/redo through persistence.
 8. Add missing-media diagnostics when a persisted media reference exists; do not invent one early.
 9. Run the R5 crash/recovery exit drill and full gate.
@@ -67,7 +76,8 @@ Next dependency-ordered slices:
 **Recovery is not yet reachable from `./spectre`; autosave is.** The shell calls `write_autosave`
 and `discard_autosave` as of 2026-09-06, so an operator running the QA protocol now sees a
 sidecar appear beside a dirty project and disappear on save. Nothing calls `read_autosave` or
-`inspect`, so work the sidecar holds after a crash is still not offered back. Forward-field preservation and schema migration do run through the shell's adoption
+`inspect` on any path other than the shell's own open, so work the sidecar holds is offered
+only when a project is opened by path. Forward-field preservation and schema migration do run through the shell's adoption
 path; they are not part of this reachability gap.
 
 ## Closed R4 engineering queue; operator exit pending

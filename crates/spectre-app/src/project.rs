@@ -13,6 +13,7 @@ use spectre_dsp::{
     SATURATOR_PARAMETERS,
 };
 use spectre_project::journal::{discard_autosave, write_autosave};
+use spectre_project::recovery::RecoveryOffer;
 use spectre_project::{
     migrate_to_current, save_project_atomic, DeviceDoc, LensDoc, MigrationError, ParameterDoc,
     ProjectDoc, ProjectEnvelope, SaveError, SaveStage, ViewDoc, SCHEMA_VERSION,
@@ -378,4 +379,24 @@ pub fn commit_save(project: &Path, snapshot: &ProjectEnvelope) -> SaveOutcome {
         }) => SaveOutcome::DurabilityUncertain,
         Err(error) => SaveOutcome::Failed(error),
     }
+}
+
+// Adopt recovered work into the live model and report the bytes the PROJECT FILE holds.
+//
+// The return value is the whole point and is not the recovered bytes. `saved_snapshot` is what
+// the dirty marker compares against, so setting it from the recovered envelope would make the
+// shell read "Saved" over work that exists in no project file -- the product-killing defect the
+// project-safety pillar is named for, arrived at from the one direction that looks like success.
+// Returning the saved side instead is what makes recovery land as unsaved.
+//
+// Neither disk version is touched. Per decision 14 the sidecar survives until a later manual
+// Save retires it, so a musician who recovers and then changes their mind still has both.
+pub fn adopt_recovered(
+    model: &mut AppModel,
+    offer: &RecoveryOffer,
+) -> Result<Option<Vec<u8>>, AdoptError> {
+    // Clone rather than consume: a refused adoption must leave the offer intact so it can be
+    // presented again, and adopt takes ownership
+    adopt(model, offer.autosaved.clone())?;
+    Ok(spectre_project::to_bytes(&offer.saved).ok())
 }

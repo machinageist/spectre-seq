@@ -145,9 +145,12 @@ sidecar on a content trigger and retires it on a durable save. The trigger is
 `spectre_app::project::autosave_action`, a pure function of four inputs, deliberately not a timer
 — an interval would be a number with no rationale row, which PROD-003 forbids. `commit_save` owns
 the save-then-retire order and **keeps** the sidecar when the parent-directory sync fails, since
-that save left the project in place but its directory entry may not survive a power loss. The
-recovery half is still not wired: nothing calls `read_autosave` or `inspect`, so a sidecar this
-slice writes is not yet offered back after a crash.
+that save left the project in place but its directory entry may not survive a power loss. The recovery half landed the same
+day: opening a project inspects for a sidecar and offers it, `adopt_recovered` loads it as
+**unsaved** by returning the project file's own bytes for the dirty marker, and neither disk
+version is written until a manual Save retires the sidecar. Autosave is suppressed while an offer
+is pending, because the model still holds the saved project then and journaling it would
+overwrite the sidecar with the work the offer protects.
 
 **R5 persistence seams now exist but are not product-reachable.** Process-death crash qualification,
 sidecar autosave, and explicit recovery inspection/accept/decline landed on 2026-08-29. No shell

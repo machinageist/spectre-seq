@@ -12,8 +12,8 @@ use spectre_app::engine::{
     LiveEngine,
 };
 use spectre_app::project::{
-    adopt, autosave_action, commit_save, is_dirty, open_gate, project_envelope, run_autosave,
-    AutosaveAction, OpenGate, SaveOutcome,
+    adopt, adopt_recovered, autosave_action, commit_save, is_dirty, open_gate, project_envelope,
+    run_autosave, AutosaveAction, OpenGate, SaveOutcome,
 };
 use spectre_app::{open_device_in_shape_from_ui, AppModel, Lens};
 use spectre_core::{BeatTicks, ObjectId};
@@ -86,6 +86,10 @@ struct SpectrePrototype {
     // Last autosave outcome, shown verbatim beside the save status. An autosave that failed
     // silently would be worse than none, because the musician would believe work was protected
     autosave_status: String,
+    // Unsaved work found beside the opened project, held until the musician answers. Never
+    // applied on its own: a musician looking at a project must know whether it is what they
+    // saved or what a crash recovered, and only an explicit act can guarantee that
+    recovery_offer: Option<Box<spectre_project::recovery::RecoveryOffer>>,
 }
 
 impl Default for SpectrePrototype {
@@ -107,6 +111,7 @@ impl Default for SpectrePrototype {
             discard_armed: false,
             autosaved_snapshot: None,
             autosave_status: String::new(),
+            recovery_offer: None,
         }
     }
 }
@@ -631,6 +636,86 @@ impl SpectrePrototype {
         }
     }
 
+    // Present unsaved work found beside the project. Throwaway affordance for R5 slice 6: the
+    // adoption rule lives in spectre_app::project, and only the drawing is here.
+    //
+    // Drawn as a panel rather than a modal. A modal would block a workspace that has nothing
+    // wrong with it, and the musician may want to look at what they saved before deciding
+    fn recovery_panel(&mut self, ctx: &egui::Context) {
+        let Some(offer) = self.recovery_offer.as_ref() else {
+            return;
+        };
+        let mut recover = false;
+        let mut keep_saved = false;
+        egui::TopBottomPanel::top("recovery").show(ctx, |ui| {
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new("Unsaved work was found beside this project")
+                    .strong()
+                    .color(TEXT),
+            );
+            for line in offer.describe() {
+                ui.label(RichText::new(format!("  • {line}")).color(MUTED));
+            }
+            // Stated, not implied. A difference list a caller could read as exhaustive would
+            // let a musician decline work this comparison never looked at
+            ui.label(
+                RichText::new(format!(
+                    "Not compared: {}. Recovering loads the unsaved work without writing \
+                     either file; both are kept until you Save.",
+                    offer.uncompared().join(", ")
+                ))
+                .color(MUTED),
+            );
+            ui.horizontal(|ui| {
+                recover = ui
+                    .button("Recover unsaved work")
+                    .on_hover_text("Loads it as unsaved. Neither file on disk changes.")
+                    .clicked();
+                keep_saved = ui
+                    .button("Keep the saved version")
+                    .on_hover_text("Discards the unsaved work and removes its sidecar.")
+                    .clicked();
+            });
+            ui.add_space(6.0);
+        });
+
+        let path = std::path::PathBuf::from(self.project_path.trim());
+        if recover {
+            let offer = self
+                .recovery_offer
+                .take()
+                .expect("the offer was just drawn");
+            match adopt_recovered(&mut self.model, &offer) {
+                Ok(saved_bytes) => {
+                    // The bytes the PROJECT FILE holds, never the recovered ones, so the marker
+                    // reads unsaved. Setting this from the recovery would report "Saved" over
+                    // work no file holds
+                    self.saved_snapshot = saved_bytes;
+                    // The sidecar still holds this work and stays until a manual Save retires it
+                    self.autosaved_snapshot = self.current_project_bytes();
+                    self.engine_revision = self.engine_revision.wrapping_sub(1);
+                    self.project_status =
+                        "Recovered unsaved work. It is not saved yet — press Save to keep it."
+                            .into();
+                }
+                Err(error) => {
+                    self.project_status = format!("Unsaved work could not be adopted: {error}");
+                    // Put it back: a refused adoption must not silently drop the offer
+                    self.recovery_offer = Some(offer);
+                }
+            }
+        } else if keep_saved {
+            self.recovery_offer = None;
+            match spectre_project::recovery::decline(&path) {
+                Ok(()) => self.autosave_status = "Unsaved work discarded.".into(),
+                Err(error) => {
+                    self.autosave_status = format!("Unsaved work could not be discarded: {error}");
+                }
+            }
+        }
+    }
+
     // Journal unsaved work to the sidecar when the document's own content says it should be.
     // Throwaway affordance for R5 slice 6: the decision and the write both live in
     // spectre_app::project, and only this call site is drawn
@@ -690,6 +775,26 @@ impl SpectrePrototype {
                     self.project_status = format!("Opened {}", path.display());
                     // The loaded list is a different graph shape, so the running engine is stale
                     self.engine_revision = self.engine_revision.wrapping_sub(1);
+                    // Inspect AFTER the saved project is live, so the musician is looking at
+                    // what they saved while deciding whether to take the unsaved work instead
+                    self.autosaved_snapshot = None;
+                    self.autosave_status.clear();
+                    self.recovery_offer = None;
+                    match spectre_project::recovery::inspect(&path) {
+                        Ok(spectre_project::recovery::Recovery::Available(offer)) => {
+                            self.recovery_offer = Some(offer);
+                        }
+                        Ok(spectre_project::recovery::Recovery::Redundant) => {
+                            // The sidecar matched the project exactly. Retiring it here is not
+                            // a discard of work: there is none to lose
+                            let _ = spectre_project::journal::discard_autosave(&path);
+                        }
+                        Ok(spectre_project::recovery::Recovery::Nothing) => {}
+                        Err(error) => {
+                            self.autosave_status =
+                                format!("Unsaved work could not be inspected: {error}");
+                        }
+                    }
                 }
             },
         }
@@ -1373,8 +1478,13 @@ impl eframe::App for SpectrePrototype {
         // Collect a finished render on the app thread; never blocks, so a long bounce does not
         // freeze the window
         self.bounce.poll();
-        self.maybe_autosave();
+        // While an offer is pending the model still holds the SAVED project, so autosaving now
+        // would overwrite the sidecar with the very work the offer exists to protect
+        if self.recovery_offer.is_none() {
+            self.maybe_autosave();
+        }
         self.transport(ctx);
+        self.recovery_panel(ctx);
         self.lenses(ctx);
         self.track_list(ctx);
         self.inspector(ctx);
