@@ -207,6 +207,15 @@ impl SpectrePrototype {
         self.engine.as_ref().map(LiveEngine::health)
     }
 
+    // The rate the stream was actually opened at, which is the device's own rate rather than a
+    // constant. The position readout converts samples to ticks through it, so a literal here
+    // misreports the playhead on every device that does not happen to run at 48 kHz -- the
+    // macOS qualification drill opened at 88 200 Hz, where a 48 000 literal reads ~1.8x fast
+    fn engine_sample_rate(&self) -> Option<spectre_core::SampleRate> {
+        let rate = self.engine.as_ref()?.config().sample_rate;
+        spectre_core::SampleRate::new(rate)
+    }
+
     fn configure_style(ctx: &egui::Context) {
         let mut style = (*ctx.style()).clone();
         style.visuals.dark_mode = true;
@@ -276,14 +285,17 @@ impl SpectrePrototype {
                         .on_hover_text("Fixed project default; tempo editing arrives with the arrangement.");
                     ui.label(RichText::new("4 / 4").monospace().color(MUTED))
                         .on_hover_text("Fixed project default; meter editing arrives with the arrangement.");
-                    let position = self.engine_health().and_then(|health| {
-                        spectre_app::engine::bars_beats(
-                            health.position_samples,
-                            self.model.tempo_map(),
-                            self.model.meter_map(),
-                            spectre_core::SampleRate::new(48_000).expect("48 kHz is valid"),
-                        )
-                    });
+                    let position = self
+                        .engine_health()
+                        .zip(self.engine_sample_rate())
+                        .and_then(|(health, rate)| {
+                            spectre_app::engine::bars_beats(
+                                health.position_samples,
+                                self.model.tempo_map(),
+                                self.model.meter_map(),
+                                rate,
+                            )
+                        });
                     match position {
                         Some(text) => {
                             ui.label(RichText::new(text).monospace().color(TEXT))
@@ -562,11 +574,10 @@ impl SpectrePrototype {
     // this path at all
     fn save_project(&mut self) {
         let path = std::path::PathBuf::from(self.project_path.trim());
-        let name = path
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Untitled".into());
-        let snapshot = project_envelope(&self.model, &name);
+        // The same name project_dirty() builds its comparison bytes from. Two copies of this
+        // fallback could drift, and then the dirty marker would compare a document built with
+        // one name against a file written with another and never read clean
+        let snapshot = project_envelope(&self.model, &self.project_name());
         match spectre_project::save_project_atomic(&path, &snapshot) {
             Ok(_) => {
                 self.saved_snapshot = spectre_project::to_bytes(&snapshot).ok();
@@ -1276,17 +1287,23 @@ impl eframe::App for SpectrePrototype {
         if let Some(engine) = self.engine.as_mut() {
             engine.reclaim();
         }
-        if ctx.input(|input| input.key_pressed(egui::Key::Space)) {
-            self.toggle_transport();
-        }
-        for (key, lens) in [
-            (egui::Key::Num1, Lens::Arrange),
-            (egui::Key::Num2, Lens::Build),
-            (egui::Key::Num3, Lens::Shape),
-            (egui::Key::Num4, Lens::Mix),
-        ] {
-            if ctx.input(|input| input.key_pressed(key)) {
-                self.model.select_lens(lens);
+        // Shortcuts are refused while a text field holds focus. Without this, typing a space
+        // into the track-name or project-path field toggles the transport and typing a digit
+        // switches lens: the keystroke reaches both the field and the shortcut. Focus is read
+        // from memory, so it reflects the field that was focused when the key was pressed
+        if !ctx.wants_keyboard_input() {
+            if ctx.input(|input| input.key_pressed(egui::Key::Space)) {
+                self.toggle_transport();
+            }
+            for (key, lens) in [
+                (egui::Key::Num1, Lens::Arrange),
+                (egui::Key::Num2, Lens::Build),
+                (egui::Key::Num3, Lens::Shape),
+                (egui::Key::Num4, Lens::Mix),
+            ] {
+                if ctx.input(|input| input.key_pressed(key)) {
+                    self.model.select_lens(lens);
+                }
             }
         }
         // Collect a finished render on the app thread; never blocks, so a long bounce does not
