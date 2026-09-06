@@ -140,6 +140,19 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **The dirty marker is derived, not maintained.** It compares the bytes a save would write right now against the bytes last written, rather than being set by hand at each mutation site — a flag maintained at call sites is a flag someone forgets at the next one, and a marker reading "Saved" over unsaved work is exactly the defect the project-safety pillar names. The two shell decisions that are not drawing — that comparison and the one-press-never-discards rule — live in `spectre_app::project` rather than in `main.rs`, because `main.rs` is a binary target no test can reach; that is the lesson R4-1's review already paid for.
 
+**`Filament` is polyphonic as of 2026-09-06, and a chord sounds like a chord.** DEV-010 required
+exactly one voice and named its own re-open trigger — "MIDI clips producing overlapping notes a
+user expects to hear together" — which a piano roll fires on day one. The pool is a fixed array of
+`MAX_VOICES` = 16, so it is preallocated and `process` still allocates nothing. **A single sounding
+note renders bit-identically to the monophonic device**, because summing one voice into a zero
+accumulator is exact; that is what keeps R4's render evidence describing this instrument.
+**Stealing is oldest-first for determinism, not musicality:** "steal the quietest" compares contour
+floats, so two runs of one input could steal different voices and break the live↔offline
+bit-equality R4-8 proves. **`PulseInstrument` is still monophonic, and `AppModel::add_track` still
+creates Pulse tracks** — so a track added in the product cannot yet play a chord. That is one line
+to change and it is a product decision about which synth a new track gets, not an implementation
+detail, so it is left open rather than chosen here.
+
 **The chain is editable from the model as of 2026-09-06, and every edit is reversible.**
 `AppModel` gained add / append / remove / move / set-depth, all routed through the same
 `edit` funnel every track mutation uses, so a chain edit cannot reach the track list without

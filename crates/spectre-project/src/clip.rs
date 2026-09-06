@@ -323,10 +323,16 @@ impl ClipPlacement {
 
 // One track's ordered, non-overlapping placements.
 //
-// Non-overlapping is an invariant, not a policy preference: R4's instruments are monophonic —
-// PulseInstrument and Filament each hold one active voice and a second attack replaces the first —
-// so overlapping placements would produce a defined-but-musically-wrong result. Supporting them
-// properly needs polyphony, which is a later milestone's decision
+// Non-overlapping is an invariant. Its ORIGINAL justification is now partly obsolete and is
+// recorded as such rather than quietly left standing: it read that both instruments are
+// monophonic, so overlapping placements would be defined-but-musically-wrong. As of 2026-09-06
+// `Filament` sounds up to MAX_VOICES notes, so that argument no longer covers it. `PulseInstrument`
+// is still monophonic and still does.
+//
+// The invariant stays, because overlapping PLACEMENTS on one track's timeline is an arrangement
+// question rather than a voicing one, and it has not been decided. Polyphony within a clip -- a
+// chord -- was always representable and is now audible; two clips occupying the same tick on one
+// track is a different thing and needs its own decision
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackClips {
     // Sorted by start, non-overlapping. The stored length is the placed clip's length at insert

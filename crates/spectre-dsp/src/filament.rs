@@ -1,9 +1,15 @@
 // Author: Jeff
 // Date: 2026-08-24
-// Description: Filament — monophonic phase-warped voice behind a linear amplitude contour
-// Notes: One voice, one oscillator, no modulation. Phase accumulates in f64; every other value
+// Description: Filament — polyphonic phase-warped voices behind linear amplitude contours
+// Notes: One oscillator per voice, no modulation. Phase accumulates in f64; every other value
 //   is f32. Nothing here allocates, locks, formats, logs, or panics. Numeric bounds are
 //   DEV-001..DEV-005 and DEV-010 in docs/01-requirements/requirements-ledger.md
+//
+//   DEV-010 required exactly one voice and named its own re-open trigger: "MIDI clips producing
+//   overlapping notes a user expects to hear together." A piano roll fires that on day one, so
+//   the pool is now MAX_VOICES deep. A single sounding note takes the same path it always did
+//   and produces bit-identical output, because summing one voice into a zero accumulator is
+//   exact -- which is what keeps R4's render evidence valid.
 
 use crate::io::{
     validate_buffers, AudioProcessor, DeviceClass, DeviceIo, NoteEventKind, ParameterError,
@@ -65,23 +71,68 @@ const REFERENCE_MIDI_NOTE: f64 = 69.0;
 const SEMITONES_PER_OCTAVE: f64 = 12.0;
 const OCTAVE_RATIO: f64 = 2.0;
 
-// Monophonic note-driven voice: one warped oscillator behind one linear amplitude contour
-#[derive(Debug, Clone)]
-pub struct Filament {
-    lean: f32,
-    rise_ms: f32,
-    fall_ms: f32,
-    level: f32,
-    // Normalized oscillator phase in [0, 1); f64 for the same reason ToneSource uses it
-    phase: f64,
+// Simultaneous notes one Filament may sound
+//
+// Rationale row in docs/01-requirements/requirements-ledger.md (DEV-010, PROD-003). Spectre's own
+// arithmetic, not a reference product's: eight simultaneous notes covers a two-hand chord
+// voicing, and one full release generation overlapping the next attack doubles it. Sixteen is
+// that, and it is a fixed array so the pool is preallocated and `process` allocates nothing.
+// Stated cost: at MAX_TRACKS this admits 512 concurrent oscillators, which is bounded and
+// refused-into rather than grown
+pub const MAX_VOICES: usize = 16;
+
+// One sounding note. Every field that was a Filament field is now per-voice; nothing new is
+// introduced except the allocation order that makes stealing deterministic
+#[derive(Debug, Clone, Copy)]
+struct Voice {
     // Active note identity and number, matching the note-ID contract the event slice carries
     active: Option<(u32, u8)>,
+    // Normalized oscillator phase in [0, 1); f64 for the same reason ToneSource uses it
+    phase: f64,
     // Held across release so the fall ramp keeps the note's own loudness
     velocity: f32,
     // Equal-tempered frequency of the last note-on; survives release for the same reason
     note_hz: f64,
     // Amplitude contour in [0, 1]; reaches its target exactly, so silence is exact
     contour: f32,
+    // Allocation order, used only to choose which voice to steal. A counter rather than a
+    // measured amplitude BECAUSE it is exact: "steal the quietest" would compare contour floats,
+    // and two runs of the same input could then steal different voices and produce different
+    // audio -- which would break the live/offline bit-equality R4-8 proves
+    started: u64,
+}
+
+impl Voice {
+    const fn silent() -> Self {
+        Self {
+            active: None,
+            phase: 0.0,
+            velocity: 0.0,
+            note_hz: 0.0,
+            contour: CONTOUR_FLOOR,
+            started: 0,
+        }
+    }
+
+    // A voice contributes nothing and can be reused only when it is both released and fully
+    // faded. A released voice still on its fall ramp is still audible
+    fn is_free(&self) -> bool {
+        self.active.is_none() && self.contour == CONTOUR_FLOOR
+    }
+}
+
+// Polyphonic note-driven instrument: one warped oscillator per voice, each behind its own
+// linear amplitude contour
+#[derive(Debug, Clone)]
+pub struct Filament {
+    lean: f32,
+    rise_ms: f32,
+    fall_ms: f32,
+    level: f32,
+    voices: [Voice; MAX_VOICES],
+    // Next allocation order to hand out. Monotonic; wrapping is unreachable in any real session
+    // and would at worst mis-order one steal
+    next_started: u64,
 }
 
 impl Filament {
@@ -104,11 +155,8 @@ impl Filament {
             rise_ms,
             fall_ms,
             level,
-            phase: 0.0,
-            active: None,
-            velocity: 0.0,
-            note_hz: 0.0,
-            contour: CONTOUR_FLOOR,
+            voices: [Voice::silent(); MAX_VOICES],
+            next_started: 0,
         })
     }
 
@@ -131,25 +179,58 @@ impl Filament {
         }
     }
 
-    // Apply one note event to the single voice; note-off releases without silencing
+    // Apply one note event to the pool; note-off releases without silencing
     fn apply_event(&mut self, kind: NoteEventKind) {
         match kind {
             NoteEventKind::On {
                 id, note, velocity, ..
             } => {
-                self.active = Some((id, note));
-                self.velocity = velocity;
-                self.note_hz = note_frequency_hz(note);
-                self.phase = 0.0;
+                let slot = self.allocate();
+                let started = self.next_started;
+                self.next_started = self.next_started.wrapping_add(1);
+                self.voices[slot] = Voice {
+                    active: Some((id, note)),
+                    phase: 0.0,
+                    velocity,
+                    note_hz: note_frequency_hz(note),
+                    // A stolen voice restarts its contour from where the old note left it rather
+                    // than from silence, so stealing does not put a click in the output
+                    contour: self.voices[slot].contour,
+                    started,
+                };
             }
-            NoteEventKind::Off { id, .. } if self.active.is_some_and(|active| active.0 == id) => {
-                self.active = None;
+            // Release every voice holding this note id. Ids are unique per attack, so this is
+            // normally one voice; looping means a duplicate id cannot strand a sounding voice
+            NoteEventKind::Off { id, .. } => {
+                for voice in self.voices.iter_mut() {
+                    if voice.active.is_some_and(|active| active.0 == id) {
+                        voice.active = None;
+                    }
+                }
             }
             NoteEventKind::AllNotesOff { .. } => {
-                self.active = None;
+                for voice in self.voices.iter_mut() {
+                    voice.active = None;
+                }
             }
-            NoteEventKind::Off { .. } => {}
         }
+    }
+
+    // Choose the voice a new note takes: a free one, else the oldest sounding one.
+    //
+    // Both halves scan the fixed pool and neither allocates. Oldest-first is chosen for
+    // determinism, not for musicality -- see Voice::started
+    fn allocate(&self) -> usize {
+        let mut oldest = 0;
+        for (index, voice) in self.voices.iter().enumerate() {
+            if voice.is_free() {
+                return index;
+            }
+            if voice.started < self.voices[oldest].started {
+                oldest = index;
+            }
+        }
+        oldest
     }
 }
 
@@ -221,27 +302,33 @@ impl AudioProcessor for Filament {
                 self.apply_event(context.events()[event_index].kind);
                 event_index += 1;
             }
-            self.contour = if self.active.is_some() {
-                (self.contour + rise_step).min(CONTOUR_CEILING)
-            } else {
-                (self.contour - fall_step).max(CONTOUR_FLOOR)
-            };
-            let sample = if self.active.is_none() && self.contour == CONTOUR_FLOOR {
-                // Exact silence, and the phase stays where it is rather than decaying forever
-                CONTOUR_FLOOR
-            } else {
-                let value =
-                    warped(self.phase, lean) as f32 * self.contour * self.velocity * self.level;
+            // Voices sum in pool order, which is fixed for the life of the device, so the
+            // result is deterministic despite float addition not being associative. A single
+            // sounding voice sums into a zero accumulator, which is exact -- so one note
+            // produces bit-identical output to the monophonic device this replaced
+            let mut sample = CONTOUR_FLOOR;
+            for voice in self.voices.iter_mut() {
+                voice.contour = if voice.active.is_some() {
+                    (voice.contour + rise_step).min(CONTOUR_CEILING)
+                } else {
+                    (voice.contour - fall_step).max(CONTOUR_FLOOR)
+                };
+                if voice.active.is_none() && voice.contour == CONTOUR_FLOOR {
+                    // Exact silence, and the phase stays where it is rather than decaying
+                    // forever. Skipping the add keeps a silent pool exactly zero
+                    continue;
+                }
+                sample +=
+                    warped(voice.phase, lean) as f32 * voice.contour * voice.velocity * self.level;
                 // Contain the accumulator rather than the output: an unbounded rate would make
                 // the increment infinite, and a non-finite phase would poison every later block
-                let advanced = self.phase + self.note_hz / context.sample_rate();
-                self.phase = if advanced.is_finite() {
+                let advanced = voice.phase + voice.note_hz / context.sample_rate();
+                voice.phase = if advanced.is_finite() {
                     advanced.fract()
                 } else {
                     0.0
                 };
-                value
-            };
+            }
             left[frame] = sample;
             right[frame] = sample;
         }
