@@ -8,7 +8,7 @@ use crate::track::{TrackEffect, TrackInsert, TrackInstrument, TrackList, MAX_TRA
 use spectre_core::{IdGen, ObjectId};
 use spectre_dsp::{
     AudioProcessor, Filament, Gain, Gloam, PulseInstrument, SumBus, Waveform, FILAMENT_PARAMETERS,
-    GLOAM_DAMP_HZ, GLOAM_PARAMETERS, GLOAM_TRACK_MS,
+    GLOAM_DAMP_HZ, GLOAM_PARAMETERS, GLOAM_TRACK_MS, MAX_SUM_BUSES,
 };
 
 // Descriptor positions in FILAMENT_PARAMETERS. Named rather than inlined, so a reordering of the
@@ -39,6 +39,15 @@ pub struct InsertNode {
     pub depth_parameter: ObjectId,
 }
 
+// One summing node and the number of stereo input buses it declares. The tree builds one of
+// these per group per level, and the factory needs the bus count to construct the device: it is
+// no longer `tracks.len()` once more than one summing node exists
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SumNode {
+    pub node: NodeId,
+    pub buses: usize,
+}
+
 // Node identities for one built track graph; index i corresponds to TrackList::tracks()[i].
 // `inserts[i]` is None for a track with no insert, which is every track written before the slot
 // existed -- that track's graph is byte-identical to the R4-4 shape
@@ -47,7 +56,12 @@ pub struct TrackPathNodes {
     pub instruments: Vec<InstrumentNode>,
     pub inserts: Vec<Option<InsertNode>>,
     pub track_gains: Vec<GainNode>,
+    // The tree's root, which is what the master reads from. Kept as its own field because every
+    // existing caller asks for "the sum" and means this one
     pub sum: NodeId,
+    // Every summing node, root included, in the order they were built. One entry at or below
+    // one node's fan-in, which is the shape this graph always had
+    pub sums: Vec<SumNode>,
     pub master: GainNode,
 }
 
@@ -196,23 +210,8 @@ pub fn build_track_graph(
         });
     }
 
-    let sum_node = NodeId::new(ids.next_id());
-    let sum = SumBus::new(tracks.len()).map_err(RoutingError::Device)?;
-    graph
-        .add_node(sum_node, sum.io())
-        .map_err(RoutingError::Graph)?;
-    // Bus index equals track index; compile flattens input buses in bus order, so this is what
-    // makes the sum deterministic despite float addition not being associative
-    for (bus, gain) in track_gains.iter().enumerate() {
-        graph
-            .connect(Connection {
-                from: gain.node,
-                from_bus: 0,
-                to: sum_node,
-                to_bus: bus,
-            })
-            .map_err(RoutingError::Graph)?;
-    }
+    let sources: Vec<NodeId> = track_gains.iter().map(|gain| gain.node).collect();
+    let (sum_node, sums) = build_sum_tree(&mut graph, ids, &sources)?;
 
     let master_node = NodeId::new(ids.next_id());
     let master_parameter = ids.next_id();
@@ -236,6 +235,7 @@ pub fn build_track_graph(
             inserts,
             track_gains,
             sum: sum_node,
+            sums,
             master: GainNode {
                 node: master_node,
                 gain_parameter: master_parameter,
@@ -275,8 +275,13 @@ pub fn track_device_factory<'a>(
                 return Ok(Box::new(Gain::new(effective)?));
             }
         }
-        if node == nodes.sum {
-            return Ok(Box::new(SumBus::new(tracks.len())?));
+        // Every summing node the tree built, each with its own declared bus count. Matching only
+        // the root would fail to construct an intermediate node, and using tracks.len() as the
+        // count would be wrong for every node in a tree of more than one
+        for sum in nodes.sums.iter() {
+            if sum.node == node {
+                return Ok(Box::new(SumBus::new(sum.buses)?));
+            }
         }
         if node == nodes.master.node {
             return Ok(Box::new(Gain::new(tracks.master_level())?));
@@ -321,5 +326,85 @@ fn instrument_for(
             )
             .map_err(RoutingError::Device)?,
         )),
+    }
+}
+
+// Sum any number of stereo sources into one, without any node exceeding MAX_SUM_BUSES.
+//
+// A single summing node cannot take more inputs than the accepted flat-input bound, and that is
+// where MAX_TRACKS came from. But the product requirement is an unbounded number of TRACKS, not
+// an unbounded number of inputs on one node -- a tree satisfies the first while every node stays
+// inside the second. Nothing on the render path changes: no fixed array grows, no allocation is
+// added to the callback, and the accepted device contract is untouched.
+//
+// At or below MAX_SUM_BUSES this builds exactly the single node it always built, so every
+// existing project compiles to a byte-identical graph and R4's render evidence stays valid
+// unchanged. Above it, the tree rounds f64 to f32 once per level rather than once overall --
+// stated because SumBus's own contract is "accumulates in f64 and rounds once at store", and a
+// tree of them rounds once per level by construction.
+//
+// Group order is source order and bus index is position within the group, so the result is
+// deterministic despite float addition not being associative. Nodes are allocated level by
+// level, left to right, which keeps the ID sequence a function of the track list alone
+fn build_sum_tree(
+    graph: &mut EditableGraph,
+    ids: &mut IdGen,
+    sources: &[NodeId],
+) -> Result<(NodeId, Vec<SumNode>), RoutingError> {
+    // An empty project still needs a node to render silence from, which is what a zero-bus
+    // SumBus is defined to do
+    let mut level: Vec<NodeId> = sources.to_vec();
+    let mut sums = Vec::new();
+    loop {
+        // The last level: one node takes everything that remains and is the tree's root
+        if level.len() <= MAX_SUM_BUSES {
+            let node = NodeId::new(ids.next_id());
+            let sum = SumBus::new(level.len()).map_err(RoutingError::Device)?;
+            sums.push(SumNode {
+                node,
+                buses: level.len(),
+            });
+            graph
+                .add_node(node, sum.io())
+                .map_err(RoutingError::Graph)?;
+            for (bus, source) in level.iter().enumerate() {
+                graph
+                    .connect(Connection {
+                        from: *source,
+                        from_bus: 0,
+                        to: node,
+                        to_bus: bus,
+                    })
+                    .map_err(RoutingError::Graph)?;
+            }
+            return Ok((node, sums));
+        }
+
+        // One full level of fixed-width groups, so the shape is a function of the count alone.
+        // An id is minted per node actually built, never speculatively
+        let mut next = Vec::with_capacity(level.len().div_ceil(MAX_SUM_BUSES));
+        for group in level.chunks(MAX_SUM_BUSES) {
+            let node = NodeId::new(ids.next_id());
+            let sum = SumBus::new(group.len()).map_err(RoutingError::Device)?;
+            sums.push(SumNode {
+                node,
+                buses: group.len(),
+            });
+            graph
+                .add_node(node, sum.io())
+                .map_err(RoutingError::Graph)?;
+            for (bus, source) in group.iter().enumerate() {
+                graph
+                    .connect(Connection {
+                        from: *source,
+                        from_bus: 0,
+                        to: node,
+                        to_bus: bus,
+                    })
+                    .map_err(RoutingError::Graph)?;
+            }
+            next.push(node);
+        }
+        level = next;
     }
 }

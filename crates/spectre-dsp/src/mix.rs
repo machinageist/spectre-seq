@@ -11,9 +11,13 @@ use crate::io::{
 use crate::parameter::DeviceParameterKey;
 
 // Maximum stereo input buses one summing device may declare
-// Rationale row in docs/01-requirements/requirements-ledger.md; equals MAX_TRACKS and is the
-// same bound expressed in the DSP layer. Kept as a separate const so a layout error is caught
-// at device construction with a device-level message, before graph validation
+//
+// Rationale row in docs/01-requirements/requirements-ledger.md. This is the fan-in of ONE node,
+// which is what the graph's fixed input map bounds. It no longer equals MAX_TRACKS and must not
+// be re-coupled to it: since 2026-09-06 `routing::build_sum_tree` sums an arbitrary number of
+// sources through a tree of these, so raising the track count needs no change here. Kept as a
+// separate const so a layout error is caught at device construction with a device-level
+// message, before graph validation
 pub const MAX_SUM_BUSES: usize = 16;
 
 // Stereo summing bus; zero buses is legal and renders exact silence

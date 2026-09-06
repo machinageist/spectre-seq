@@ -10,13 +10,20 @@ use spectre_core::ObjectId;
 use spectre_dsp::{GAIN_PARAMETERS, GLOAM_DEPTH, GLOAM_PARAMETERS, PULSE_PARAMETERS};
 
 // Maximum tracks a v1 project may sum into the master bus
-// Rationale row in docs/01-requirements/requirements-ledger.md (PROD-003, decision 16). A bound
-// is structurally required, not merely prudent: PlanStep carries its input channel map as a
-// fixed array of MAX_FLAT_INPUTS width and CompiledPlan::process builds a fixed array on the
-// stack, so an unbounded track count would need a heap collection on the render path, which
-// RT-001 forbids. The specific value is Spectre's own cost arithmetic, not a reference
-// product's: 16 stereo tracks flatten to 32 input channels, which is the graph's raised bound
-pub const MAX_TRACKS: usize = 16;
+//
+// Rationale row in docs/01-requirements/requirements-ledger.md (PROD-003, decision 16).
+//
+// **Raised 16 -> 32 on 2026-09-06, and the reason the old value existed is gone.** It was
+// derived from summing: one SumBus cannot declare more than MAX_SUM_BUSES input buses, because
+// PlanStep carries its input map as a fixed array and RT-001 forbids a heap collection on the
+// render path. `routing::build_sum_tree` now sums through a tree of such nodes, so the number of
+// TRACKS is no longer bounded by the fan-in of any one node.
+//
+// What still bounds it is note delivery, and only that: `RenderBridge` builds one block's note
+// inputs in a fixed stack array of `spectre_graph::MAX_FLAT_INPUTS` entries, which admits one
+// primary note node plus 31 clip voices. Thirty-two instrument tracks is exactly that array, so
+// this is a derived number rather than a chosen one. Removing the array is what removes the cap
+pub const MAX_TRACKS: usize = 32;
 
 // The one instrument kind a v1 track may host. R4-6 replaces the variant; the slot stays
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
