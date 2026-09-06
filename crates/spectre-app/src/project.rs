@@ -235,6 +235,11 @@ pub fn adopt(model: &mut AppModel, envelope: ProjectEnvelope) -> Result<(), Adop
     transport.apply(TransportCommand::Stop);
 
     model.transport = transport;
+    // A different project's tracks are now live, so every reversible edit in the history
+    // addresses identities this document may not contain. Undoing across an open would
+    // resurrect the previous project's work into this one
+    model.history =
+        spectre_project::command::EditHistory::new(crate::UNDO_HISTORY_DEPTH).expect("nonzero");
     model.lens = lens_from(document.view.lens);
     model.tracks = document.tracks;
     model.devices = devices;

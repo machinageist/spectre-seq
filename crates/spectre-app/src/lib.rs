@@ -16,9 +16,16 @@ use spectre_dsp::{
     DeviceParameterSnapshot, DspParameter, FILAMENT_PARAMETERS, GAIN_PARAMETERS, GLOAM_PARAMETERS,
     PULSE_PARAMETERS, SATURATOR_PARAMETERS,
 };
+use spectre_project::command::{CommandError, EditHistory, ProjectCommand, Transaction};
 use spectre_project::{
     ClipError, ClipPlacement, MidiClip, Track, TrackError, TrackInstrument, TrackList,
 };
+
+// How many edits the model can reverse. Bounded because an unbounded history is a memory leak
+// that grows with the length of a session, and a delete's inverse carries the whole track. The
+// number is Spectre's own: 64 covers a working stretch between saves without a rationale row
+// borrowed from any reference product (PROD-003)
+pub const UNDO_HISTORY_DEPTH: usize = 64;
 
 // Persistent workspace lenses over one project selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -257,6 +264,10 @@ pub struct AppModel {
     selected_clip: Option<ObjectId>,
     ids: IdGen,
     feedback: String,
+    // Bounded undo/redo over the project's own edits. Held by the model rather than the shell so
+    // an edit cannot reach the track list without passing through it -- a history the caller has
+    // to remember to use is a history someone forgets at the next call site
+    history: EditHistory,
 }
 
 impl AppModel {
@@ -329,6 +340,7 @@ impl AppModel {
             selected_device,
             ids,
             feedback: String::new(),
+            history: EditHistory::new(UNDO_HISTORY_DEPTH).expect("a nonzero history depth"),
         }
     }
 
@@ -525,12 +537,57 @@ impl AppModel {
         ))
     }
 
+    // Apply one edit through the history, so no product mutation can reach the track list
+    // without becoming reversible. Every mutator below goes through here rather than touching
+    // self.tracks, which is what stops the next one from quietly forgetting
+    fn edit(&mut self, command: ProjectCommand) -> Result<(), CommandError> {
+        self.history
+            .apply(&mut self.tracks, Transaction::single(command))
+    }
+
+    // Reverse the latest edit; false means there was none. Selection is repaired afterwards
+    // because an undone delete restores a track the selection may have moved off
+    pub fn undo(&mut self) -> Result<bool, CommandError> {
+        let moved = self.history.undo(&mut self.tracks)?;
+        self.repair_selection();
+        Ok(moved)
+    }
+
+    pub fn redo(&mut self) -> Result<bool, CommandError> {
+        let moved = self.history.redo(&mut self.tracks)?;
+        self.repair_selection();
+        Ok(moved)
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.history.can_undo()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.history.can_redo()
+    }
+
+    // Keep selection pointing at something that exists. An undo can remove the selected track
+    // and a redo can restore one, so this runs after both rather than being inferred at draw
+    fn repair_selection(&mut self) {
+        if self
+            .selected_track
+            .is_none_or(|id| self.tracks.get(id).is_none())
+        {
+            self.selected_track = self.tracks.tracks().first().map(Track::id);
+        }
+        if self
+            .selected_clip
+            .is_some_and(|placement| self.clip_track(placement).is_none())
+        {
+            self.selected_clip = None;
+        }
+    }
+
     // Rename one track; a blank name leaves the model unchanged
     pub fn rename_track(&mut self, id: ObjectId, name: &str) -> Result<(), TrackError> {
-        self.tracks
-            .get_mut(id)
-            .ok_or(TrackError::UnknownTrack(id))?
-            .set_name(name)
+        self.edit(ProjectCommand::set_track_name(id, name))
+            .map_err(unwrap_track_error)
     }
 
     // Set one track's fader position. Returns the ids whose effective gain changed — exactly one
@@ -539,10 +596,8 @@ impl AppModel {
         id: ObjectId,
         level: f32,
     ) -> Result<Vec<ObjectId>, TrackError> {
-        self.tracks
-            .get_mut(id)
-            .ok_or(TrackError::UnknownTrack(id))?
-            .set_level(level);
+        self.edit(ProjectCommand::set_track_level(id, level))
+            .map_err(unwrap_track_error)?;
         Ok(vec![id])
     }
 
@@ -552,10 +607,8 @@ impl AppModel {
         id: ObjectId,
         muted: bool,
     ) -> Result<Vec<ObjectId>, TrackError> {
-        self.tracks
-            .get_mut(id)
-            .ok_or(TrackError::UnknownTrack(id))?
-            .set_muted(muted);
+        self.edit(ProjectCommand::set_track_muted(id, muted))
+            .map_err(unwrap_track_error)?;
         Ok(vec![id])
     }
 
@@ -567,17 +620,16 @@ impl AppModel {
         id: ObjectId,
         soloed: bool,
     ) -> Result<Vec<ObjectId>, TrackError> {
-        self.tracks
-            .get_mut(id)
-            .ok_or(TrackError::UnknownTrack(id))?
-            .set_soloed(soloed);
+        self.edit(ProjectCommand::set_track_soloed(id, soloed))
+            .map_err(unwrap_track_error)?;
         Ok(self.tracks.tracks().iter().map(Track::id).collect())
     }
 
     // Set the master fader. Publishes the master gain's own target, not a track's, so the
     // returned track set is empty
     pub fn set_master_level(&mut self, level: f32) -> Vec<ObjectId> {
-        self.tracks.set_master_level(level);
+        // Refusal is impossible: no target can be absent, so the history cannot reject it
+        let _ = self.edit(ProjectCommand::set_master_level(level));
         Vec::new()
     }
 
@@ -587,24 +639,32 @@ impl AppModel {
         id: ObjectId,
         level: f32,
     ) -> Result<Vec<ObjectId>, TrackError> {
-        self.tracks
-            .get_mut(id)
-            .ok_or(TrackError::UnknownTrack(id))?
-            .set_instrument_level(level);
+        self.edit(ProjectCommand::set_track_instrument_level(id, level))
+            .map_err(unwrap_track_error)?;
         Ok(vec![id])
     }
 
     // Move one track to an absolute index; identity and every field survive (CORE-001)
     pub fn reorder_track(&mut self, id: ObjectId, to_index: usize) -> Result<usize, TrackError> {
-        self.tracks.reorder(id, to_index)
+        let from = self
+            .tracks
+            .index_of(id)
+            .ok_or(TrackError::UnknownTrack(id))?;
+        self.edit(ProjectCommand::reorder_tracks(id, to_index))
+            .map_err(unwrap_track_error)?;
+        Ok(from)
     }
 
     // Remove one track, returning it whole so an undo can reinsert it unchanged
     pub fn remove_track(&mut self, id: ObjectId) -> Result<Track, TrackError> {
-        let removed = self.tracks.remove(id)?;
-        if self.selected_track == Some(id) {
-            self.selected_track = self.tracks.tracks().first().map(Track::id);
-        }
+        let removed = self
+            .tracks
+            .get(id)
+            .cloned()
+            .ok_or(TrackError::UnknownTrack(id))?;
+        self.edit(ProjectCommand::remove_track(id))
+            .map_err(unwrap_track_error)?;
+        self.repair_selection();
         Ok(removed)
     }
 
@@ -722,7 +782,10 @@ impl AppModel {
     pub fn add_track(&mut self, name: impl AsRef<str>) -> Result<ObjectId, TrackError> {
         let id = self.ids.next_id();
         let track = Track::new(id, name.as_ref(), TrackInstrument::Pulse)?;
-        self.tracks.push(track)?;
+        // Appended through the history, so the add is reversible and its inverse addresses the
+        // identity the generator just minted rather than a position
+        self.edit(ProjectCommand::insert_track(self.tracks.len(), track))
+            .map_err(unwrap_track_error)?;
         self.selected_track = Some(id);
         Ok(id)
     }
@@ -776,5 +839,17 @@ pub fn set_device_parameter_from_ui(
         *feedback_status = format!(
             "Could not update {device_key}.{parameter_key}: {error}. Reopen the device from Build and try again."
         );
+    }
+}
+
+// Track edits reach the history through commands, and the only failure a track command can
+// produce is a TrackError the list itself raised. The other CommandError variants are
+// structurally unreachable here -- an empty transaction cannot be built by `edit`, the capacity
+// is nonzero by construction, and no track command touches a project name -- so this converts
+// rather than widening every mutator's error type with variants they cannot return
+fn unwrap_track_error(error: CommandError) -> TrackError {
+    match error {
+        CommandError::Track(error) => error,
+        other => unreachable!("a track command produced {other:?}"),
     }
 }

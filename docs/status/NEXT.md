@@ -69,7 +69,27 @@ Next dependency-ordered slices:
    while an offer is pending**, because the model still holds the saved project at that moment and
    journaling it would overwrite the sidecar with exactly the work the offer exists to protect.
    4 tests; the snapshot rule fails under mutation.
-7. Bind bounded command history to product edits and verify grouped undo/redo through persistence.
+7. **Landed 2026-09-06.** Every track edit the shell makes now routes through `EditHistory`, and
+   `./spectre` has working Undo/Redo. Two parts.
+   **The vocabulary** grew from two commands to ten — insert, remove, rename, level, instrument
+   level, mute, solo, master level, plus the existing rename-project and reorder. `InsertTrack`
+   and `RemoveTrack` are exact mutual inverses because the inverse carries the removed `Track`
+   whole, so an undone delete restores clips, mixer state, and identity rather than a lookalike.
+   Every level inverse captures the **stored** value, read before the mutation and therefore
+   already clamped.
+   **The seam** is `EditScope` plus an `Editable` trait, not a `ProjectDoc` on `AppModel`. The app
+   holds resolved `&'static str` device keys and `DspParameter` descriptors while the document
+   holds wire-format strings — a deliberate difference `project.rs` states outright — so forcing
+   one type on both would strip the app of its descriptors or push them into the file format.
+   Commands only ever touch the name and the track list, so that is what they borrow. `ProjectDoc`
+   and `TrackList` both implement `Editable`; a rename against a target with no name is **refused**
+   rather than silently dropped, because the app derives its project name from the file path.
+   Making the history methods generic meant **every existing call site compiled unchanged**.
+   `AppModel::edit` is the single funnel, so a mutator cannot reach `self.tracks` without becoming
+   reversible. Opening a project clears the history: a different project's identities are live and
+   undoing across an open would resurrect the previous project's work. 12 tests; three mutations
+   fail it — bypassing the history, dropping the clear-on-open, and rebuilding a deleted track
+   from its name.
 8. Add missing-media diagnostics when a persisted media reference exists; do not invent one early.
 9. Run the R5 crash/recovery exit drill and full gate.
 

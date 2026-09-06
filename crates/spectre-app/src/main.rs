@@ -454,6 +454,8 @@ impl SpectrePrototype {
         // Both actions mutate self, so they are deferred out of the panel closure that borrows it
         let mut save = false;
         let mut open = false;
+        let mut undo = false;
+        let mut redo = false;
         let dirty = self.project_dirty();
         egui::SidePanel::left("tracks")
             .resizable(true)
@@ -520,6 +522,22 @@ impl SpectrePrototype {
                     }
                     // The discard confirm replaces the button in place for one interaction, so
                     // one press can never throw away unsaved work
+                    // Disabled rather than hidden, so the control's existence is not a
+                    // function of whether it would currently do anything
+                    if ui
+                        .add_enabled(self.model.can_undo(), egui::Button::new("Undo"))
+                        .on_disabled_hover_text("Nothing to undo.")
+                        .clicked()
+                    {
+                        undo = true;
+                    }
+                    if ui
+                        .add_enabled(self.model.can_redo(), egui::Button::new("Redo"))
+                        .on_disabled_hover_text("Nothing to redo.")
+                        .clicked()
+                    {
+                        redo = true;
+                    }
                     let open_label = if dirty && self.discard_armed {
                         "Discard and open"
                     } else {
@@ -560,6 +578,29 @@ impl SpectrePrototype {
                         .on_disabled_hover_text("Catalog wiring arrives in later milestones.");
                 }
             });
+        // Applied after the panel closes, the same way save and open are: mutating the model
+        // mid-draw would leave the rest of this frame rendering a list that no longer exists
+        if undo || redo {
+            let outcome = if undo {
+                self.model.undo()
+            } else {
+                self.model.redo()
+            };
+            match outcome {
+                Ok(true) => {
+                    // A reversed edit can change the graph shape, so the running plan is stale
+                    self.engine_revision = self.engine_revision.wrapping_sub(1);
+                    self.project_status = if undo {
+                        "Undid one edit."
+                    } else {
+                        "Redid one edit."
+                    }
+                    .into();
+                }
+                Ok(false) => {}
+                Err(error) => self.project_status = format!("{error}"),
+            }
+        }
         if save {
             self.save_project();
         }
