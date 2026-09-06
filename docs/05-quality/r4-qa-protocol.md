@@ -80,7 +80,7 @@ from direct observation — never from `docs/status/STATUS.md`, a sibling spec, 
    clips; a project with no clips uses the held audition voice.
 
    **On a host with no ALSA default, `./spectre` will report the engine unavailable.** Check with
-   `grep -rl 'pcm.!default' /etc/alsa/conf.d/`; an empty result means ALSA falls back to
+   `grep -Rl 'pcm.!default' /etc/alsa/conf.d/`; an empty result means ALSA falls back to
    `defaults.pcm.card 0`, which may be an HDMI-only card with no device 0. Two fixes, either is
    valid and **the record's E4 must say which was used**:
 
@@ -96,6 +96,14 @@ from direct observation — never from `docs/status/STATUS.md`, a sibling spec, 
      EOF
      ALSA_CONFIG_PATH=/tmp/spectre-alsa.conf ./spectre
      ```
+
+     **The capital `-R` is load-bearing, corrected 2026-09-06.** This check read `-r` until a
+     run on Arch reported "no default" against a host that had `pipewire-alsa` installed and
+     correctly wired. Arch ships every `/etc/alsa/conf.d/` entry as a symlink into
+     `/usr/share/alsa/alsa.conf.d/`, and `grep -r` does not follow symlinks found during
+     recursion while `-R` does — so the check produced a false negative and would have sent the
+     operator to the workaround below on a host that needed none. Record E4 from what the drill
+     does, not from this grep alone.
 
      Replace both `pipewire` lines with `plug`/`hw` on a host with no sound server — e.g.
      `pcm.!default { type plug; slave.pcm "hw:1,0" }` — which is what the raw-ALSA qualification
