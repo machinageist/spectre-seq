@@ -43,6 +43,9 @@ pub struct BridgeTelemetry {
     loop_segments_refused: AtomicU64,
     schedules_installed: AtomicU64,
     schedules_held: AtomicU64,
+    // Schedules published to a destination this bridge has no player for. A counted app-thread
+    // defect: the render thread refuses rather than installing one track's material on another
+    schedules_misaddressed: AtomicU64,
     // Note events the most recent block merged, from both producers together
     last_block_events: AtomicU64,
     // Peak magnitude of the last interleaved block, published off thread. This is the objective
@@ -83,6 +86,7 @@ impl Default for BridgeTelemetry {
             loop_segments_refused: AtomicU64::new(0),
             schedules_installed: AtomicU64::new(0),
             schedules_held: AtomicU64::new(0),
+            schedules_misaddressed: AtomicU64::new(0),
             last_block_events: AtomicU64::new(0),
             last_peak_bits: AtomicU32::new(0),
             session_peak_bits: AtomicU32::new(0),
@@ -199,6 +203,11 @@ impl BridgeTelemetry {
     // Count retired schedules the reclaim lane refused, which the render thread must keep holding
     pub fn schedules_held(&self) -> u64 {
         self.schedules_held.load(Ordering::Relaxed)
+    }
+
+    // Count schedules published to a destination with no player behind it
+    pub fn schedules_misaddressed(&self) -> u64 {
+        self.schedules_misaddressed.load(Ordering::Relaxed)
     }
 
     // Note events the most recent block merged from both producers. Published through an atomic
@@ -500,9 +509,6 @@ impl RenderBridge {
     // Take one queued schedule, if any, and hand the retired one to the reclaim lane.
     // Callback-safe: a pop, a pointer swap, and a push. Nothing is dropped here
     fn install_pending_schedule(&mut self) {
-        let Some(player) = self.player.as_mut() else {
-            return;
-        };
         // A schedule held from a previous block goes first: the reclaim lane may have room now,
         // and holding two would need a second slot this bridge does not have
         if let Some(held) = self.held.take() {
@@ -514,7 +520,27 @@ impl RenderBridge {
         let Some(next) = self.control.next_schedule() else {
             return;
         };
-        let retired = player.install(next);
+        // Destination 0 is the primary note node; 1..=n is the nth clip voice, in the order
+        // with_clip_voices built them. An address with no player behind it is counted and the
+        // schedule is retired unused rather than installed somewhere it does not belong --
+        // silently installing it on the primary would make one track play another's material
+        let target = if next.destination == 0 {
+            self.player.as_mut()
+        } else {
+            self.voices
+                .get_mut(next.destination - 1)
+                .map(|voice| &mut voice.player)
+        };
+        let Some(player) = target else {
+            self.telemetry
+                .schedules_misaddressed
+                .fetch_add(1, Ordering::Relaxed);
+            if let Err(returned) = self.control.retire(next.schedule) {
+                self.held = Some(returned);
+            }
+            return;
+        };
+        let retired = player.install(next.schedule);
         self.telemetry
             .schedules_installed
             .fetch_add(1, Ordering::Relaxed);

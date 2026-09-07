@@ -354,7 +354,7 @@ fn a_schedule_swap_reclaims_on_the_app_thread() {
 
     for index in 0..5_i64 {
         sender
-            .send_schedule(Box::new(schedule_of(&[(index * BEAT, BEAT, 45)])))
+            .send_schedule(0, Box::new(schedule_of(&[(index * BEAT, BEAT, 45)])))
             .unwrap();
         render(&mut bridge, &mut buffer);
         // Reclaim on the app thread every block, so the render thread never has to hold one
@@ -379,7 +379,7 @@ fn a_full_schedule_lane_returns_the_schedule() {
     let mut accepted = 0;
     let refused = loop {
         let schedule = Box::new(schedule_of(&[(0, BEAT, 45)]));
-        match sender.send_schedule(schedule) {
+        match sender.send_schedule(0, schedule) {
             Ok(()) => accepted += 1,
             Err(rejected) => break rejected,
         }
@@ -399,9 +399,9 @@ fn a_full_schedule_lane_returns_the_schedule() {
     let mut buffer = vec![0.0_f32; FRAMES * CHANNELS as usize];
     render(&mut bridge, &mut buffer);
     assert_eq!(sender.reclaim(), 1);
-    assert!(sender.send_schedule(returned).is_ok());
+    assert!(sender.send_schedule(0, returned).is_ok());
     assert!(sender
-        .send_schedule(Box::new(schedule_of(&[(0, BEAT, 45)])))
+        .send_schedule(0, Box::new(schedule_of(&[(0, BEAT, 45)])))
         .is_err());
     assert_eq!(sender.telemetry().schedule_overflows(), 2);
 }

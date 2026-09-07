@@ -140,6 +140,21 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **The dirty marker is derived, not maintained.** It compares the bytes a save would write right now against the bytes last written, rather than being set by hand at each mutation site — a flag maintained at call sites is a flag someone forgets at the next one, and a marker reading "Saved" over unsaved work is exactly the defect the project-safety pillar names. The two shell decisions that are not drawing — that comparison and the one-press-never-discards rule — live in `spectre_app::project` rather than in `main.rs`, because `main.rs` is a binary target no test can reach; that is the lesson R4-1's review already paid for.
 
+**The edit-listen loop closes as of 2026-09-06: an edit is heard without restarting the stream.**
+The RT machinery for swapping a clip schedule had existed since R4-5 — `ClipPlayer::install`, a
+bounded lane, off-thread reclamation, telemetry — with **no product caller**, and the lane carried
+a bare schedule so `install_pending_schedule` had nowhere to put one but the primary player: every
+clip voice was frozen for the life of the stream. The lane now carries a destination (0 for the
+primary node, 1..=n for the nth voice), a schedule addressed to a destination with no player is
+counted as `schedules_misaddressed` and retired unused rather than installed somewhere it does not
+belong, and `LiveEngine::publish_schedules` rebakes on the app thread through
+`TempoMap::ticks_to_samples` and nowhere else. **`has_clips` now follows placements rather than
+baked notes:** a musician who created a clip has material on the timeline whether or not they have
+written into it, and treating an empty clip as "no clips" is exactly what made the loop impossible
+— the engine attached no player, so the first note written could never be published anywhere. A
+project with no placements at all still attaches nothing and still auditions, which keeps R4-1's
+one-block Play/Stop refusal evidence valid unchanged.
+
 **MIDI material can be authored through the model as of 2026-09-06, reversibly.** Nothing in the
 product could write a single note before this: `AppModel::create_clip` had no caller outside
 tests and `MidiClip::insert_note` none outside the offline fixture builder. `AppModel` now carries

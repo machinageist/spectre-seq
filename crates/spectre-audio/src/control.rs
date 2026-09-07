@@ -202,6 +202,19 @@ impl ControlTelemetry {
     }
 }
 
+// One baked schedule and the note destination it belongs to.
+//
+// The lane carried a bare schedule until 2026-09-06, and `install_pending_schedule` therefore had
+// nowhere to put one but the primary player -- so every clip voice was frozen for the life of the
+// stream and a note authored on any other track could not be heard without rebuilding the engine.
+// `destination` is 0 for the primary node and 1..=n for the nth clip voice, which is the same
+// order the bridge builds them in
+#[derive(Debug)]
+pub struct AddressedSchedule {
+    pub destination: usize,
+    pub schedule: Box<ClipSchedule>,
+}
+
 // App-thread sending half of the whole control transport
 pub struct ControlSender {
     parameters: ParameterWriter,
@@ -211,7 +224,7 @@ pub struct ControlSender {
     reclaim: Consumer<RetiredState>,
     // Baked schedules travel to the render thread here. Strict FIFO with counted overflow, the
     // same policy decision 21 gives notes and transport
-    schedules: Producer<Box<ClipSchedule>>,
+    schedules: Producer<AddressedSchedule>,
     telemetry: Arc<ControlTelemetry>,
 }
 
@@ -221,7 +234,7 @@ pub struct ControlReceiver {
     notes: Consumer<NoteEvent>,
     transport: Consumer<TransportCommand>,
     reclaim: Producer<RetiredState>,
-    schedules: Consumer<Box<ClipSchedule>>,
+    schedules: Consumer<AddressedSchedule>,
     telemetry: Arc<ControlTelemetry>,
 }
 
@@ -257,7 +270,7 @@ pub fn control_channel(
     let (reclaim_tx, reclaim_rx) = bounded::<RetiredState>(DEFAULT_RECLAIM_CAPACITY);
     // Passed through unchanged: at 3 the request and the delivered capacity() are equal, so the
     // lane admits exactly SCHEDULE_LANE_CAPACITY schedules and refuses the next
-    let (schedule_tx, schedule_rx) = bounded::<Box<ClipSchedule>>(SCHEDULE_LANE_CAPACITY);
+    let (schedule_tx, schedule_rx) = bounded::<AddressedSchedule>(SCHEDULE_LANE_CAPACITY);
 
     let sender = ControlSender {
         parameters: ParameterWriter {
@@ -319,15 +332,19 @@ impl ControlSender {
     // back to the caller rather than being dropped, so nothing is lost silently
     pub fn send_schedule(
         &mut self,
+        destination: usize,
         schedule: Box<ClipSchedule>,
     ) -> Result<(), (ControlError, Box<ClipSchedule>)> {
-        match self.schedules.push(schedule) {
+        match self.schedules.push(AddressedSchedule {
+            destination,
+            schedule,
+        }) {
             Ok(()) => Ok(()),
             Err(rejected) => {
                 self.telemetry
                     .schedule_overflows
                     .fetch_add(1, Ordering::Relaxed);
-                Err((ControlError::ScheduleLaneFull, rejected))
+                Err((ControlError::ScheduleLaneFull, rejected.schedule))
             }
         }
     }
@@ -376,7 +393,7 @@ impl ControlReceiver {
     }
 
     // Take the next queued schedule, or None. Callback-safe: a pop, no allocation
-    pub fn next_schedule(&mut self) -> Option<Box<ClipSchedule>> {
+    pub fn next_schedule(&mut self) -> Option<AddressedSchedule> {
         self.schedules.pop()
     }
 

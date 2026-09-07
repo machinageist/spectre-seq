@@ -148,6 +148,11 @@ pub struct EngineHealth {
     pub last_peak: f32,
     // Highest peak since the engine opened; "did anything sound", not "is it sounding now"
     pub session_peak: f32,
+    // Schedules the render thread installed, and ones published to a destination with no player
+    // behind it. The second is a counted app-thread defect: a musician whose edit is refused
+    // must be able to see that rather than conclude the product ignored them
+    pub schedules_installed: u64,
+    pub schedules_misaddressed: u64,
 }
 
 // Render-side halves built together, before any device is touched
@@ -166,6 +171,8 @@ pub struct EngineParts {
     // The plan nodes build_engine_parts allocated, exposed so routes can be built against them.
     // None for a track-list plan, whose node identities live in spectre-project's TrackPathNodes
     pub nodes: Option<FixtureNodes>,
+    // The track index attached as the primary note destination
+    pub primary_index: usize,
     // True when a clip player is attached to any note node. Play then sends the transport
     // command alone: the project's own material REPLACES the audition note rather than merging
     // with it, because merging two producers on one node would turn R4-1's clean Play/Stop
@@ -347,6 +354,8 @@ pub fn build_engine_parts(
         plan_max_frames,
         targets: targets.into_boxed_slice(),
         nodes: Some(nodes),
+        // The fixture chain has one note node and no track list to index
+        primary_index: 0,
         // The fixture chain has no project clips; Play auditions, as it has since R4-1
         has_clips: false,
     })
@@ -368,6 +377,7 @@ pub fn open_with_parts(
         targets,
         nodes: _,
         has_clips,
+        primary_index,
     } = parts;
 
     let mut stream = backend
@@ -388,6 +398,10 @@ pub fn open_with_parts(
         config,
     );
     engine.set_targets(targets);
+    // Without this the product's own open path leaves the primary at 0, so every published
+    // schedule is addressed one destination out whenever the selected track is not the first --
+    // one track would play another's material. Clippy's unused-variable error is what caught it
+    engine.set_primary_index(primary_index);
     engine.set_has_clips(has_clips);
     Ok(engine)
 }
@@ -410,6 +424,9 @@ pub struct LiveEngine<S: ?Sized = dyn AudioStream> {
     // True when the render thread is playing the project's own clips. Play then sends the
     // transport command alone, because the project's material replaces the audition note
     has_clips: bool,
+    // The track index whose note node is the primary destination. Held so publish_schedules
+    // addresses destinations in the same order build_track_engine_parts attached them
+    primary_index: usize,
     // Box<S> is itself Sized even when S is not, so field order is unconstrained here
     stream: Box<S>,
 }
@@ -435,6 +452,7 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
             next_sequence: 0,
             targets: Box::new([]),
             has_clips: false,
+            primary_index: 0,
             stream,
         }
     }
@@ -443,6 +461,13 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
     // for the same reason set_targets is: R4-1's signature and its callers stay unchanged
     pub fn set_has_clips(&mut self, has_clips: bool) {
         self.has_clips = has_clips;
+    }
+
+    // Record which track index the primary note destination belongs to. Set for the same reason
+    // set_has_clips is: an engine that forgot it would address every published schedule one
+    // destination out, so one track would play another's material
+    pub fn set_primary_index(&mut self, primary_index: usize) {
+        self.primary_index = primary_index;
     }
 
     // Report whether Play will audition or play the project's own material
@@ -514,12 +539,46 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
             transport_rolling: self.telemetry.transport_rolling(),
             last_peak: self.telemetry.last_peak(),
             session_peak: self.telemetry.session_peak(),
+            schedules_installed: self.telemetry.schedules_installed(),
+            schedules_misaddressed: self.telemetry.schedules_misaddressed(),
         }
     }
 
     // Report the configuration the stream was opened with
     pub fn config(&self) -> StreamConfig {
         self.config
+    }
+
+    // Republish every track's clip material to the running stream, so an edit is heard without
+    // restarting it.
+    //
+    // Baking happens here, on the app thread, through TempoMap::ticks_to_samples and nowhere
+    // else -- the same single conversion the open path uses. The render thread only swaps
+    // pointers and retires the old schedules off-thread.
+    //
+    // Destinations follow the order build_track_engine_parts attached them: 0 is the primary
+    // note node, and 1..=n are the other instrument tracks in list order. Returns how many were
+    // published, so a caller can report a lane that refused rather than assume it took them
+    pub fn publish_schedules(
+        &mut self,
+        tracks: &spectre_project::TrackList,
+        tempo: &spectre_core::TempoMap,
+    ) -> Result<usize, ControlError> {
+        let Some(rate) = spectre_core::SampleRate::new(self.config.sample_rate) else {
+            return Ok(0);
+        };
+        let primary = self.primary_index.min(tracks.len().saturating_sub(1));
+        let mut published = 0;
+        let order = std::iter::once(primary).chain((0..tracks.len()).filter(|i| *i != primary));
+        for (destination, index) in order.enumerate() {
+            let schedule = bake_track_schedule(tracks, index, tempo, rate)
+                .unwrap_or_else(spectre_audio::clip::ClipSchedule::empty);
+            if let Err((error, _)) = self.sender.send_schedule(destination, Box::new(schedule)) {
+                return Err(error);
+            }
+            published += 1;
+        }
+        Ok(published)
     }
 
     // Queue a transport command; Err leaves the caller's UI state unchanged
@@ -821,26 +880,43 @@ pub fn build_track_engine_parts(
         spectre_core::SampleRate::new(config.sample_rate).ok_or(EngineUnavailable::Routing(
             spectre_project::RoutingError::Device("sample rate must be nonzero"),
         ))?;
-    let mut has_clips = false;
-    if let Some(primary) = bake_track_schedule(tracks, primary_index, tempo, rate) {
-        has_clips = true;
+    // Whether the PROJECT holds clip material, which is what decides audition versus clips. A
+    // project with none behaves exactly as it did before R4-5 — no player, no voices — and that
+    // is what keeps R4-1's Play/Stop refusal evidence valid unchanged
+    // Derived from PLACEMENTS, not from baked notes. A musician who has created a clip has
+    // material on the timeline whether or not they have written into it yet, and treating an
+    // empty clip as "no clips" is what made the edit-listen loop impossible: the engine attached
+    // no player, so the first note written into that clip could never be published to anything
+    let has_clips = tracks
+        .tracks()
+        .iter()
+        .any(|track| track.clips().placements().iter().any(|p| p.is_active()));
+    if has_clips {
+        // Once the project has any material, EVERY instrument track gets a player, including
+        // tracks that are currently empty. An empty schedule renders exact silence, so this
+        // costs a note destination and nothing audible -- and it is what makes a later edit
+        // reachable: a track with no player has no address, so a schedule published to it would
+        // be refused and the musician would hear nothing change
         let mut player = ClipPlayer::new(CLIP_EVENT_RESERVE);
-        let _ = player.install(Box::new(primary));
+        if let Some(primary) = bake_track_schedule(tracks, primary_index, tempo, rate) {
+            let _ = player.install(Box::new(primary));
+        }
         bridge = bridge.with_clip_player(player);
-    }
-    let voices: Vec<_> = (0..tracks.len())
-        .filter(|index| *index != primary_index)
-        .filter_map(|index| {
-            let schedule = bake_track_schedule(tracks, index, tempo, rate)?;
-            let node = nodes.note_node(index)?;
-            let mut player = ClipPlayer::new(CLIP_EVENT_RESERVE);
-            let _ = player.install(Box::new(schedule));
-            Some((node, player))
-        })
-        .collect();
-    if !voices.is_empty() {
-        has_clips = true;
-        bridge = bridge.with_clip_voices(voices, DEFAULT_NOTE_SCRATCH);
+
+        let voices: Vec<_> = (0..tracks.len())
+            .filter(|index| *index != primary_index)
+            .filter_map(|index| {
+                let node = nodes.note_node(index)?;
+                let mut player = ClipPlayer::new(CLIP_EVENT_RESERVE);
+                if let Some(schedule) = bake_track_schedule(tracks, index, tempo, rate) {
+                    let _ = player.install(Box::new(schedule));
+                }
+                Some((node, player))
+            })
+            .collect();
+        if !voices.is_empty() {
+            bridge = bridge.with_clip_voices(voices, DEFAULT_NOTE_SCRATCH);
+        }
     }
 
     let telemetry = bridge.telemetry();
@@ -854,6 +930,7 @@ pub fn build_track_engine_parts(
         targets: targets.into_boxed_slice(),
         nodes: None,
         has_clips,
+        primary_index,
     })
 }
 

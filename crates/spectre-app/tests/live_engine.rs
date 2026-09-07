@@ -84,6 +84,7 @@ fn open_null(
     Arc<BridgeTelemetry>,
     Box<[spectre_audio::control::ParameterTarget]>,
     bool,
+    usize,
 ) {
     let EngineParts {
         mut bridge,
@@ -94,6 +95,7 @@ fn open_null(
         targets,
         nodes: _,
         has_clips,
+        primary_index,
     } = parts;
     let backend = NullBackend::new();
     let mut stream = backend
@@ -104,13 +106,13 @@ fn open_null(
         )
         .unwrap();
     stream.start().unwrap();
-    (stream, sender, telemetry, targets, has_clips)
+    (stream, sender, telemetry, targets, has_clips, primary_index)
 }
 
 // Wrap an opened null stream in the engine without erasing its concrete type
 fn engine_over_null(parts: EngineParts) -> LiveEngine<NullStream> {
     let config = parts.config;
-    let (stream, sender, telemetry, targets, has_clips) = open_null(parts);
+    let (stream, sender, telemetry, targets, has_clips, primary_index) = open_null(parts);
     let mut engine = LiveEngine::from_open_stream(
         Box::new(stream),
         sender,
@@ -124,6 +126,9 @@ fn engine_over_null(parts: EngineParts) -> LiveEngine<NullStream> {
     // would audition over its own clips, and the one-block Play/Stop test is what caught this
     // helper doing exactly that
     engine.set_has_clips(has_clips);
+    // Same reason as the flag above: an engine that forgot this addresses every published
+    // schedule one destination out, so one track plays another's material
+    engine.set_primary_index(primary_index);
     engine
 }
 
@@ -208,7 +213,7 @@ fn play_produces_nonzero_output_and_stop_returns_exact_silence() {
 fn the_live_plan_matches_the_offline_render_of_the_same_app_snapshot() {
     let snapshot = prototype_snapshot();
     let parts = build_engine_parts(&snapshot, config()).unwrap();
-    let (mut stream, mut sender, telemetry, _targets, _) = open_null(parts);
+    let (mut stream, mut sender, telemetry, _targets, _, _) = open_null(parts);
 
     for event in spectre_offline::fixture_events(FRAMES) {
         sender.send_note(event).unwrap();
@@ -236,7 +241,7 @@ fn repeated_engine_builds_render_identically() {
     let mut hashes = Vec::new();
     for _ in 0..3 {
         let parts = build_engine_parts(&snapshot, config()).unwrap();
-        let (mut stream, mut sender, _telemetry, _targets, _) = open_null(parts);
+        let (mut stream, mut sender, _telemetry, _targets, _, _) = open_null(parts);
         for event in spectre_offline::fixture_events(FRAMES) {
             sender.send_note(event).unwrap();
         }
@@ -902,5 +907,254 @@ fn the_engine_main_actually_opens_reaches_a_real_device_and_renders() {
     assert!(
         health.session_peak > 0.0,
         "the render reached the driver but carried no signal"
+    );
+}
+
+// ---- the edit-listen loop ----
+//
+// The RT machinery for swapping a clip schedule has existed since R4-5 -- ClipPlayer::install, a
+// bounded lane, off-thread reclamation, telemetry -- with no product caller. Worse, the lane
+// carried a bare schedule, so install_pending_schedule had nowhere to put one but the primary
+// player: every clip voice was frozen for the life of the stream.
+//
+// Without this a musician writes a note, hears nothing change, and has to rebuild the engine --
+// a stream restart with an audible gap.
+
+const AUTHORING_BAR: i64 = 960 * 4;
+
+fn note_at(start: i64, pitch: u8) -> spectre_project::ClipNote {
+    spectre_project::ClipNote::new(
+        spectre_core::BeatTicks(start),
+        spectre_core::BeatTicks(480),
+        0,
+        pitch,
+        0.8,
+    )
+    .expect("a valid note")
+}
+
+// One track with one clip, which is what a musician has the moment they create one
+fn authored_session() -> (AppModel, spectre_core::ObjectId) {
+    let mut model = AppModel::prototype();
+    let track = model.add_track("Keys").expect("the track is added");
+    let placement = model
+        .create_clip(
+            track,
+            "Riff",
+            spectre_core::BeatTicks(AUTHORING_BAR),
+            spectre_core::BeatTicks(0),
+        )
+        .expect("the clip is created");
+    let clip = model
+        .track_list()
+        .get(track)
+        .expect("the track exists")
+        .clips()
+        .get(placement)
+        .expect("the placement exists")
+        .clip();
+    (model, clip)
+}
+
+fn authored_engine(model: &AppModel) -> LiveEngine<NullStream> {
+    let parts = build_track_engine_parts(
+        model.track_list(),
+        model.tempo_map(),
+        spectre_app::engine::APP_GRAPH_SEED,
+        model.selected_track_id(),
+        StreamConfig::stereo(NULL_SAMPLE_RATE, 256).unwrap(),
+    )
+    .expect("the track parts build");
+    engine_over_null(parts)
+}
+
+#[test]
+fn an_edit_reaches_the_running_engine_without_a_restart() {
+    let (mut model, clip) = authored_session();
+    let mut engine = authored_engine(&model);
+    let before = engine.health().schedules_installed;
+
+    model
+        .add_note(clip, note_at(0, 60))
+        .expect("the note is accepted");
+    let published = engine
+        .publish_schedules(model.track_list(), model.tempo_map())
+        .expect("the lane accepts the schedules");
+    assert!(published > 0, "nothing was published");
+
+    for _ in 0..published + 2 {
+        engine.stream_mut().pump().unwrap();
+    }
+    assert!(
+        engine.health().schedules_installed > before,
+        "a published schedule never reached the render thread"
+    );
+    assert_eq!(
+        engine.health().schedules_misaddressed,
+        0,
+        "a schedule was published to a destination with no player behind it"
+    );
+}
+
+// Every instrument track gets a destination once the project has material, including one that is
+// empty when the stream opens. A track with no player has no address, so an edit to it could
+// never be heard
+#[test]
+fn a_track_that_was_empty_at_open_can_still_be_reached() {
+    let (mut model, _) = authored_session();
+    let second = model.add_track("Empty").expect("the track is added");
+    let mut engine = authored_engine(&model);
+
+    let placement = model
+        .create_clip(
+            second,
+            "Later",
+            spectre_core::BeatTicks(AUTHORING_BAR),
+            spectre_core::BeatTicks(0),
+        )
+        .expect("the clip is created");
+    let clip = model
+        .track_list()
+        .get(second)
+        .expect("the track exists")
+        .clips()
+        .get(placement)
+        .expect("the placement exists")
+        .clip();
+    model
+        .add_note(clip, note_at(0, 67))
+        .expect("the note is accepted");
+
+    let published = engine
+        .publish_schedules(model.track_list(), model.tempo_map())
+        .expect("the lane accepts the schedules");
+    assert_eq!(
+        published,
+        model.tracks().len(),
+        "not every track received a schedule"
+    );
+    for _ in 0..published + 2 {
+        engine.stream_mut().pump().unwrap();
+    }
+    assert_eq!(
+        engine.health().schedules_misaddressed,
+        0,
+        "the track that was empty at open had no destination"
+    );
+}
+
+// A project with no material must behave exactly as it did before R4-5 -- no player, no voices,
+// Play auditions. That is what keeps R4-1's one-block Play/Stop refusal evidence valid
+#[test]
+fn a_project_with_no_clips_still_auditions() {
+    let model = AppModel::prototype();
+    let engine = authored_engine(&model);
+    assert!(
+        !engine.has_clips(),
+        "an empty project attached a clip player and would no longer audition"
+    );
+}
+
+#[test]
+fn a_project_with_clips_does_not_audition() {
+    let (model, _) = authored_session();
+    let engine = authored_engine(&model);
+    assert!(engine.has_clips());
+}
+
+// Publishing is app-thread work and must not wedge the render thread. The lane is bounded, so
+// publishing past its depth is a counted refusal rather than a block or a silent drop
+#[test]
+fn overflowing_the_schedule_lane_is_a_counted_refusal() {
+    let (model, _) = authored_session();
+    let mut engine = authored_engine(&model);
+    let mut refused = false;
+    for _ in 0..32 {
+        if engine
+            .publish_schedules(model.track_list(), model.tempo_map())
+            .is_err()
+        {
+            refused = true;
+            break;
+        }
+    }
+    assert!(
+        refused,
+        "the bounded schedule lane accepted an unbounded number of publications"
+    );
+    for _ in 0..8 {
+        engine.stream_mut().pump().unwrap();
+    }
+    engine
+        .publish_schedules(model.track_list(), model.tempo_map())
+        .expect("the lane recovers once the render thread has drained it");
+}
+
+// Which player a published schedule lands on is a stated rule and needs its own falsifiable
+// test. Counting installs does not cover it: ignoring the destination entirely and installing
+// every schedule on the primary installs exactly as many, and passes every test above.
+//
+// Observed through the mixer, because a voice's schedule cannot be read from outside. The
+// primary track is MUTED and a later track is not, and only the later track carries notes. With
+// correct routing its material reaches an audible track; with the destination ignored, that
+// material lands on the muted primary and the render is silent
+#[test]
+fn a_published_schedule_lands_on_the_track_it_was_addressed_to() {
+    let mut model = AppModel::prototype();
+    let quiet = model.add_track("Muted").expect("the track is added");
+    let loud = model.add_track("Audible").expect("the track is added");
+    // The primary is the selected track, and it is the one that must not be heard
+    model.select_track(quiet);
+    model
+        .set_track_muted(quiet, true)
+        .expect("the mute applies");
+
+    // Both tracks carry an EMPTY placement, so both get a player and neither has material
+    let mut clips = Vec::new();
+    for track in [quiet, loud] {
+        let placement = model
+            .create_clip(
+                track,
+                "C",
+                spectre_core::BeatTicks(AUTHORING_BAR),
+                spectre_core::BeatTicks(0),
+            )
+            .expect("the clip is created");
+        clips.push(
+            model
+                .track_list()
+                .get(track)
+                .expect("the track exists")
+                .clips()
+                .get(placement)
+                .expect("the placement exists")
+                .clip(),
+        );
+    }
+
+    // The engine opens with no material anywhere. The note is written AFTERWARDS, so the only
+    // way it can reach the audible track is the publish path -- if it were written first, the
+    // open path would have installed it correctly and this test could not fail
+    let mut engine = authored_engine(&model);
+    model
+        .add_note(clips[1], note_at(0, 60))
+        .expect("the note is accepted");
+    let published = engine
+        .publish_schedules(model.track_list(), model.tempo_map())
+        .expect("the lane accepts the schedules");
+    for _ in 0..published + 2 {
+        engine.stream_mut().pump().unwrap();
+    }
+    engine
+        .send_transport(TransportCommand::Play)
+        .expect("the transport lane accepts Play");
+    for _ in 0..8 {
+        engine.stream_mut().pump().unwrap();
+    }
+
+    assert_eq!(engine.health().schedules_misaddressed, 0);
+    assert!(
+        engine.health().session_peak > 0.0,
+        "the render is silent, so the audible track's material was installed on the muted one"
     );
 }
