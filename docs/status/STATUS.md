@@ -157,6 +157,15 @@ the single definition of a device's descriptor set, `targets_before` sums real p
 spans instead of a fixed stride, and `selected_track_target_index` resolves by **key** rather than
 by an assumed position. `FILAMENT_LEVEL` is named as 3 rather than assumed to be 0.
 
+**Stored device values now reach the engine when it opens (2026-09-07).** Routing every control
+was only half of sound design: `instrument_for` builds each device from its **descriptor
+defaults** and passes only the track's level, so a saved `lean` never reached the constructed
+device. Shape showed the musician's value while the engine played the default — the UI and the
+audio disagreeing about the same control, which is the fake-surface class this project's standards
+forbid. `engine::publish_stored_parameters` sends every stored value whose control resolves to a
+live target after the stream opens; a value belonging to no track is skipped rather than addressed
+somewhere it does not belong.
+
 **The track list became manageable on 2026-09-07: delete, rename, reorder, and a master fader.**
 All four existed on `AppModel`, reversible, with **no caller in any `src/`** — a track added by
 mistake could never be removed, a track kept whatever name it was created with, and the output

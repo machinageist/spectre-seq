@@ -185,6 +185,15 @@ impl SpectrePrototype {
         self.engine_attempted = true;
         match open_engine(&self.model) {
             Ok(engine) => {
+                // The graph builds every device from its DESCRIPTOR DEFAULTS, so without this a
+                // value the musician saved is shown by Shape and not played by the engine -- the
+                // UI and the audio disagreeing about the same control
+                if let Err(error) =
+                    spectre_app::engine::publish_stored_parameters(&self.model, &engine)
+                {
+                    self.feedback_status =
+                        format!("Stored device values did not reach live audio: {error}");
+                }
                 self.engine = Some(engine);
                 self.engine_unavailable = EngineUnavailable::NotAttempted;
                 self.engine_revision = self.model.track_list().structure_revision();

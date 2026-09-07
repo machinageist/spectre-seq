@@ -735,6 +735,42 @@ fn selected_track_target_index(
     None
 }
 
+// Publish every stored device parameter to the running stream.
+//
+// The graph builds each device from its DESCRIPTOR DEFAULTS -- `instrument_for` passes only the
+// track's level -- so without this a value the musician saved is shown by Shape and not played by
+// the engine. The UI and the audio would disagree about the same control, which is precisely the
+// fake surface this project's own standards forbid.
+//
+// Called after the stream opens and after a rebuild. Returns how many values were published, so a
+// caller can report a lane that refused rather than assume it took them
+pub fn publish_stored_parameters<S: AudioStream + ?Sized>(
+    model: &AppModel,
+    engine: &LiveEngine<S>,
+) -> Result<usize, ControlError> {
+    let mut published = 0;
+    for device in model.devices() {
+        for parameter in &device.parameters {
+            let key = parameter.descriptor.key.as_str();
+            // Only controls that resolve to a live target on the selected track. A device in the
+            // flat list that belongs to no track has nowhere to go, and silently sending it to
+            // the model's own identity would address a target the track engine never registered
+            let Some(target) = selected_track_target_index(
+                model.track_list(),
+                model.selected_track_id(),
+                device.key,
+                key,
+            )
+            .and_then(|index| engine.targets().get(index).copied()) else {
+                continue;
+            };
+            engine.send_parameter(target, parameter.value)?;
+            published += 1;
+        }
+    }
+    Ok(published)
+}
+
 pub fn apply_parameter_edit<S: AudioStream + ?Sized>(
     model: &mut AppModel,
     engine: Option<&LiveEngine<S>>,

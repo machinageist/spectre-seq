@@ -108,3 +108,75 @@ fn a_track_occupies_as_many_targets_as_its_devices_have_controls() {
     assert_eq!(pulse_span, 1, "Pulse has one control");
     assert_eq!(filament_span, 4, "Filament has four");
 }
+
+// ---- stored values must reach the engine ----
+//
+// Routing a control is only half of it. `instrument_for` builds every device from its DESCRIPTOR
+// DEFAULTS and passes only the track's level, so a saved `lean` never reached the constructed
+// device. Shape would show the musician's value while the engine played the default: the UI and
+// the audio disagreeing about the same control.
+
+#[test]
+fn stored_device_values_are_published_when_the_engine_opens() {
+    use spectre_app::engine::{build_track_engine_parts, publish_stored_parameters};
+    use spectre_audio::null::{NullBackend, NULL_DEVICE_KEY, NULL_SAMPLE_RATE};
+    use spectre_audio::{AudioStream, DeviceId, RenderBlock, StreamConfig};
+
+    let (mut model, id) = filament_track();
+    model.select_track(id);
+
+    // A lean far from its descriptor default, so a device built from defaults cannot match it
+    let default_lean = spectre_dsp::FILAMENT_PARAMETERS[0].default();
+    let edited = if default_lean > 0.5 { 0.1 } else { 0.9 };
+    model
+        .edit_device_parameter("filament", "lean", edited)
+        .expect("lean is an editable control");
+
+    let config = StreamConfig::stereo(NULL_SAMPLE_RATE, 256).expect("a valid config");
+    let parts = build_track_engine_parts(
+        model.track_list(),
+        model.tempo_map(),
+        spectre_app::engine::APP_GRAPH_SEED,
+        model.selected_track_id(),
+        config,
+    )
+    .expect("the parts build");
+
+    let mut bridge = parts.bridge;
+    let backend = NullBackend::new();
+    let mut stream = backend
+        .open_null_output(
+            &DeviceId::new(NULL_DEVICE_KEY),
+            config,
+            Box::new(move |mut block: RenderBlock| bridge.render(&mut block)),
+        )
+        .expect("the null stream opens");
+    stream.start().expect("the stream starts");
+
+    let mut engine = spectre_app::engine::LiveEngine::from_open_stream(
+        Box::new(stream),
+        parts.sender,
+        parts.telemetry,
+        spectre_audio::NULL_BACKEND_NAME,
+        "Null Output".to_string(),
+        config,
+    );
+    engine.set_targets(parts.targets);
+    engine.set_primary_index(parts.primary_index);
+
+    let published = publish_stored_parameters(&model, &engine).expect("the lane accepts them");
+    assert!(
+        published >= 4,
+        "only {published} values were published; Filament alone has four controls"
+    );
+
+    // Drain the lane so the render thread applies them
+    for _ in 0..4 {
+        engine.stream_mut().pump().expect("blocks render");
+    }
+    assert!(
+        engine.health().parameters_applied >= published as u64,
+        "the render thread applied {} of {published} published values",
+        engine.health().parameters_applied
+    );
+}
