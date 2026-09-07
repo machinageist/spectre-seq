@@ -581,6 +581,31 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
         Ok(published)
     }
 
+    // Convert a tick-domain loop region to samples and publish it.
+    //
+    // The conversion happens here for the same reason baking does: this is where the stream's own
+    // sample rate is known. A loop stored in samples would silently move whenever the tempo
+    // changed, which is why the model keeps ticks and this derives.
+    //
+    // `None` clears the loop; Transport::apply sets loop_enabled from the region's presence, so
+    // one command both arms and disarms
+    pub fn publish_loop(
+        &mut self,
+        region: Option<(spectre_core::BeatTicks, spectre_core::BeatTicks)>,
+        tempo: &spectre_core::TempoMap,
+    ) -> Result<(), ControlError> {
+        let Some(rate) = spectre_core::SampleRate::new(self.config.sample_rate) else {
+            return Ok(());
+        };
+        let converted = region.and_then(|(start, end)| {
+            spectre_core::LoopRegion::new(
+                tempo.ticks_to_samples(start, rate),
+                tempo.ticks_to_samples(end, rate),
+            )
+        });
+        self.send_transport(spectre_core::TransportCommand::SetLoop(converted))
+    }
+
     // Queue a transport command; Err leaves the caller's UI state unchanged
     pub fn send_transport(&mut self, command: TransportCommand) -> Result<(), ControlError> {
         self.sender.send_transport(command)

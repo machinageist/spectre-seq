@@ -140,6 +140,18 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **The dirty marker is derived, not maintained.** It compares the bytes a save would write right now against the bytes last written, rather than being set by hand at each mutation site — a flag maintained at call sites is a flag someone forgets at the next one, and a marker reading "Saved" over unsaved work is exactly the defect the project-safety pillar names. The two shell decisions that are not drawing — that comparison and the one-press-never-discards rule — live in `spectre_app::project` rather than in `main.rs`, because `main.rs` is a binary target no test can reach; that is the lesson R4-1's review already paid for.
 
+**Looping is reachable as of 2026-09-07, which is the vision's own first core-loop item.**
+"Sketch a loop, branch variations, audition instantly" was unreachable: `Transport` carried a
+`loop_region`, `Transport::advance` wrapped inside it, `ClipPlayer` honoured it — and **nothing in
+`spectre-app` ever set one**, so a musician could not loop four bars while writing into them. The
+transport now carries a Loop toggle and a bar range, and `LiveEngine::publish_loop` converts ticks
+to samples where the stream's own rate is known. **The model stores the loop in TICKS, not
+samples:** `Transport` persists a sample-domain region, and samples are a function of tempo, so a
+persisted sample loop silently moves when the tempo changes. A tempo edit republishes the loop for
+that reason. The loop is session-only for now — persisting it needs a tick-domain field the schema
+does not have — and it is deliberately outside the undo history, because a loop region is where
+you are looking rather than what the project contains.
+
 **Tempo is editable as of 2026-09-06, and it is the first product edit drawn in the shell since
 this session began.** The transport rendered `"120.00 BPM"` as a string literal, so nothing could
 be written at any other tempo. It is now a `DragValue` over `MIN_BPM..=MAX_BPM` — the accepted

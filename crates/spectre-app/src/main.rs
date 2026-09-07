@@ -44,6 +44,19 @@ const GAIN_RANGE: std::ops::RangeInclusive<f32> = 0.0..=GAIN_MAX;
 // them anyway; matching here means the control cannot offer a value the model would reject
 const TEMPO_RANGE: std::ops::RangeInclusive<f64> =
     spectre_core::tempo::MIN_BPM..=spectre_core::tempo::MAX_BPM;
+// Highest bar the loop spinners offer. Not a model bound -- BeatTicks reaches far past this --
+// but a drag control needs an end, and 999 bars is well past any loop a musician sets by hand
+const LOOP_MAX_BAR: u32 = 999;
+
+// One-based bars to the tick domain the model stores. 4/4 until the meter is editable, which is
+// the same assumption the transport's own "4 / 4" label still makes
+fn bars_to_ticks(bars: (u32, u32)) -> (BeatTicks, BeatTicks) {
+    let per_bar = spectre_core::TICKS_PER_BEAT * 4;
+    (
+        BeatTicks(i64::from(bars.0 - 1) * per_bar),
+        BeatTicks(i64::from(bars.1 - 1) * per_bar),
+    )
+}
 
 // One mixer edit, deferred out of the panel closure that borrows the model
 #[derive(Debug, Clone, Copy)]
@@ -84,6 +97,9 @@ struct SpectrePrototype {
     // One interaction of arming for the discard-and-open confirm. No modal: a modal blocks a
     // workspace that has nothing wrong with it
     discard_armed: bool,
+    // The bar range the loop control shows, one-based the way a musician counts. Shell state:
+    // the model holds the loop in ticks, and this is only what the two spinners display
+    loop_bars: (u32, u32),
     // The bytes the sidecar holds, tracked the same derived way saved_snapshot is, so the
     // autosave trigger compares content rather than consulting a clock
     autosaved_snapshot: Option<Vec<u8>>,
@@ -113,6 +129,7 @@ impl Default for SpectrePrototype {
             project_status: String::new(),
             saved_snapshot: None,
             discard_armed: false,
+            loop_bars: (1, 5),
             autosaved_snapshot: None,
             autosave_status: String::new(),
             recovery_offer: None,
@@ -255,6 +272,7 @@ impl SpectrePrototype {
         // Collected during the draw and applied after it, for the same reason save and open are:
         // mutating the model mid-draw would leave the rest of this frame rendering stale state
         let mut tempo_edit: Option<f64> = None;
+        let mut loop_edit: Option<Option<(BeatTicks, BeatTicks)>> = None;
         // Both actions mutate self, so they are deferred out of the panel closure that borrows it
         let mut toggle = false;
         let mut retry = false;
@@ -318,6 +336,43 @@ impl SpectrePrototype {
                         .changed()
                     {
                         tempo_edit = Some(bpm);
+                    }
+                    // Loop-first composition is the vision's own first core-loop item, and the
+                    // transport carried a loop region the product could not set. Bars rather
+                    // than ticks, because that is what a musician means by "loop four bars"
+                    let looping = self.model.loop_ticks().is_some();
+                    if ui
+                        .selectable_label(looping, "⟲ Loop")
+                        .on_hover_text("Loop the bar range beside this control.")
+                        .clicked()
+                    {
+                        loop_edit = Some(if looping {
+                            None
+                        } else {
+                            Some(bars_to_ticks(self.loop_bars))
+                        });
+                    }
+                    let mut bars = self.loop_bars;
+                    let start = ui.add(
+                        egui::DragValue::new(&mut bars.0)
+                            .speed(0.25)
+                            .range(1..=LOOP_MAX_BAR)
+                            .prefix("bar "),
+                    );
+                    let end = ui.add(
+                        egui::DragValue::new(&mut bars.1)
+                            .speed(0.25)
+                            .range(2..=LOOP_MAX_BAR + 1)
+                            .prefix("to "),
+                    );
+                    if start.changed() || end.changed() {
+                        // Keep the range non-empty as it is dragged, so the model never sees a
+                        // region it would have to refuse
+                        bars.1 = bars.1.max(bars.0 + 1);
+                        self.loop_bars = bars;
+                        if looping {
+                            loop_edit = Some(Some(bars_to_ticks(bars)));
+                        }
                     }
                     ui.label(RichText::new("4 / 4").monospace().color(MUTED))
                         .on_hover_text("Fixed project default; meter editing arrives with the arrangement.");
@@ -443,8 +498,20 @@ impl SpectrePrototype {
         // material as well as the model, or the readout and the audio disagree
         if let Some(bpm) = tempo_edit {
             match self.model.set_tempo(bpm) {
-                Ok(()) => self.republish_schedules(),
+                Ok(()) => {
+                    self.republish_schedules();
+                    // The loop is stored in ticks and sent in samples, so a tempo change moves
+                    // where it lands. Republishing it here is what stops a loop from drifting
+                    // off the bar line the musician set it on
+                    self.republish_loop();
+                }
                 Err(error) => self.project_status = format!("tempo refused: {error:?}"),
+            }
+        }
+        if let Some(region) = loop_edit {
+            match self.model.set_loop(region) {
+                Ok(()) => self.republish_loop(),
+                Err(error) => self.project_status = format!("loop refused: {error}"),
             }
         }
     }
@@ -795,6 +862,17 @@ impl SpectrePrototype {
             engine.publish_schedules(self.model.track_list(), self.model.tempo_map())
         {
             self.project_status = format!("Edit did not reach the engine: {error}");
+        }
+    }
+
+    // Send the model's loop region to the running stream, converted to samples there
+    fn republish_loop(&mut self) {
+        let region = self.model.loop_ticks();
+        let Some(engine) = self.engine.as_mut() else {
+            return;
+        };
+        if let Err(error) = engine.publish_loop(region, self.model.tempo_map()) {
+            self.project_status = format!("Loop did not reach the engine: {error}");
         }
     }
 

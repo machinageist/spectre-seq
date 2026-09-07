@@ -265,6 +265,14 @@ pub struct AppModel {
     // Session-only, never persisted, and deliberately independent of track selection: selecting
     // a clip must not move the user's track context
     selected_clip: Option<ObjectId>,
+    // The loop region in TICKS, which is the musical truth. Transport carries a sample-domain
+    // region and persists it, but samples are a function of tempo -- a persisted sample loop
+    // silently moves when the tempo changes, so this is the source of truth and the sample
+    // region is derived from it wherever the sample rate is known.
+    //
+    // Session-only for now: persisting it needs a tick-domain field the schema does not have,
+    // and adding one is a migration this slice does not carry
+    loop_ticks: Option<(BeatTicks, BeatTicks)>,
     ids: IdGen,
     feedback: String,
     // Bounded undo/redo over the project's own edits. Held by the model rather than the shell so
@@ -338,6 +346,7 @@ impl AppModel {
             lens: Lens::Arrange,
             selected_track: Some(track_id),
             selected_clip: None,
+            loop_ticks: None,
             tracks,
             devices,
             selected_device,
@@ -647,6 +656,29 @@ impl AppModel {
             tempo: &mut self.tempo_map,
         };
         self.history.apply(&mut target, transaction)
+    }
+
+    // The loop region a musician set, in ticks. None means looping is off
+    pub fn loop_ticks(&self) -> Option<(BeatTicks, BeatTicks)> {
+        self.loop_ticks
+    }
+
+    // Set or clear the loop. Refuses an empty or inverted region rather than storing one the
+    // transport would reject when it was converted, so the refusal happens where it is visible.
+    //
+    // Not routed through the history: a loop region is where you are looking, not what the
+    // project contains, and an undo stack full of loop moves buries the edits that matter
+    pub fn set_loop(&mut self, region: Option<(BeatTicks, BeatTicks)>) -> Result<(), ClipError> {
+        if let Some((start, end)) = region {
+            if start.0 < 0 || end.0 <= start.0 {
+                return Err(ClipError::NoteOutsideClip {
+                    start: start.0,
+                    length: end.0 - start.0,
+                });
+            }
+        }
+        self.loop_ticks = region;
+        Ok(())
     }
 
     // Replace the project tempo. Reversible, and the inverse carries the whole previous map, so

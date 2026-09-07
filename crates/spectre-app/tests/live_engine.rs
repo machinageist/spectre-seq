@@ -1158,3 +1158,149 @@ fn a_published_schedule_lands_on_the_track_it_was_addressed_to() {
         "the render is silent, so the audible track's material was installed on the muted one"
     );
 }
+
+// ---- loop playback ----
+//
+// "Sketch a loop, branch variations, audition instantly" is the vision's FIRST core-loop item.
+// Transport carried a loop region, Transport::advance wrapped inside it, and ClipPlayer honoured
+// it -- and nothing in spectre-app ever set one, so a musician could not loop four bars while
+// writing into them.
+
+#[test]
+fn a_published_loop_wraps_the_playhead() {
+    let (model, _) = authored_session();
+    let mut engine = authored_engine(&model);
+
+    // Two bars at the project tempo
+    let two_bars = spectre_core::BeatTicks(AUTHORING_BAR * 2);
+    engine
+        .publish_loop(
+            Some((spectre_core::BeatTicks(0), two_bars)),
+            model.tempo_map(),
+        )
+        .expect("the transport lane accepts the loop");
+    engine
+        .send_transport(TransportCommand::Play)
+        .expect("the transport lane accepts Play");
+
+    let rate = spectre_core::SampleRate::new(NULL_SAMPLE_RATE).expect("a valid rate");
+    let loop_len = model.tempo_map().ticks_to_samples(two_bars, rate).0;
+    // Render past the loop end; a wrapping playhead never reaches it
+    let blocks = (loop_len / 256) as usize + 8;
+    for _ in 0..blocks {
+        engine.stream_mut().pump().unwrap();
+    }
+
+    let position = engine
+        .health()
+        .position_samples
+        .expect("blocks rendered, so there is a position");
+    assert!(
+        position < loop_len,
+        "the playhead ran past the loop end at {position}, so it did not wrap"
+    );
+}
+
+// Without a loop the playhead runs on. Asserting only the wrap would pass against a transport
+// that never advanced at all
+#[test]
+fn without_a_loop_the_playhead_runs_past_the_same_point() {
+    let (model, _) = authored_session();
+    let mut engine = authored_engine(&model);
+    engine
+        .send_transport(TransportCommand::Play)
+        .expect("the transport lane accepts Play");
+
+    let rate = spectre_core::SampleRate::new(NULL_SAMPLE_RATE).expect("a valid rate");
+    let two_bars = model
+        .tempo_map()
+        .ticks_to_samples(spectre_core::BeatTicks(AUTHORING_BAR * 2), rate)
+        .0;
+    for _ in 0..(two_bars / 256) as usize + 8 {
+        engine.stream_mut().pump().unwrap();
+    }
+
+    let position = engine
+        .health()
+        .position_samples
+        .expect("blocks rendered, so there is a position");
+    assert!(
+        position > two_bars,
+        "the playhead stopped at {position} with no loop set, so the wrap test proves nothing"
+    );
+}
+
+// Clearing the loop must release the playhead rather than leaving it circling
+#[test]
+fn clearing_the_loop_lets_the_playhead_run_on() {
+    let (model, _) = authored_session();
+    let mut engine = authored_engine(&model);
+    let two_bars = spectre_core::BeatTicks(AUTHORING_BAR * 2);
+    let rate = spectre_core::SampleRate::new(NULL_SAMPLE_RATE).expect("a valid rate");
+    let loop_len = model.tempo_map().ticks_to_samples(two_bars, rate).0;
+
+    engine
+        .publish_loop(
+            Some((spectre_core::BeatTicks(0), two_bars)),
+            model.tempo_map(),
+        )
+        .expect("the loop is accepted");
+    engine
+        .send_transport(TransportCommand::Play)
+        .expect("Play is accepted");
+    for _ in 0..(loop_len / 256) as usize + 4 {
+        engine.stream_mut().pump().unwrap();
+    }
+    engine
+        .publish_loop(None, model.tempo_map())
+        .expect("clearing the loop is accepted");
+    for _ in 0..(loop_len / 256) as usize + 8 {
+        engine.stream_mut().pump().unwrap();
+    }
+
+    let position = engine
+        .health()
+        .position_samples
+        .expect("blocks rendered, so there is a position");
+    assert!(
+        position > loop_len,
+        "the playhead is still inside the cleared loop at {position}"
+    );
+}
+
+// The loop is stored in ticks and sent in samples, so the same bar range must land somewhere
+// different once the tempo changes -- which is why a tempo edit republishes it
+#[test]
+fn the_same_bar_range_maps_to_fewer_samples_at_a_faster_tempo() {
+    let (mut model, _) = authored_session();
+    let rate = spectre_core::SampleRate::new(NULL_SAMPLE_RATE).expect("a valid rate");
+    let two_bars = spectre_core::BeatTicks(AUTHORING_BAR * 2);
+    let at_120 = model.tempo_map().ticks_to_samples(two_bars, rate).0;
+
+    model.set_tempo(240.0).expect("240 is a valid tempo");
+    let at_240 = model.tempo_map().ticks_to_samples(two_bars, rate).0;
+
+    assert!(
+        at_240 < at_120,
+        "doubling the tempo did not shorten the loop: {at_120} vs {at_240}"
+    );
+}
+
+// An inverted or empty range is refused by the model, so the transport never sees one
+#[test]
+fn an_empty_loop_range_is_refused() {
+    let (mut model, _) = authored_session();
+    model
+        .set_loop(Some((
+            spectre_core::BeatTicks(AUTHORING_BAR),
+            spectre_core::BeatTicks(AUTHORING_BAR),
+        )))
+        .expect_err("an empty range must be refused");
+    model
+        .set_loop(Some((
+            spectre_core::BeatTicks(AUTHORING_BAR * 2),
+            spectre_core::BeatTicks(AUTHORING_BAR),
+        )))
+        .expect_err("an inverted range must be refused");
+    assert!(model.loop_ticks().is_none());
+}
