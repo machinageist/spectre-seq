@@ -13,7 +13,7 @@
 
 use crate::io::{
     validate_buffers, AudioProcessor, DeviceClass, DeviceIo, NoteEventKind, ParameterError,
-    ProcessContext, ProcessError,
+    ProcessContext, ProcessError, MAX_VOICES,
 };
 use crate::parameter::{parameter, DeviceParameterKey, DspParameter};
 use spectre_core::ParamUnit;
@@ -70,16 +70,6 @@ const REFERENCE_PITCH_HZ: f64 = 440.0;
 const REFERENCE_MIDI_NOTE: f64 = 69.0;
 const SEMITONES_PER_OCTAVE: f64 = 12.0;
 const OCTAVE_RATIO: f64 = 2.0;
-
-// Simultaneous notes one Filament may sound
-//
-// Rationale row in docs/01-requirements/requirements-ledger.md (DEV-010, PROD-003). Spectre's own
-// arithmetic, not a reference product's: eight simultaneous notes covers a two-hand chord
-// voicing, and one full release generation overlapping the next attack doubles it. Sixteen is
-// that, and it is a fixed array so the pool is preallocated and `process` allocates nothing.
-// Stated cost: at MAX_TRACKS this admits 512 concurrent oscillators, which is bounded and
-// refused-into rather than grown
-pub const MAX_VOICES: usize = 16;
 
 // One sounding note. Every field that was a Filament field is now per-voice; nothing new is
 // introduced except the allocation order that makes stealing deterministic

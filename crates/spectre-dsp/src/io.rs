@@ -50,6 +50,18 @@ pub enum NoteEventKind {
     },
 }
 
+// Simultaneous notes one instrument may sound
+//
+// Rationale row in docs/01-requirements/requirements-ledger.md (DEV-010, PROD-003). Spectre's own
+// arithmetic, not a reference product's: eight simultaneous notes covers a two-hand chord voicing,
+// and one full release generation overlapping the next attack doubles it.
+//
+// Defined once here rather than per device, because it is one musical argument rather than two.
+// That does NOT make voicing shared: each instrument owns its own pool and its own stealing
+// policy, which is what "per-instrument polyphony" means, and an instrument that needs a
+// different count declares its own
+pub const MAX_VOICES: usize = 16;
+
 // Engine-owned event storage limit for one device bus and render quantum
 pub const MAX_NOTE_EVENTS_PER_BLOCK: usize = 1_024;
 

@@ -12,11 +12,11 @@ mod parameter;
 mod source;
 
 pub use effect::{Gain, Saturator, GAIN_PARAMETERS, SATURATOR_PARAMETERS};
-pub use filament::{Filament, FILAMENT_PARAMETERS, MAX_VOICES};
+pub use filament::{Filament, FILAMENT_PARAMETERS};
 pub use gloam::{Gloam, GLOAM_DAMP_HZ, GLOAM_DEPTH, GLOAM_PARAMETERS, GLOAM_TRACK_MS};
 pub use io::{
     AudioProcessor, DeviceClass, DeviceIo, NoteEvent, NoteEventKind, ParameterError,
-    ProcessContext, ProcessError, MAX_NOTE_EVENTS_PER_BLOCK,
+    ProcessContext, ProcessError, MAX_NOTE_EVENTS_PER_BLOCK, MAX_VOICES,
 };
 pub use mix::{SumBus, MAX_SUM_BUSES};
 pub use parameter::{

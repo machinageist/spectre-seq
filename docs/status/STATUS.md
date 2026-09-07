@@ -148,10 +148,14 @@ note renders bit-identically to the monophonic device**, because summing one voi
 accumulator is exact; that is what keeps R4's render evidence describing this instrument.
 **Stealing is oldest-first for determinism, not musicality:** "steal the quietest" compares contour
 floats, so two runs of one input could steal different voices and break the live↔offline
-bit-equality R4-8 proves. **`PulseInstrument` is still monophonic, and `AppModel::add_track` still
-creates Pulse tracks** — so a track added in the product cannot yet play a chord. That is one line
-to change and it is a product decision about which synth a new track gets, not an implementation
-detail, so it is left open rather than chosen here.
+bit-equality R4-8 proves. **`PulseInstrument` became polyphonic the same day**, so a track added in the product can play a
+chord: `a_default_track_plays_a_chord_through_the_real_graph` compiles a `TrackInstrument::Pulse`
+track through the real track graph and asserts three notes sum louder than one. Each instrument
+owns its own pool and stealing policy — Pulse has no contour, so a released voice is immediately
+free where Filament's stays busy through its fall ramp — and they share only the `MAX_VOICES`
+count, which is one musical argument rather than two. **Still open and deliberately not decided
+here:** which instrument `add_track` should give a new track. It gives Pulse, the R2-era fixture
+device, rather than the alpha's own `Filament`; that is a product call about identity.
 
 **The chain is editable from the model as of 2026-09-06, and every edit is reversible.**
 `AppModel` gained add / append / remove / move / set-depth, all routed through the same

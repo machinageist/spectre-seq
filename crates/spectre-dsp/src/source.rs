@@ -5,7 +5,7 @@
 
 use crate::io::{
     validate_buffers, AudioProcessor, DeviceClass, DeviceIo, NoteEventKind, ParameterError,
-    ProcessContext, ProcessError,
+    ProcessContext, ProcessError, MAX_VOICES,
 };
 use crate::parameter::{parameter, DeviceParameterKey, DspParameter};
 use spectre_core::ParamUnit;
@@ -122,14 +122,39 @@ pub enum Waveform {
     Square,
 }
 
-// Monophonic note-driven instrument for the first vertical slice
+// One sounding note. Pulse has no amplitude contour, so a released voice is immediately free --
+// unlike Filament, whose voice stays busy through its fall ramp
+#[derive(Debug, Clone, Copy)]
+struct PulseVoice {
+    active: Option<(u32, u8)>,
+    phase: f64,
+    velocity: f32,
+    // Allocation order, used only to choose which voice to steal. A counter rather than a
+    // measured amplitude, so the same input always steals the same voice
+    started: u64,
+}
+
+impl PulseVoice {
+    const fn silent() -> Self {
+        Self {
+            active: None,
+            phase: 0.0,
+            velocity: 0.0,
+            started: 0,
+        }
+    }
+}
+
+// Polyphonic note-driven instrument for the first vertical slice.
+//
+// Its own pool and its own stealing policy, per the accepted per-instrument voicing decision;
+// it shares only the MAX_VOICES count, which is one musical argument rather than two
 #[derive(Debug, Clone)]
 pub struct PulseInstrument {
     waveform: Waveform,
     level: f32,
-    phase: f64,
-    active_note: Option<(u32, u8)>,
-    velocity: f32,
+    voices: [PulseVoice; MAX_VOICES],
+    next_started: u64,
 }
 
 impl PulseInstrument {
@@ -140,9 +165,8 @@ impl PulseInstrument {
         Ok(Self {
             waveform,
             level,
-            phase: 0.0,
-            active_note: None,
-            velocity: 0.0,
+            voices: [PulseVoice::silent(); MAX_VOICES],
+            next_started: 0,
         })
     }
 
@@ -154,10 +178,25 @@ impl PulseInstrument {
         self.waveform
     }
 
-    fn sample(&self) -> f32 {
-        let phase = self.phase as f32;
+    // Choose the voice a new note takes: a free one, else the oldest sounding one. Scans the
+    // fixed pool and allocates nothing
+    fn allocate(&self) -> usize {
+        let mut oldest = 0;
+        for (index, voice) in self.voices.iter().enumerate() {
+            if voice.active.is_none() {
+                return index;
+            }
+            if voice.started < self.voices[oldest].started {
+                oldest = index;
+            }
+        }
+        oldest
+    }
+
+    fn sample_at(&self, voice_phase: f64) -> f32 {
+        let phase = voice_phase as f32;
         match self.waveform {
-            Waveform::Sine => (self.phase * TAU).sin() as f32,
+            Waveform::Sine => (voice_phase * TAU).sin() as f32,
             Waveform::Triangle => 1.0 - 4.0 * (phase - 0.5).abs(),
             Waveform::Saw => phase * 2.0 - 1.0,
             Waveform::Square => {
@@ -205,32 +244,48 @@ impl AudioProcessor for PulseInstrument {
                     NoteEventKind::On {
                         id, note, velocity, ..
                     } => {
-                        self.active_note = Some((id, note));
-                        self.velocity = velocity;
-                        self.phase = 0.0;
+                        let slot = self.allocate();
+                        let started = self.next_started;
+                        self.next_started = self.next_started.wrapping_add(1);
+                        self.voices[slot] = PulseVoice {
+                            active: Some((id, note)),
+                            phase: 0.0,
+                            velocity,
+                            started,
+                        };
                     }
-                    NoteEventKind::Off { id, .. }
-                        if self.active_note.is_some_and(|active| active.0 == id) =>
-                    {
-                        self.active_note = None;
-                        self.velocity = 0.0;
+                    // Every voice holding this id, so a duplicate id cannot strand one sounding
+                    NoteEventKind::Off { id, .. } => {
+                        for voice in self.voices.iter_mut() {
+                            if voice.active.is_some_and(|active| active.0 == id) {
+                                voice.active = None;
+                                voice.velocity = 0.0;
+                            }
+                        }
                     }
                     NoteEventKind::AllNotesOff { .. } => {
-                        self.active_note = None;
-                        self.velocity = 0.0;
+                        for voice in self.voices.iter_mut() {
+                            voice.active = None;
+                            voice.velocity = 0.0;
+                        }
                     }
-                    NoteEventKind::Off { .. } => {}
                 }
                 event_index += 1;
             }
-            let sample = if let Some((_, note)) = self.active_note {
-                let value = self.sample() * self.level * self.velocity;
+            // Voices sum in pool order, which is fixed for the life of the device. A single
+            // sounding voice sums into a zero accumulator, which is exact, so one note renders
+            // bit-identically to the monophonic device this replaced
+            let mut sample = 0.0;
+            for index in 0..MAX_VOICES {
+                let Some((_, note)) = self.voices[index].active else {
+                    continue;
+                };
+                let voice_phase = self.voices[index].phase;
+                sample += self.sample_at(voice_phase) * self.level * self.voices[index].velocity;
                 let frequency = 440.0 * 2.0_f64.powf((note as f64 - 69.0) / 12.0);
-                self.phase = (self.phase + frequency / context.sample_rate()).fract();
-                value
-            } else {
-                0.0
-            };
+                self.voices[index].phase =
+                    (voice_phase + frequency / context.sample_rate()).fract();
+            }
             left[frame] = sample;
             right[frame] = sample;
         }
