@@ -140,6 +140,22 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **The dirty marker is derived, not maintained.** It compares the bytes a save would write right now against the bytes last written, rather than being set by hand at each mutation site — a flag maintained at call sites is a flag someone forgets at the next one, and a marker reading "Saved" over unsaved work is exactly the defect the project-safety pillar names. The two shell decisions that are not drawing — that comparison and the one-press-never-discards rule — live in `spectre_app::project` rather than in `main.rs`, because `main.rs` is a binary target no test can reach; that is the lesson R4-1's review already paid for.
 
+**A track's instrument can be changed as of 2026-09-07.** `TrackList::set_instrument` existed
+with **zero callers in any `src/`**, so every track created in the product was a Pulse saw for the
+life of the project and `Filament` — the alpha's own synth, and the one this session made
+polyphonic — was unreachable on any track a musician made. The track inspector now carries an
+instrument selector; the change is reversible and advances `structure_revision`, so the transport
+reports `PLAN STALE` until the engine is rebuilt rather than pretending it is already audible.
+Setting the instrument a track already has is a no-op that does **not** mark the plan stale, or
+every redraw echoing the current value would force a needless rebuild.
+
+**Found by an audit, not by a feature plan.** A scan for public API with no caller outside its own
+definition surfaced this, and it is the fifth such find this session after the schedule lane, the
+clip commands, voice routing, and the loop. **Also surfaced and NOT addressed: there is no MIDI
+input backend at all** — `midir` is not a dependency, and `MidiIngress` converts timestamped
+messages that nothing produces. A MIDI keyboard cannot play Spectre, which the vision's audience
+statement ("MIDI controllers, and hardware synths") assumes. That is a backend, not a wiring gap.
+
 **Looping is reachable as of 2026-09-07, which is the vision's own first core-loop item.**
 "Sketch a loop, branch variations, audition instantly" was unreachable: `Transport` carried a
 `loop_region`, `Transport::advance` wrapped inside it, `ClipPlayer` honoured it — and **nothing in

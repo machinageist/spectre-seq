@@ -858,6 +858,23 @@ impl AppModel {
             .map_err(unwrap_track_error)
     }
 
+    // Change which instrument a track hosts.
+    //
+    // Without this every track created in the product was a Pulse saw for the life of the
+    // project: TrackList::set_instrument existed and had no caller, so Filament -- the alpha's
+    // own synth -- was unreachable on any track a musician made.
+    //
+    // A shape change, so structure_revision advances and the shell reports PLAN STALE until the
+    // engine is rebuilt. That is the accepted rule, not a limitation introduced here
+    pub fn set_track_instrument(
+        &mut self,
+        id: ObjectId,
+        instrument: TrackInstrument,
+    ) -> Result<(), TrackError> {
+        self.edit(ProjectCommand::set_track_instrument(id, instrument))
+            .map_err(unwrap_track_error)
+    }
+
     // Move one track to an absolute index; identity and every field survive (CORE-001)
     pub fn reorder_track(&mut self, id: ObjectId, to_index: usize) -> Result<usize, TrackError> {
         let from = self

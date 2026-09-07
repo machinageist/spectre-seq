@@ -17,6 +17,7 @@ use spectre_app::project::{
 };
 use spectre_app::{open_device_in_shape_from_ui, AppModel, Lens};
 use spectre_core::{BeatTicks, ObjectId};
+use spectre_project::TrackInstrument;
 
 const BG: Color32 = Color32::from_rgb(15, 18, 24);
 const PANEL: Color32 = Color32::from_rgb(24, 29, 38);
@@ -50,6 +51,15 @@ const LOOP_MAX_BAR: u32 = 999;
 
 // One-based bars to the tick domain the model stores. 4/4 until the meter is editable, which is
 // the same assumption the transport's own "4 / 4" label still makes
+// The name a musician sees for each instrument. Not derived from the enum's Debug, so renaming a
+// variant cannot silently change what the product calls it
+fn instrument_label(instrument: TrackInstrument) -> &'static str {
+    match instrument {
+        TrackInstrument::Pulse => "Pulse",
+        TrackInstrument::Filament => "Filament",
+    }
+}
+
 fn bars_to_ticks(bars: (u32, u32)) -> (BeatTicks, BeatTicks) {
     let per_bar = spectre_core::TICKS_PER_BEAT * 4;
     (
@@ -975,11 +985,31 @@ impl SpectrePrototype {
                 // Read the track, collect the edits, then apply them after the borrow ends, so
                 // one edit can publish to every id whose effective gain it changed
                 let mut mix_edit: Option<TrackMixEdit> = None;
+                let mut instrument_edit: Option<(ObjectId, TrackInstrument)> = None;
                 if let Some(track) = self.model.selected_track() {
                     let id = track.id();
                     let (mut muted, mut soloed) = (track.is_muted(), track.is_soloed());
                     let mut level = track.level();
                     ui.heading(track.name());
+                    // Which synth the track plays. Every track was a Pulse saw for the life of
+                    // the project until 2026-09-07, because nothing called set_instrument
+                    let current = track.instrument();
+                    egui::ComboBox::from_label("Instrument")
+                        .selected_text(instrument_label(current))
+                        .show_ui(ui, |ui| {
+                            for candidate in [TrackInstrument::Pulse, TrackInstrument::Filament] {
+                                if ui
+                                    .selectable_label(
+                                        current == candidate,
+                                        instrument_label(candidate),
+                                    )
+                                    .clicked()
+                                    && candidate != current
+                                {
+                                    instrument_edit = Some((id, candidate));
+                                }
+                            }
+                        });
                     ui.horizontal(|ui| {
                         if ui.toggle_value(&mut muted, "Mute").changed() {
                             mix_edit = Some(TrackMixEdit::Muted(id, muted));
@@ -1010,6 +1040,14 @@ impl SpectrePrototype {
                 }
                 if let Some(edit) = mix_edit {
                     self.apply_mix_edit(edit);
+                }
+                // A shape change: the instrument node itself differs, so the running plan is
+                // stale until rebuilt. The transport says PLAN STALE rather than pretending the
+                // change is audible, which is the rule R4-4 established for structure edits
+                if let Some((id, instrument)) = instrument_edit {
+                    if let Err(error) = self.model.set_track_instrument(id, instrument) {
+                        self.feedback_status = format!("{error}");
+                    }
                 }
                 ui.separator();
                 ui.label(

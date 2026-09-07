@@ -4,7 +4,7 @@
 // Notes: App-thread project mutation seam; never callback-reachable
 
 use crate::clip::{ClipError, ClipNote, ClipPlacement, MidiClip};
-use crate::{ProjectDoc, Track, TrackError, TrackInsert, TrackList};
+use crate::{ProjectDoc, Track, TrackError, TrackInsert, TrackInstrument, TrackList};
 use spectre_core::ObjectId;
 use spectre_core::{BeatTicks, TempoMap};
 use std::collections::VecDeque;
@@ -158,6 +158,13 @@ enum CommandKind {
     // constant and call that an undo
     SetTempoMap {
         map: TempoMap,
+    },
+    // Changing an instrument changes the graph's shape, so it advances structure_revision and
+    // the shell reports PLAN STALE until the engine is rebuilt -- the same rule adding an effect
+    // follows. The inverse carries the previous instrument, read before the mutation
+    SetTrackInstrument {
+        id: ObjectId,
+        instrument: TrackInstrument,
     },
     // InsertEffect and RemoveEffect are exact mutual inverses for the same reason the track pair
     // is: TrackList::remove_effect returns the effect whole, so an undone delete restores the
@@ -373,6 +380,12 @@ impl ProjectCommand {
 
     // Replace the project's tempo map. Takes the whole map so a caller can set a constant or a
     // curve through one command, and so the inverse can restore either exactly
+    pub fn set_track_instrument(id: ObjectId, instrument: TrackInstrument) -> Self {
+        Self {
+            kind: CommandKind::SetTrackInstrument { id, instrument },
+        }
+    }
+
     pub fn set_tempo_map(map: TempoMap) -> Self {
         Self {
             kind: CommandKind::SetTempoMap { map },
@@ -658,6 +671,23 @@ impl ProjectCommand {
                     kind: CommandKind::InsertNote {
                         clip: *clip,
                         note: removed,
+                    },
+                })
+            }
+            CommandKind::SetTrackInstrument { id, instrument } => {
+                let previous = scope
+                    .tracks
+                    .get(*id)
+                    .ok_or(CommandError::Track(TrackError::UnknownTrack(*id)))?
+                    .instrument();
+                scope
+                    .tracks
+                    .set_instrument(*id, *instrument)
+                    .map_err(CommandError::Track)?;
+                Ok(Self {
+                    kind: CommandKind::SetTrackInstrument {
+                        id: *id,
+                        instrument: previous,
                     },
                 })
             }
