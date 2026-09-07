@@ -221,3 +221,82 @@ fn a_note_outside_the_clip_is_refused() {
         .expect_err("a note number past 127 must be refused");
     assert!(notes(&model, clip).is_empty());
 }
+
+// ---- arranging ----
+//
+// Every clip was appended after the previous one and could never be moved, so a musician could
+// not leave a gap or place one at bar 5. move_clip and MidiClip::set_length both existed with no
+// caller in any src/.
+
+#[test]
+fn a_clip_can_be_placed_at_an_arbitrary_bar() {
+    let (mut model, _, placement, _) = session();
+    model
+        .move_clip(placement, BeatTicks(BAR * 4))
+        .expect("the move applies");
+
+    let start = model
+        .clip_track(placement)
+        .and_then(|track| model.track_list().get(track))
+        .and_then(|entry| entry.clips().get(placement))
+        .expect("the placement exists")
+        .start();
+    assert_eq!(start, BeatTicks(BAR * 4));
+}
+
+#[test]
+fn a_clip_can_be_resized_and_the_resize_undone() {
+    let (mut model, _, _, clip) = session();
+    model
+        .set_clip_length(clip, BeatTicks(BAR * 2))
+        .expect("the resize applies");
+    assert_eq!(
+        model.track_list().clip(clip).expect("present").length(),
+        BeatTicks(BAR * 2)
+    );
+
+    assert!(model.undo().expect("the undo applies"));
+    assert_eq!(
+        model.track_list().clip(clip).expect("present").length(),
+        BeatTicks(BAR),
+        "the undo did not restore the previous length"
+    );
+}
+
+// The cache TrackClips keeps for overlap decisions must move with the clip's own length, or a
+// later placement decision is made against a stale span
+#[test]
+fn resizing_refuses_when_it_would_overlap_and_changes_nothing() {
+    let (mut model, track, _, clip) = session();
+    // A second clip immediately after the first
+    model
+        .create_clip(track, "Second", BeatTicks(BAR), BeatTicks(BAR))
+        .expect("the second clip is created");
+
+    // Growing the first to two bars would run into the second
+    model
+        .set_clip_length(clip, BeatTicks(BAR * 2))
+        .expect_err("an overlapping resize must be refused");
+    assert_eq!(
+        model.track_list().clip(clip).expect("present").length(),
+        BeatTicks(BAR),
+        "a refused resize left the clip's own length changed"
+    );
+}
+
+// Shortening past a note is refused by the clip itself, and leaves nothing half-applied
+#[test]
+fn resizing_past_a_note_is_refused() {
+    let (mut model, _, _, clip) = session();
+    model
+        .add_note(clip, note_at(BAR / 2, 480, 60, 0.8))
+        .expect("the note is accepted");
+    model
+        .set_clip_length(clip, BeatTicks(240))
+        .expect_err("a length that orphans a note must be refused");
+    assert_eq!(
+        model.track_list().clip(clip).expect("present").length(),
+        BeatTicks(BAR)
+    );
+    assert_eq!(notes(&model, clip).len(), 1);
+}

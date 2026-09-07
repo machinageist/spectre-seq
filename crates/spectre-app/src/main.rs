@@ -95,6 +95,11 @@ fn instrument_label(instrument: TrackInstrument) -> &'static str {
     }
 }
 
+// Ticks in one bar. 4/4 until the meter is editable, the same assumption the loop control makes
+fn bar_ticks() -> i64 {
+    spectre_core::TICKS_PER_BEAT * 4
+}
+
 fn bars_to_ticks(bars: (u32, u32)) -> (BeatTicks, BeatTicks) {
     let per_bar = spectre_core::TICKS_PER_BEAT * 4;
     (
@@ -1512,6 +1517,8 @@ impl SpectrePrototype {
     fn clip_inspector(&mut self, ui: &mut egui::Ui) {
         let mut republish = false;
         let mut note_action: Option<NoteAction> = None;
+        let mut clip_move: Option<i64> = None;
+        let mut clip_resize: Option<i64> = None;
         let Some(placement) = self.model.selected_clip() else {
             ui.add_space(10.0);
             ui.label(
@@ -1524,6 +1531,13 @@ impl SpectrePrototype {
         let Some(label) = self.model.clip_label(placement) else {
             return;
         };
+        // Where the placement sits, read before the panel draws so the field shows it
+        let start_ticks = self
+            .model
+            .clip_track(placement)
+            .and_then(|track| self.model.track_list().get(track))
+            .and_then(|entry| entry.clips().get(placement))
+            .map_or(0, |entry| entry.start().0);
         let Some((length, notes, active)) = self.model.selected_clip_detail() else {
             return;
         };
@@ -1591,6 +1605,36 @@ impl SpectrePrototype {
                     ui.label(RichText::new("no notes in this clip").small().color(MUTED));
                 }
                 ui.add_space(6.0);
+                // Where the clip sits and how long it is. Fields rather than a drag, matching the
+                // list idiom: every clip was appended after the previous one and could never be
+                // moved, so a musician could not leave a gap or place one at bar 5
+                ui.horizontal(|ui| {
+                    let mut start_bar = start_ticks / bar_ticks() + 1;
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut start_bar)
+                                .speed(0.25)
+                                .range(1..=LOOP_MAX_BAR)
+                                .prefix("start bar "),
+                        )
+                        .changed()
+                    {
+                        clip_move = Some((start_bar - 1) * bar_ticks());
+                    }
+                    let mut bars = (length.0 / bar_ticks()).max(1);
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut bars)
+                                .speed(0.25)
+                                .range(1..=64)
+                                .suffix(" bar(s)"),
+                        )
+                        .changed()
+                    {
+                        clip_resize = Some(bars * bar_ticks());
+                    }
+                });
+                ui.add_space(6.0);
                 // Writing a note. Fields rather than a canvas, matching the list above; the
                 // model refuses anything outside the clip or outside MIDI's range
                 ui.horizontal(|ui| {
@@ -1615,6 +1659,23 @@ impl SpectrePrototype {
                     }
                 });
             });
+        // Both change what should be playing, so both republish
+        if let Some(start) = clip_move {
+            if let Some(placement) = self.model.selected_clip() {
+                match self.model.move_clip(placement, BeatTicks(start)) {
+                    Ok(()) => republish = true,
+                    Err(error) => self.feedback_status = error.to_string(),
+                }
+            }
+        }
+        if let Some(length) = clip_resize {
+            if let Some(clip) = self.selected_clip_id() {
+                match self.model.set_clip_length(clip, BeatTicks(length)) {
+                    Ok(()) => republish = true,
+                    Err(error) => self.feedback_status = error.to_string(),
+                }
+            }
+        }
         // Applied after the panel closes, and every one republishes: a note the musician wrote
         // that the render thread has not been told about is a note they do not hear
         if let Some(action) = note_action {

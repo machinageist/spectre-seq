@@ -568,6 +568,46 @@ impl TrackList {
         }
     }
 
+    // Resize a clip and refresh every placement of it across every track.
+    //
+    // Two things must move together or the model is inconsistent: the clip's own length, and the
+    // per-placement cache TrackClips keeps so overlap can be decided without a table lookup.
+    // Every affected track is checked BEFORE anything is written, so a refusal leaves the project
+    // exactly as it was rather than half-resized
+    pub fn set_clip_length(
+        &mut self,
+        clip: ObjectId,
+        length: BeatTicks,
+    ) -> Result<BeatTicks, ClipError> {
+        let previous = self
+            .clip(clip)
+            .ok_or(ClipError::UnknownClip(clip))?
+            .length();
+        // Notes first: a length that orphans one is refused by the clip itself
+        {
+            let entry = self.clip_mut(clip).expect("presence checked above");
+            entry.set_length(length)?;
+        }
+        // Then every placement's cache. A refusal here restores the clip's own length, so the
+        // failed edit leaves nothing behind
+        for index in 0..self.tracks.len() {
+            if let Err(error) = self.tracks[index].clips_mut().relength(clip, length) {
+                let entry = self.clip_mut(clip).expect("present");
+                entry
+                    .set_length(previous)
+                    .expect("the previous length held every note a moment ago");
+                for earlier in 0..index {
+                    self.tracks[earlier]
+                        .clips_mut()
+                        .relength(clip, previous)
+                        .expect("the previous length fitted a moment ago");
+                }
+                return Err(error);
+            }
+        }
+        Ok(previous)
+    }
+
     // Note authoring. Returns the index the note landed at, which is what an undo addresses
     pub fn insert_note(&mut self, clip: ObjectId, note: ClipNote) -> Result<usize, ClipError> {
         self.clip_mut(clip)

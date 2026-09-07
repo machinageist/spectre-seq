@@ -507,6 +507,15 @@ impl AppModel {
         .map_err(unwrap_clip_error)
     }
 
+    // Resize the selected clip. Refused when a note would fall outside it or a placement would
+    // overlap a neighbour, and a refusal changes nothing
+    pub fn set_clip_length(&mut self, clip: ObjectId, length: BeatTicks) -> Result<(), ClipError> {
+        self.apply(Transaction::single(ProjectCommand::set_clip_length(
+            clip, length,
+        )))
+        .map_err(unwrap_clip_error)
+    }
+
     // Note authoring: what a piano roll calls.
     //
     // Both take a built ClipNote rather than its fields. ClipNote::new is the one place a note is

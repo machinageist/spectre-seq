@@ -157,6 +157,18 @@ the single definition of a device's descriptor set, `targets_before` sums real p
 spans instead of a fixed stride, and `selected_track_target_index` resolves by **key** rather than
 by an assumed position. `FILAMENT_LEVEL` is named as 3 rather than assumed to be 0.
 
+**Clips can be placed and resized as of 2026-09-07, which makes arrangement arrangeable.** Every
+clip was appended after the previous one and could never be moved, so a musician could not leave a
+gap or place one at bar 5; `move_clip` and `MidiClip::set_length` both existed with no caller in
+any `src/`. The clip inspector now carries start-bar and length fields — numbers rather than a
+drag, matching the list idiom the accepted surface already uses.
+
+**Resizing is one command because it touches two things.** `TrackClips` caches each placement's
+length so overlap can be decided without a table lookup, which goes stale the moment a clip is
+resized. `TrackList::set_clip_length` changes the clip and refreshes every placement of it across
+every track, checks overlap **before** writing, and restores both on refusal — so a rejected
+resize leaves the project exactly as it was rather than half-applied.
+
 **The composition is proved, not assumed (2026-09-07).** Every link built in this session had its
 own evidence and the whole chain had none — which is exactly the gap R4-9 found last time, when
 every seam passed its own test and a three-track project still played one track live.

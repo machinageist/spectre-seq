@@ -222,6 +222,12 @@ enum CommandKind {
         clip: ObjectId,
         index: usize,
     },
+    // Resizing touches the clip AND every placement's cached length, so it is one command rather
+    // than a caller remembering to do both
+    SetClipLength {
+        clip: ObjectId,
+        length: BeatTicks,
+    },
 }
 
 // One reversible project-model mutation
@@ -363,6 +369,12 @@ impl ProjectCommand {
     pub fn move_placement(track: ObjectId, id: ObjectId, start: BeatTicks) -> Self {
         Self {
             kind: CommandKind::MovePlacement { track, id, start },
+        }
+    }
+
+    pub fn set_clip_length(clip: ObjectId, length: BeatTicks) -> Self {
+        Self {
+            kind: CommandKind::SetClipLength { clip, length },
         }
     }
 
@@ -698,6 +710,18 @@ impl ProjectCommand {
                 let previous = std::mem::replace(target, map.clone());
                 Ok(Self {
                     kind: CommandKind::SetTempoMap { map: previous },
+                })
+            }
+            CommandKind::SetClipLength { clip, length } => {
+                let previous = scope
+                    .tracks
+                    .set_clip_length(*clip, *length)
+                    .map_err(CommandError::Clip)?;
+                Ok(Self {
+                    kind: CommandKind::SetClipLength {
+                        clip: *clip,
+                        length: previous,
+                    },
                 })
             }
             CommandKind::SetMasterLevel { level } => {

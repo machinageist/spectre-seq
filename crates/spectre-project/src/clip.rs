@@ -453,6 +453,42 @@ impl TrackClips {
         Ok(index)
     }
 
+    // Refresh the cached length of every placement of one clip, refusing if the new span would
+    // overlap a neighbour.
+    //
+    // The cache exists so overlap can be decided without a clip-table lookup, which makes it
+    // stale the moment a clip is resized. Checking BEFORE writing keeps the non-overlap invariant
+    // true at every observable moment rather than repaired afterwards
+    pub fn relength(&mut self, clip: ObjectId, length: BeatTicks) -> Result<(), ClipError> {
+        validate_length(length)?;
+        for index in 0..self.placements.len() {
+            if self.placements[index].clip != clip {
+                continue;
+            }
+            let start = self.placements[index].start.0;
+            let end = start.saturating_add(length.0);
+            for (other, other_length) in self
+                .placements
+                .iter()
+                .zip(&self.lengths)
+                .enumerate()
+                .filter_map(|(position, pair)| (position != index).then_some(pair))
+            {
+                let other_end = other.start.0.saturating_add(other_length.0);
+                if start < other_end && other.start.0 < end {
+                    return Err(ClipError::OverlappingPlacement { existing: other.id });
+                }
+            }
+        }
+        for index in 0..self.placements.len() {
+            if self.placements[index].clip == clip {
+                self.lengths[index] = length;
+                self.bake_revision += 1;
+            }
+        }
+        Ok(())
+    }
+
     // Remove by identity, returning the placement whole so an undo can reinsert it unchanged
     pub fn remove(&mut self, id: ObjectId) -> Result<ClipPlacement, ClipError> {
         let index = self
