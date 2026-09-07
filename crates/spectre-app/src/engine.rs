@@ -771,6 +771,31 @@ pub fn publish_stored_parameters<S: AudioStream + ?Sized>(
     Ok(published)
 }
 
+// Publish one chained effect's parameter, addressed by its POSITION in the chain.
+//
+// Shape resolves a device by key and takes the first match, so a track with two Gloams can only
+// reach the first from there. A chain is ordered and a musician means "the second one", so chain
+// edits address by position instead
+pub fn publish_effect_parameter<S: AudioStream + ?Sized>(
+    engine: &LiveEngine<S>,
+    tracks: &spectre_project::TrackList,
+    track: spectre_core::ObjectId,
+    position: usize,
+    parameter: usize,
+    value: f32,
+) -> Result<(), ControlError> {
+    let Some(index) = tracks.index_of(track) else {
+        return Ok(());
+    };
+    let Some(target) = tracks
+        .insert_parameter_index(index, position, parameter)
+        .and_then(|at| engine.targets().get(at).copied())
+    else {
+        return Ok(());
+    };
+    engine.send_parameter(target, value)
+}
+
 pub fn apply_parameter_edit<S: AudioStream + ?Sized>(
     model: &mut AppModel,
     engine: Option<&LiveEngine<S>>,

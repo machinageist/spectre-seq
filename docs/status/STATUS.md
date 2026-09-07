@@ -157,6 +157,16 @@ the single definition of a device's descriptor set, `targets_before` sums real p
 spans instead of a fixed stride, and `selected_track_target_index` resolves by **key** rather than
 by an assumed position. `FILAMENT_LEVEL` is named as 3 rather than assumed to be 0.
 
+**The device chain became reachable on 2026-09-07, which completes "effects chained in any
+permutation" below the piano roll.** The chain model — ordered, unbounded, reversible — had **no
+surface at all**: `Track::new` starts with an empty chain, and the only `TrackInsert::new` in any
+`src/` was in the offline fixture builder, so `Gloam` was unreachable on any track a musician
+made, exactly as `Filament` was. The inspector now lists a track's effects with add, remove,
+reorder and a depth slider each. **Depth is addressed by chain POSITION, not by device key:**
+Shape resolves a device by key and takes the first match, so a track with two Gloams could only
+ever reach the first from there. The static "Instrument → Track gain → Sum → Master" label and the
+permanently disabled "+ Add device" button are gone, replaced by the real chain.
+
 **Stored device values now reach the engine when it opens (2026-09-07).** Routing every control
 was only half of sound design: `instrument_for` builds each device from its **descriptor
 defaults** and passes only the track's level, so a saved `lean` never reached the constructed

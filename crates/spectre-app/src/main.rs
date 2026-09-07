@@ -17,7 +17,7 @@ use spectre_app::project::{
 };
 use spectre_app::{open_device_in_shape_from_ui, AppModel, Lens};
 use spectre_core::{BeatTicks, ObjectId};
-use spectre_project::TrackInstrument;
+use spectre_project::{TrackEffect, TrackInsert, TrackInstrument};
 
 const BG: Color32 = Color32::from_rgb(15, 18, 24);
 const PANEL: Color32 = Color32::from_rgb(24, 29, 38);
@@ -51,6 +51,16 @@ const LOOP_MAX_BAR: u32 = 999;
 
 // A structure edit requested from the track list, applied after the panel closes because each
 // one mutates the model the panel is borrowing
+// A device-chain edit requested from the inspector, applied after the panel closes because each
+// one mutates the model the panel is borrowing
+#[derive(Debug, Clone, Copy)]
+enum ChainAction {
+    Add(ObjectId),
+    Remove(ObjectId, usize),
+    Move(ObjectId, usize, usize),
+    Depth(ObjectId, usize, f32),
+}
+
 #[derive(Debug, Clone, Copy)]
 enum TrackAction {
     Delete(ObjectId),
@@ -1047,6 +1057,7 @@ impl SpectrePrototype {
                 let mut instrument_edit: Option<(ObjectId, TrackInstrument)> = None;
                 let mut rename_edit: Option<(ObjectId, String)> = None;
                 let mut master_edit: Option<f32> = None;
+                let mut chain_action: Option<ChainAction> = None;
                 if let Some(track) = self.model.selected_track() {
                     let id = track.id();
                     let (mut muted, mut soloed) = (track.is_muted(), track.is_soloed());
@@ -1104,12 +1115,58 @@ impl SpectrePrototype {
                     {
                         mix_edit = Some(TrackMixEdit::Level(id, level));
                     }
+                    // The device chain. Gloam was unreachable on any track a musician made:
+                    // Track::new starts with an empty chain and nothing in the shell ever built
+                    // a TrackInsert, so the ordered chain model had no surface at all
                     ui.separator();
-                    ui.label(RichText::new("Signal path").strong());
-                    ui.label(
-                        RichText::new("Instrument  →  Track gain  →  Sum  →  Master").color(MUTED),
-                    );
-                    ui.add_enabled(false, egui::Button::new("+ Add device"));
+                    ui.label(RichText::new("EFFECTS").small().strong().color(MUTED));
+                    let chain_len = track.inserts().len();
+                    for (position, insert) in track.inserts().iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Gloam").color(TEXT));
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.small_button("✕").on_hover_text("Remove").clicked() {
+                                        chain_action = Some(ChainAction::Remove(id, position));
+                                    }
+                                    if ui
+                                        .add_enabled(
+                                            position + 1 < chain_len,
+                                            egui::Button::new("▾").small(),
+                                        )
+                                        .clicked()
+                                    {
+                                        chain_action =
+                                            Some(ChainAction::Move(id, position, position + 1));
+                                    }
+                                    if ui
+                                        .add_enabled(position > 0, egui::Button::new("▴").small())
+                                        .clicked()
+                                    {
+                                        chain_action =
+                                            Some(ChainAction::Move(id, position, position - 1));
+                                    }
+                                },
+                            );
+                        });
+                        // Addressed by POSITION, so the second Gloam in a chain is reachable --
+                        // Shape resolves by key and would only ever find the first
+                        let mut depth = insert.depth();
+                        if ui
+                            .add(egui::Slider::new(&mut depth, 0.0..=1.0).text("Depth"))
+                            .changed()
+                        {
+                            chain_action = Some(ChainAction::Depth(id, position, depth));
+                        }
+                    }
+                    if ui
+                        .button("+ Add Gloam")
+                        .on_hover_text("Append an effect to this track's chain.")
+                        .clicked()
+                    {
+                        chain_action = Some(ChainAction::Add(id));
+                    }
                 }
                 if let Some(edit) = mix_edit {
                     self.apply_mix_edit(edit);
@@ -1136,6 +1193,36 @@ impl SpectrePrototype {
                 // A blank name is refused by the model, so the field simply does not take
                 if let Some((id, name)) = rename_edit {
                     if let Err(error) = self.model.rename_track(id, &name) {
+                        self.feedback_status = error.to_string();
+                    }
+                }
+                // Add, remove and move change the graph's shape, so the transport reports PLAN
+                // STALE. A depth edit travels the parameter lane and is audible at once
+                if let Some(action) = chain_action {
+                    let outcome = match action {
+                        ChainAction::Add(id) => self
+                            .model
+                            .append_effect(id, TrackInsert::new(TrackEffect::Gloam, 0.5)),
+                        ChainAction::Remove(id, position) => self.model.remove_effect(id, position),
+                        ChainAction::Move(id, from, to) => self.model.move_effect(id, from, to),
+                        ChainAction::Depth(id, position, depth) => {
+                            let stored = self.model.set_effect_depth(id, position, depth);
+                            if stored.is_ok() {
+                                if let Some(engine) = self.engine.as_ref() {
+                                    let _ = spectre_app::engine::publish_effect_parameter(
+                                        engine,
+                                        self.model.track_list(),
+                                        id,
+                                        position,
+                                        spectre_dsp::GLOAM_DEPTH,
+                                        depth,
+                                    );
+                                }
+                            }
+                            stored
+                        }
+                    };
+                    if let Err(error) = outcome {
                         self.feedback_status = error.to_string();
                     }
                 }

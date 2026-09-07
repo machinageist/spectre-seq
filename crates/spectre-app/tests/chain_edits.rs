@@ -172,3 +172,77 @@ fn a_chain_edit_on_an_unknown_track_is_refused_and_changes_nothing() {
     assert!(model.undo().expect("the undo applies"));
     assert!(depths(&model, track).is_empty());
 }
+
+// ---- reachability ----
+//
+// The chain model was complete, ordered, unbounded and reversible, and a track created in the
+// product had no effects and no way to gain one: Track::new starts with an empty chain and the
+// only TrackInsert::new in any src/ was in the offline fixture builder. Gloam -- the alpha's own
+// effect -- was unreachable on any track a musician made, exactly as Filament was.
+
+#[test]
+fn a_new_track_starts_with_no_effects_and_can_gain_one() {
+    let (mut model, track) = model_with_track();
+    assert!(
+        depths(&model, track).is_empty(),
+        "a new track already had an effect; this test asserts it can GAIN one"
+    );
+
+    model
+        .append_effect(track, TrackInsert::new(TrackEffect::Gloam, 0.5))
+        .expect("the effect is added");
+    assert_eq!(depths(&model, track), vec![0.5]);
+}
+
+// The chain reaches the compiled graph, so an added effect is in the signal path rather than
+// only in the model
+#[test]
+fn an_added_effect_reaches_the_compiled_graph() {
+    let (mut model, track) = model_with_track();
+    model
+        .append_effect(track, TrackInsert::new(TrackEffect::Gloam, 0.5))
+        .expect("added");
+
+    let mut ids = spectre_core::IdGen::new(spectre_app::engine::APP_GRAPH_SEED);
+    let list = model.track_list();
+    let (graph, nodes) =
+        spectre_project::build_track_graph(list, &mut ids).expect("the graph builds");
+    let index = list.index_of(track).expect("the track is present");
+    assert_eq!(
+        nodes.inserts[index].len(),
+        1,
+        "the added effect built no node"
+    );
+    let mut factory = spectre_project::track_device_factory(list, &nodes);
+    graph
+        .compile(nodes.master.node, 256, &mut factory)
+        .expect("the plan compiles with the effect in it");
+}
+
+// Every parameter of a chained effect is addressable by POSITION, which is what lets a second
+// Gloam be reached -- Shape resolves by key and would only ever find the first
+#[test]
+fn a_second_effect_in_the_chain_is_addressable() {
+    let (mut model, track) = model_with_track();
+    for depth in [0.2, 0.7] {
+        model
+            .append_effect(track, TrackInsert::new(TrackEffect::Gloam, depth))
+            .expect("added");
+    }
+    let list = model.track_list();
+    let index = list.index_of(track).expect("present");
+
+    let first = list.insert_parameter_index(index, 0, spectre_dsp::GLOAM_DEPTH);
+    let second = list.insert_parameter_index(index, 1, spectre_dsp::GLOAM_DEPTH);
+    assert!(first.is_some() && second.is_some());
+    assert_ne!(
+        first, second,
+        "both Gloams resolve to one target, so the second is unreachable"
+    );
+
+    // And its depth is edited by position, not by key
+    model
+        .set_effect_depth(track, 1, 0.9)
+        .expect("the second effect's depth is set");
+    assert_eq!(depths(&model, track), vec![0.2, 0.9]);
+}
