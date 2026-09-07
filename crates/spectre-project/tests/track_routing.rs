@@ -205,15 +205,22 @@ fn a_list_without_inserts_keeps_the_node_identities_it_had_before_the_slot_exist
     let mut gen = IdGen::new(SEED);
     let (_, nodes) = build_track_graph(&list, &mut gen).unwrap();
 
-    // The pre-insert allocation order: per track, instrument node, instrument parameter, gain
-    // node, gain parameter; then sum; then master node and its parameter
+    // The allocation order: per track, instrument node then ONE PARAMETER IDENTITY PER
+    // DESCRIPTOR, gain node, gain parameter; then sum; then master node and its parameter.
+    // It was one identity per node until 2026-09-07, which is why every control but the level
+    // was unroutable
     let mut expected = IdGen::new(SEED);
     for index in 0..3 {
         assert_eq!(
             nodes.instruments[index].node.object_id(),
             expected.next_id()
         );
-        assert_eq!(nodes.instruments[index].level_parameter, expected.next_id());
+        let descriptors =
+            spectre_project::instrument_parameters(list.tracks()[index].instrument()).len();
+        assert_eq!(nodes.instruments[index].parameters.len(), descriptors);
+        for identity in &nodes.instruments[index].parameters {
+            assert_eq!(*identity, expected.next_id());
+        }
         assert_eq!(
             nodes.track_gains[index].node.object_id(),
             expected.next_id()
@@ -239,7 +246,10 @@ fn the_target_index_helpers_agree_with_the_emitted_ordering() {
             let instrument = &nodes.instruments[index];
             assert_eq!(
                 targets[list.instrument_target_index(index)],
-                (instrument.node.object_id(), instrument.level_parameter),
+                (
+                    instrument.node.object_id(),
+                    instrument.level_parameter(list.tracks()[index].instrument())
+                ),
                 "instrument index disagrees for shape {shape:?} at track {index}"
             );
             let gain = &nodes.track_gains[index];
@@ -260,7 +270,7 @@ fn the_target_index_helpers_agree_with_the_emitted_ordering() {
                     });
                 assert_eq!(
                     targets[at],
-                    (insert.node.object_id(), insert.depth_parameter),
+                    (insert.node.object_id(), insert.depth_parameter()),
                     "insert index disagrees for shape {shape:?} at track {index}"
                 );
             }

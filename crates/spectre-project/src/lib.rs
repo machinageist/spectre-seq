@@ -29,7 +29,10 @@ pub use fs::{
 };
 pub use journal::{discard_autosave, journal_path, read_autosave, write_autosave, AutosaveError};
 pub use migration::{migrate_to_current, MigrationError, MigrationReceipt};
-pub use routing::{build_track_graph, track_device_factory, RoutingError, TrackPathNodes};
+pub use routing::{
+    build_track_graph, effect_parameters, instrument_parameters, track_device_factory,
+    RoutingError, TrackPathNodes,
+};
 pub use track::{
     Track, TrackEffect, TrackError, TrackInsert, TrackInstrument, TrackList, MAX_CHAIN_DEVICES,
     MAX_TRACKS,

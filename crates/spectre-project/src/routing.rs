@@ -7,8 +7,9 @@
 use crate::track::{TrackEffect, TrackInsert, TrackInstrument, TrackList, MAX_TRACKS};
 use spectre_core::{IdGen, ObjectId};
 use spectre_dsp::{
-    AudioProcessor, Filament, Gain, Gloam, PulseInstrument, SumBus, Waveform, FILAMENT_PARAMETERS,
-    GLOAM_DAMP_HZ, GLOAM_PARAMETERS, GLOAM_TRACK_MS, MAX_SUM_BUSES,
+    AudioProcessor, DspParameter, Filament, Gain, Gloam, PulseInstrument, SumBus, Waveform,
+    FILAMENT_PARAMETERS, GLOAM_DAMP_HZ, GLOAM_DEPTH, GLOAM_PARAMETERS, GLOAM_TRACK_MS,
+    MAX_SUM_BUSES, PULSE_PARAMETERS,
 };
 
 // Descriptor positions in FILAMENT_PARAMETERS. Named rather than inlined, so a reordering of the
@@ -16,6 +17,9 @@ use spectre_dsp::{
 const FILAMENT_LEAN: usize = 0;
 const FILAMENT_RISE: usize = 1;
 const FILAMENT_FALL: usize = 2;
+// Filament's level is its FOURTH descriptor, not its first. Assuming index 0 is what wired the
+// Lean slider to the level and left the Level slider connected to nothing
+const FILAMENT_LEVEL: usize = 3;
 use spectre_graph::{Connection, EditableGraph, GraphError, NodeId};
 
 // One compiled gain node and the instance ID of its single automatable parameter
@@ -26,17 +30,60 @@ pub struct GainNode {
 }
 
 // One compiled instrument node and the instance ID of its level parameter
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstrumentNode {
     pub node: NodeId,
-    pub level_parameter: ObjectId,
+    // One parameter identity per descriptor, in descriptor order. It was ONE -- the level -- and
+    // that made every other control on a device unroutable: Filament's lean, rise and fall
+    // reached no live node, so a musician could change how loud the synth was and not what it
+    // sounded like. Worse, the single slot was addressed as index 0, which is `lean` on Filament
+    // and `level` on Pulse, so the two disagreed about which control they meant
+    pub parameters: Vec<ObjectId>,
+}
+
+impl InstrumentNode {
+    // The level's identity, kept as a named accessor because callers that only want the fader
+    // should not have to know its descriptor position
+    pub fn level_parameter(&self, instrument: TrackInstrument) -> ObjectId {
+        self.parameters[level_index(instrument)]
+    }
+}
+
+// Where each instrument keeps its level. Named per instrument rather than assumed to be index 0,
+// which is exactly the assumption that mis-wired Filament
+fn level_index(instrument: TrackInstrument) -> usize {
+    match instrument {
+        TrackInstrument::Pulse => 0,
+        TrackInstrument::Filament => FILAMENT_LEVEL,
+    }
+}
+
+// The descriptor set a track instrument exposes. One definition, so the target list, the route
+// table and the app all agree on how many parameters a device has and in what order
+pub fn instrument_parameters(instrument: TrackInstrument) -> &'static [DspParameter] {
+    match instrument {
+        TrackInstrument::Pulse => &PULSE_PARAMETERS,
+        TrackInstrument::Filament => &FILAMENT_PARAMETERS,
+    }
+}
+
+pub fn effect_parameters(effect: TrackEffect) -> &'static [DspParameter] {
+    match effect {
+        TrackEffect::Gloam => &GLOAM_PARAMETERS,
+    }
 }
 
 // One compiled insert node and the instance ID of its depth parameter
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InsertNode {
     pub node: NodeId,
-    pub depth_parameter: ObjectId,
+    pub parameters: Vec<ObjectId>,
+}
+
+impl InsertNode {
+    pub fn depth_parameter(&self) -> ObjectId {
+        self.parameters[GLOAM_DEPTH]
+    }
 }
 
 // One summing node and the number of stereo input buses it declares. The tree builds one of
@@ -106,13 +153,17 @@ impl TrackPathNodes {
             .zip(&self.inserts)
             .zip(&self.track_gains)
         {
-            targets.push((instrument.node.object_id(), instrument.level_parameter));
+            for identity in instrument.parameters.iter() {
+                targets.push((instrument.node.object_id(), *identity));
+            }
             // Emitted between instrument and gain, one per chained effect in signal order, so
             // this stays in lockstep with spectre-app's parameter_route_nodes and with
             // TrackList::targets_before. A track with an empty chain emits exactly the pair it
             // emitted before the chain existed
             for insert in chain.iter() {
-                targets.push((insert.node.object_id(), insert.depth_parameter));
+                for identity in insert.parameters.iter() {
+                    targets.push((insert.node.object_id(), *identity));
+                }
             }
             targets.push((gain.node.object_id(), gain.gain_parameter));
         }
@@ -147,15 +198,25 @@ pub fn build_track_graph(
 
     for track in tracks.tracks() {
         let instrument_node = NodeId::new(ids.next_id());
-        let level_parameter = ids.next_id();
+        let instrument_parameters: Vec<ObjectId> = instrument_parameters(track.instrument())
+            .iter()
+            .map(|_| ids.next_id())
+            .collect();
         // One node and one parameter per chained effect, allocated between instrument and gain
         // in signal order. A track with an empty chain produces exactly the identities the R4-4
         // order produced, and a one-effect chain produces exactly the R4-6 ones -- the identity
         // sequence is a function of the chain length, so nothing shifts for existing projects
-        let chain_slots: Vec<(TrackInsert, NodeId, ObjectId)> = track
+        let chain_slots: Vec<(TrackInsert, NodeId, Vec<ObjectId>)> = track
             .inserts()
             .iter()
-            .map(|slot| (*slot, NodeId::new(ids.next_id()), ids.next_id()))
+            .map(|slot| {
+                let node = NodeId::new(ids.next_id());
+                let identities = effect_parameters(slot.effect())
+                    .iter()
+                    .map(|_| ids.next_id())
+                    .collect();
+                (*slot, node, identities)
+            })
             .collect();
         let gain_node = NodeId::new(ids.next_id());
         let gain_parameter = ids.next_id();
@@ -204,14 +265,14 @@ pub fn build_track_graph(
 
         instruments.push(InstrumentNode {
             node: instrument_node,
-            level_parameter,
+            parameters: instrument_parameters,
         });
         inserts.push(
             chain_slots
                 .iter()
-                .map(|(_, node, depth_parameter)| InsertNode {
+                .map(|(_, node, identities)| InsertNode {
                     node: *node,
-                    depth_parameter: *depth_parameter,
+                    parameters: identities.clone(),
                 })
                 .collect::<Vec<_>>(),
         );

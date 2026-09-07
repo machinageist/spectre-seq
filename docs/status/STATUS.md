@@ -140,6 +140,23 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **The dirty marker is derived, not maintained.** It compares the bytes a save would write right now against the bytes last written, rather than being set by hand at each mutation site — a flag maintained at call sites is a flag someone forgets at the next one, and a marker reading "Saved" over unsaved work is exactly the defect the project-safety pillar names. The two shell decisions that are not drawing — that comparison and the one-press-never-discards rule — live in `spectre_app::project` rather than in `main.rs`, because `main.rs` is a binary target no test can reach; that is the lesson R4-1's review already paid for.
 
+**Every control on a device reaches live audio as of 2026-09-07, and a real mis-wiring is fixed.**
+"Sound design in first-party devices" is the vision's second core-loop item and it was
+structurally absent: each device contributed exactly **one** parameter target, so `Filament`'s
+`lean`, `rise_ms` and `fall_ms` — the three controls that shape its tone — reached no live node.
+A musician could change how loud the synth was, not what it sounded like.
+
+**Worse than absent: the wrong control was wired.** The single slot was addressed as descriptor
+index 0, which is `level` on Pulse and **`lean` on Filament**, while `parameter_route_nodes`
+labelled it with Pulse's `level` key. On a Filament track that made the **Lean** slider act as a
+volume knob and left the **Level** slider connected to nothing. `r4-qa-protocol.md` row 3 ("a
+slider drag reaches live audio") would have caught it on a Filament track; no operator has run it.
+
+Targets are now one per descriptor per device. `instrument_parameters` and `effect_parameters` are
+the single definition of a device's descriptor set, `targets_before` sums real per-track parameter
+spans instead of a fixed stride, and `selected_track_target_index` resolves by **key** rather than
+by an assumed position. `FILAMENT_LEVEL` is named as 3 rather than assumed to be 0.
+
 **The track list became manageable on 2026-09-07: delete, rename, reorder, and a master fader.**
 All four existed on `AppModel`, reversible, with **no caller in any `src/`** — a track added by
 mistake could never be removed, a track kept whatever name it was created with, and the output

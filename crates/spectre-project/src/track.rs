@@ -647,6 +647,34 @@ impl TrackList {
         self.targets_before(track_index)
     }
 
+    // Where one PARAMETER of one device sits in the target list. Every device now contributes one
+    // target per descriptor rather than one in total, so a caller must say which parameter it
+    // means; `position` is the descriptor's own index
+    pub fn instrument_parameter_index(&self, track_index: usize, position: usize) -> Option<usize> {
+        let track = self.tracks.get(track_index)?;
+        (position < crate::routing::instrument_parameters(track.instrument()).len())
+            .then(|| self.targets_before(track_index) + position)
+    }
+
+    pub fn insert_parameter_index(
+        &self,
+        track_index: usize,
+        chain_position: usize,
+        parameter: usize,
+    ) -> Option<usize> {
+        let track = self.tracks.get(track_index)?;
+        let slot = track.inserts().get(chain_position)?;
+        if parameter >= crate::routing::effect_parameters(slot.effect()).len() {
+            return None;
+        }
+        let mut index = self.targets_before(track_index)
+            + crate::routing::instrument_parameters(track.instrument()).len();
+        for earlier in &track.inserts()[..chain_position] {
+            index += crate::routing::effect_parameters(earlier.effect()).len();
+        }
+        Some(index + parameter)
+    }
+
     // None where the track declares no effect at that chain position
     pub fn insert_target_index(&self, track_index: usize) -> Option<usize> {
         self.insert_target_index_at(track_index, 0)
@@ -655,16 +683,14 @@ impl TrackList {
     // One effect's parameter position, by its place in the chain. The instrument's target comes
     // first, so a chain position is offset by one from the track's own base
     pub fn insert_target_index_at(&self, track_index: usize, position: usize) -> Option<usize> {
-        let track = self.tracks.get(track_index)?;
-        (position < track.inserts().len()).then(|| self.targets_before(track_index) + 1 + position)
+        // The effect's DEPTH, which is what "the insert's target" meant when a device
+        // contributed one target in total rather than one per descriptor
+        self.insert_parameter_index(track_index, position, spectre_dsp::GLOAM_DEPTH)
     }
 
     pub fn gain_target_index(&self, track_index: usize) -> usize {
-        let chain = self
-            .tracks
-            .get(track_index)
-            .map_or(0, |track| track.inserts().len());
-        self.targets_before(track_index) + 1 + chain
+        self.targets_before(track_index) + self.track_parameter_span(track_index)
+            - GAIN_PARAMETERS.len()
     }
 
     pub fn master_target_index(&self) -> usize {
@@ -677,10 +703,25 @@ impl TrackList {
     // parameter from the second track onward
     fn targets_before(&self, track_index: usize) -> usize {
         let upto = track_index.min(self.tracks.len());
-        self.tracks[..upto]
-            .iter()
-            .map(|track| 2 + track.inserts().len())
+        (0..upto)
+            .map(|index| self.track_parameter_span(index))
             .sum()
+    }
+
+    // How many targets one track contributes: every parameter of its instrument, of each chained
+    // effect, and of its gain. It was a fixed 2-plus-chain-length while a device contributed one
+    // target; counting descriptors is what lets every control on a device be addressed
+    fn track_parameter_span(&self, track_index: usize) -> usize {
+        let Some(track) = self.tracks.get(track_index) else {
+            return 0;
+        };
+        let instrument = crate::routing::instrument_parameters(track.instrument()).len();
+        let chain: usize = track
+            .inserts()
+            .iter()
+            .map(|slot| crate::routing::effect_parameters(slot.effect()).len())
+            .sum();
+        instrument + chain + GAIN_PARAMETERS.len()
     }
 
     pub fn any_soloed(&self) -> bool {

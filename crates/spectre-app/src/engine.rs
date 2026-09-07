@@ -16,8 +16,7 @@ use spectre_audio::{AudioBackend, AudioStream, BackendError, RenderBlock, Stream
 use spectre_core::{IdGen, TransportCommand};
 use spectre_dsp::{
     AudioProcessor, DeviceParameterSnapshot, Gain, NoteEvent, NoteEventKind, PulseInstrument,
-    Saturator, Waveform, GAIN_PARAMETERS, GLOAM_DEPTH, GLOAM_PARAMETERS, PULSE_PARAMETERS,
-    SATURATOR_PARAMETERS,
+    Saturator, Waveform, GAIN_PARAMETERS, GLOAM_PARAMETERS, PULSE_PARAMETERS, SATURATOR_PARAMETERS,
 };
 use spectre_graph::{Connection, EditableGraph, NodeId};
 use std::sync::Arc;
@@ -711,22 +710,24 @@ fn selected_track_target_index(
         TrackInstrument::Filament => "filament",
     };
     if device_key == instrument_key {
-        // Each instrument's own first descriptor is its level; naming the index rather than the
-        // key literal keeps this correct if a descriptor is renamed
-        let level = match track.instrument() {
-            TrackInstrument::Pulse => PULSE_PARAMETERS[0].key,
-            TrackInstrument::Filament => spectre_dsp::FILAMENT_PARAMETERS[0].key,
-        };
-        return (parameter_key == level.as_str()).then(|| tracks.instrument_target_index(index));
+        // Found by KEY rather than by an assumed position. The previous version took each
+        // instrument's first descriptor to be its level, which is true of Pulse and false of
+        // Filament -- whose first is `lean` and whose level is its fourth
+        let position = spectre_project::instrument_parameters(track.instrument())
+            .iter()
+            .position(|descriptor| descriptor.key.as_str() == parameter_key)?;
+        return tracks.instrument_parameter_index(index, position);
     }
-    if device_key == "gloam"
-        && matches!(
-            track.insert().map(|slot| slot.effect()),
-            Some(TrackEffect::Gloam)
-        )
-        && parameter_key == GLOAM_PARAMETERS[GLOAM_DEPTH].key.as_str()
-    {
-        return tracks.insert_target_index(index);
+    if device_key == "gloam" {
+        // Every chained Gloam, so a device later in the chain is addressable too
+        let position = track
+            .inserts()
+            .iter()
+            .position(|slot| matches!(slot.effect(), TrackEffect::Gloam))?;
+        let parameter = GLOAM_PARAMETERS
+            .iter()
+            .position(|descriptor| descriptor.key.as_str() == parameter_key)?;
+        return tracks.insert_parameter_index(index, position, parameter);
     }
     if device_key == "gain" && parameter_key == GAIN_PARAMETERS[0].key.as_str() {
         return Some(tracks.gain_target_index(index));
@@ -867,7 +868,8 @@ pub fn build_track_engine_parts(
     let mut targets = Vec::new();
     let mut routes = Vec::new();
     let pairs = nodes.parameter_targets();
-    for ((device, parameter), route_node) in pairs.iter().zip(parameter_route_nodes(&nodes)) {
+    for ((device, parameter), route_node) in pairs.iter().zip(parameter_route_nodes(&nodes, tracks))
+    {
         let target = ParameterTarget {
             device: *device,
             parameter: *parameter,
@@ -996,20 +998,27 @@ fn bake_track_schedule(
 // then the master gain
 fn parameter_route_nodes(
     nodes: &spectre_project::TrackPathNodes,
+    tracks: &spectre_project::TrackList,
 ) -> Vec<(NodeId, spectre_dsp::DeviceParameterKey)> {
     let mut routes = Vec::with_capacity(nodes.instruments.len() * 3 + 1);
-    for ((instrument, chain), gain) in nodes
+    for (((instrument, chain), gain), track) in nodes
         .instruments
         .iter()
         .zip(&nodes.inserts)
         .zip(&nodes.track_gains)
+        .zip(tracks.tracks())
     {
-        routes.push((instrument.node, PULSE_PARAMETERS[0].key));
-        // Without this an effect's depth reaches no live node, which is exactly what
-        // r4-qa-protocol.md row 3 drags. Emitted in parameter_targets' order, one per chained
-        // effect in signal order, which this function must match pair for pair
-        for insert in chain.iter() {
-            routes.push((insert.node, GLOAM_PARAMETERS[GLOAM_DEPTH].key));
+        // EVERY parameter of every device, in descriptor order, matching parameter_targets pair
+        // for pair. It emitted one per node until 2026-09-07, which left Filament's lean, rise
+        // and fall unroutable -- and addressed the single slot with Pulse's level key, so
+        // dragging Filament's Lean set its level and dragging its Level did nothing
+        for descriptor in spectre_project::instrument_parameters(track.instrument()) {
+            routes.push((instrument.node, descriptor.key));
+        }
+        for (insert, slot) in chain.iter().zip(track.inserts()) {
+            for descriptor in spectre_project::effect_parameters(slot.effect()) {
+                routes.push((insert.node, descriptor.key));
+            }
         }
         routes.push((gain.node, GAIN_PARAMETERS[0].key));
     }

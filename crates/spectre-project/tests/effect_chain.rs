@@ -113,23 +113,31 @@ fn parameter_indices_follow_a_prefix_sum_over_chain_lengths() {
     let targets = nodes.parameter_targets();
 
     for (index, chain) in nodes.inserts.iter().enumerate() {
-        assert_eq!(
-            targets[list.instrument_target_index(index)],
-            (
-                nodes.instruments[index].node.object_id(),
-                nodes.instruments[index].level_parameter
-            ),
-            "instrument index disagrees at track {index}"
-        );
-        for (position, insert) in chain.iter().enumerate() {
+        // Every instrument parameter, by descriptor position
+        for (position, identity) in nodes.instruments[index].parameters.iter().enumerate() {
             let at = list
-                .insert_target_index_at(index, position)
-                .expect("the chain position has a target");
+                .instrument_parameter_index(index, position)
+                .expect("the descriptor position has a target");
             assert_eq!(
                 targets[at],
-                (insert.node.object_id(), insert.depth_parameter),
-                "effect index disagrees at track {index} position {position}"
+                (nodes.instruments[index].node.object_id(), *identity),
+                "instrument index disagrees at track {index} parameter {position}"
             );
+        }
+        for (position, insert) in chain.iter().enumerate() {
+            // Every parameter of every chained effect, by descriptor position
+            for (parameter, identity) in insert.parameters.iter().enumerate() {
+                let at = list
+                    .insert_parameter_index(index, position, parameter)
+                    .unwrap_or_else(|| {
+                        panic!("no target for track {index} effect {position} param {parameter}")
+                    });
+                assert_eq!(
+                    targets[at],
+                    (insert.node.object_id(), *identity),
+                    "effect index disagrees at track {index} position {position} param {parameter}"
+                );
+            }
         }
         assert_eq!(
             targets[list.gain_target_index(index)],
