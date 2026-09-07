@@ -1304,3 +1304,124 @@ fn an_empty_loop_range_is_refused() {
         .expect_err("an inverted range must be refused");
     assert!(model.loop_ticks().is_none());
 }
+
+// ---- the composition ----
+//
+// Every link built this session has its own evidence and the WHOLE CHAIN has none. That is the
+// exact gap R4-9 found last time: "every seam passed its own test and the composition did not
+// work" -- a three-track project played one track live while the offline path played all three.
+//
+// This builds a project the way a musician does, through AppModel and nothing else: add a track,
+// choose an instrument, chain an effect, create a clip, write a chord into it, set a tempo. Then
+// it opens the engine, plays, and asserts the result is audible.
+
+fn composed_session() -> (AppModel, spectre_core::ObjectId) {
+    let mut model = AppModel::prototype();
+    let track = model.add_track("Lead").expect("the track is added");
+    model
+        .set_track_instrument(track, spectre_project::TrackInstrument::Filament)
+        .expect("the instrument is chosen");
+    model
+        .append_effect(
+            track,
+            spectre_project::TrackInsert::new(spectre_project::TrackEffect::Gloam, 0.4),
+        )
+        .expect("the effect is chained");
+    model.set_tempo(140.0).expect("140 is a valid tempo");
+
+    let placement = model
+        .create_clip(
+            track,
+            "Riff",
+            spectre_core::BeatTicks(AUTHORING_BAR),
+            spectre_core::BeatTicks(0),
+        )
+        .expect("the clip is created");
+    let clip = model
+        .track_list()
+        .get(track)
+        .expect("the track exists")
+        .clips()
+        .get(placement)
+        .expect("the placement exists")
+        .clip();
+    (model, clip)
+}
+
+fn play_and_peak(model: &AppModel) -> f32 {
+    let mut engine = authored_engine(model);
+    let _ = spectre_app::engine::publish_stored_parameters(model, &engine);
+    engine
+        .send_transport(TransportCommand::Play)
+        .expect("the transport lane accepts Play");
+    for _ in 0..48 {
+        engine.stream_mut().pump().expect("blocks render");
+    }
+    engine.health().session_peak
+}
+
+#[test]
+fn a_project_built_through_the_product_is_audible() {
+    let (mut model, clip) = composed_session();
+    // Silent before anything is written: the clip exists and holds no notes
+    let empty_peak = play_and_peak(&model);
+
+    for pitch in [60, 64, 67] {
+        model
+            .add_note(clip, note_at(0, pitch))
+            .expect("the note is accepted");
+    }
+    let played_peak = play_and_peak(&model);
+
+    assert_eq!(
+        empty_peak, 0.0,
+        "an empty clip produced sound, so the comparison below proves nothing"
+    );
+    assert!(
+        played_peak > 0.0,
+        "a project built entirely through AppModel rendered silence"
+    );
+}
+
+// The chord must be louder than one note of it, through the whole chain rather than at the
+// device. A last-note-wins path anywhere between the model and the master would fail this
+#[test]
+fn a_chord_written_through_the_product_sums() {
+    let (mut single, clip_one) = composed_session();
+    single
+        .add_note(clip_one, note_at(0, 60))
+        .expect("the note is accepted");
+    let one = play_and_peak(&single);
+
+    let (mut chord, clip_three) = composed_session();
+    for pitch in [60, 64, 67] {
+        chord
+            .add_note(clip_three, note_at(0, pitch))
+            .expect("the note is accepted");
+    }
+    let three = play_and_peak(&chord);
+
+    assert!(one > 0.0, "the single note is silent");
+    assert!(
+        three > one,
+        "three notes peaked no higher than one ({three} vs {one}), so they did not sum"
+    );
+}
+
+// Deleting the note must take the sound with it, which proves the render follows the model
+// rather than something cached at open
+#[test]
+fn removing_the_note_returns_the_composition_to_silence() {
+    let (mut model, clip) = composed_session();
+    model
+        .add_note(clip, note_at(0, 60))
+        .expect("the note is accepted");
+    assert!(play_and_peak(&model) > 0.0);
+
+    model.remove_note(clip, 0).expect("the note is removed");
+    assert_eq!(
+        play_and_peak(&model),
+        0.0,
+        "the note was removed from the model and still sounded"
+    );
+}

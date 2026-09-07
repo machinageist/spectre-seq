@@ -157,6 +157,17 @@ the single definition of a device's descriptor set, `targets_before` sums real p
 spans instead of a fixed stride, and `selected_track_target_index` resolves by **key** rather than
 by an assumed position. `FILAMENT_LEVEL` is named as 3 rather than assumed to be 0.
 
+**The composition is proved, not assumed (2026-09-07).** Every link built in this session had its
+own evidence and the whole chain had none — which is exactly the gap R4-9 found last time, when
+every seam passed its own test and a three-track project still played one track live.
+`a_project_built_through_the_product_is_audible` builds a project **through `AppModel` and nothing
+else** — add a track, choose Filament, chain a Gloam, set 140 BPM, create a clip, write a chord —
+then opens the engine, plays, and asserts the render is audible. Its control is the same project
+before the notes are written, which renders exactly silent. Two more pin that a chord sums louder
+than one of its notes through the whole chain, and that removing the note returns the composition
+to silence, so the render follows the model rather than something cached at open. Breaking the
+clip-to-schedule path fails all three.
+
 **Clips and notes became writable on 2026-09-07, which closes the authoring half of the MVP
 list.** The clip and note API was complete, reversible and tested, and had **no surface**: a
 project created in the app started at zero clips and stayed there, and the clip inspector's note
