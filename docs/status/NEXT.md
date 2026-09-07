@@ -142,7 +142,47 @@ path; they are not part of this reachability gap.
 6. ~~Transfer device parameter snapshots from the app model to the offline plan before live audio work~~ — completed 2026-08-06: the renderer-neutral DTO lives in `spectre-dsp` with private fields, getters, and canonical clamping; the app emits exactly the four canonical fixture identities; offline rendering accepts a complete order-independent set and rejects incomplete, duplicate, unknown, mismatched, or non-canonical input before plan construction.
 7. ~~Choose the next narrow, testable interaction slice without implying live audio, broad R3, or automation capability~~ — completed 2026-08-06 via an explicit blind code-level fallback because no copied `./spectre` user-feedback artifact was available. Device Focus Drill-In adds stable app-thread device selection, atomic Build → Shape focus, selected-only descriptor-backed Shape controls, selection-aware feedback/smoke output, and no live or persisted control path.
 
-## Proposed next milestones — engine side is nearly exhausted
+## Where the product stands, 2026-09-07
+
+**Spectre can be used to make music, and that claim has composition-level evidence.** A project
+built through `AppModel` and nothing else — add a track, choose Filament, chain a Gloam, set a
+tempo, create a clip, write a chord — opens the engine, plays, and renders audibly, with a silent
+control beside it. What it does not have is a human confirming any of it by ear.
+
+Reachable in `./spectre` today: tempo, loop region, add/delete/rename/reorder tracks, instrument
+choice, an unbounded effect chain with per-effect depth, track and master levels, mute and solo,
+clip create/delete/move/resize, note add/delete, save/reload with recovery, offline bounce, and
+undo/redo over all of it.
+
+**What blocks making music, in order:**
+
+1. **Nobody has heard it.** `docs/05-quality/r4-qa-protocol.md` has thirteen manual rows `NOT RUN`
+   since 2026-08-28. Its row 3 — "a slider drag reaches live audio" — describes a defect this
+   session found by reading code: on a Filament track the Lean slider was wired to the level and
+   the Level slider to nothing. The protocol is finding defects without being run.
+2. **Decision 8 (UI stack).** The piano-roll canvas, the session grid, and a drawn mixer all wait
+   on it. The list-based note editor is the accepted R4 surface (R4-5 §3.1) and is now editable,
+   so this blocks the *next* surface rather than all authoring.
+3. **Clip launching is unstarted.** PROD-001 is `proposed` and there is no scene or slot type
+   anywhere in the workspace. This is a milestone's modelling, not a wiring slice.
+4. **Decision 24 (note routing).** `docs/03-architecture/note-routing.md`, proposed 2026-09-06,
+   with four open sub-decisions. MIDI effects need it.
+5. **No MIDI input backend.** `midir` is not a dependency and `MidiIngress` converts messages
+   nothing produces, so a MIDI keyboard cannot play Spectre — which the vision's audience
+   statement assumes.
+6. **Meter is 4/4 only, and would not persist if edited.** `project_envelope` never writes
+   `model.meter_map`. Invisible today; silent data loss the moment meter becomes editable. Needs a
+   typed field and a schema 4 migration.
+
+**The pattern worth carrying forward.** Most of what blocked making music was not missing code. It
+was code that was built, tested, and connected to nothing: the schedule lane, the clip commands,
+voice routing, the loop region, instrument choice, track management, the effect chain's surface,
+and the authoring API. An audit for public API with no caller outside its own definition found six
+of those in two passes. A second class was worse — code that ran successfully and did the wrong
+thing quietly, which no unreachability scan finds: the crossed Lean/Level wire, stored values that
+never applied, a schedule lane with no destination.
+
+## Superseded milestone note — engine side is nearly exhausted
 
 The 2026-09-06 interview's plan sequences a renderer milestone, then routing, note routing, and
 instruments. Of those, everything reachable without a UI decision has now landed:
