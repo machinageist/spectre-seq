@@ -49,6 +49,14 @@ const TEMPO_RANGE: std::ops::RangeInclusive<f64> =
 // but a drag control needs an end, and 999 bars is well past any loop a musician sets by hand
 const LOOP_MAX_BAR: u32 = 999;
 
+// A structure edit requested from the track list, applied after the panel closes because each
+// one mutates the model the panel is borrowing
+#[derive(Debug, Clone, Copy)]
+enum TrackAction {
+    Delete(ObjectId),
+    Move(ObjectId, usize),
+}
+
 // One-based bars to the tick domain the model stores. 4/4 until the meter is editable, which is
 // the same assumption the transport's own "4 / 4" label still makes
 // The name a musician sees for each instrument. Not derived from the enum's Debug, so renaming a
@@ -561,6 +569,7 @@ impl SpectrePrototype {
         let mut open = false;
         let mut undo = false;
         let mut redo = false;
+        let mut track_action: Option<TrackAction> = None;
         let dirty = self.project_dirty();
         egui::SidePanel::left("tracks")
             .resizable(true)
@@ -575,8 +584,10 @@ impl SpectrePrototype {
                 ui.label(RichText::new("TRACKS").small().strong().color(MUTED));
                 ui.add_space(4.0);
                 let mut select = None;
-                for track in self.model.tracks() {
-                    let selected = self.model.selected_track_id() == Some(track.id());
+                let count = self.model.tracks().len();
+                for (index, track) in self.model.tracks().iter().enumerate() {
+                    let id = track.id();
+                    let selected = self.model.selected_track_id() == Some(id);
                     // Mute and solo are the two states that actually change what is rendered, so
                     // they are what the row shows. There is no arm indicator, because there is
                     // no recording path to arm for
@@ -587,10 +598,38 @@ impl SpectrePrototype {
                     } else {
                         "·"
                     };
-                    let label = format!("{marker}  {}", track.name());
-                    if ui.selectable_label(selected, label).clicked() {
-                        select = Some(track.id());
-                    }
+                    ui.horizontal(|ui| {
+                        let label = format!("{marker}  {}", track.name());
+                        if ui.selectable_label(selected, label).clicked() {
+                            select = Some(id);
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            // Delete, then reorder. Every one of these was built and
+                            // reversible with no way to reach it, so a track added by
+                            // mistake could never be removed
+                            if ui
+                                .small_button("✕")
+                                .on_hover_text("Delete this track")
+                                .clicked()
+                            {
+                                track_action = Some(TrackAction::Delete(id));
+                            }
+                            if ui
+                                .add_enabled(index + 1 < count, egui::Button::new("▾").small())
+                                .on_hover_text("Move down")
+                                .clicked()
+                            {
+                                track_action = Some(TrackAction::Move(id, index + 1));
+                            }
+                            if ui
+                                .add_enabled(index > 0, egui::Button::new("▴").small())
+                                .on_hover_text("Move up")
+                                .clicked()
+                            {
+                                track_action = Some(TrackAction::Move(id, index - 1));
+                            }
+                        });
+                    });
                 }
                 if let Some(id) = select {
                     self.model.select_track(id);
@@ -683,6 +722,17 @@ impl SpectrePrototype {
                         .on_disabled_hover_text("Catalog wiring arrives in later milestones.");
                 }
             });
+        // Track structure edits change the graph's shape, so the transport reports PLAN STALE
+        // afterwards rather than the change being silently inaudible
+        if let Some(action) = track_action {
+            let outcome = match action {
+                TrackAction::Delete(id) => self.model.remove_track(id).map(|_| ()),
+                TrackAction::Move(id, to) => self.model.reorder_track(id, to).map(|_| ()),
+            };
+            if let Err(error) = outcome {
+                self.feedback_status = error.to_string();
+            }
+        }
         if undo || redo {
             let outcome = if undo {
                 self.model.undo()
@@ -986,11 +1036,25 @@ impl SpectrePrototype {
                 // one edit can publish to every id whose effective gain it changed
                 let mut mix_edit: Option<TrackMixEdit> = None;
                 let mut instrument_edit: Option<(ObjectId, TrackInstrument)> = None;
+                let mut rename_edit: Option<(ObjectId, String)> = None;
+                let mut master_edit: Option<f32> = None;
                 if let Some(track) = self.model.selected_track() {
                     let id = track.id();
                     let (mut muted, mut soloed) = (track.is_muted(), track.is_soloed());
                     let mut level = track.level();
-                    ui.heading(track.name());
+                    // Editable rather than a heading: rename_track was built and reversible with
+                    // no way to reach it, so a track kept whatever name it was created with
+                    let mut name = track.name().to_string();
+                    if ui
+                        .add(
+                            egui::TextEdit::singleline(&mut name)
+                                .desired_width(f32::INFINITY)
+                                .hint_text("Track name"),
+                        )
+                        .changed()
+                    {
+                        rename_edit = Some((id, name));
+                    }
                     // Which synth the track plays. Every track was a Pulse saw for the life of
                     // the project until 2026-09-07, because nothing called set_instrument
                     let current = track.instrument();
@@ -1041,12 +1105,40 @@ impl SpectrePrototype {
                 if let Some(edit) = mix_edit {
                     self.apply_mix_edit(edit);
                 }
+                ui.separator();
+                // The master fader. set_master_level and publish_master_gain were both built
+                // with no caller, so the output level could not be changed at all
+                let mut master = self.model.track_list().master_level();
+                ui.label(RichText::new("MASTER").small().strong().color(MUTED));
+                if ui
+                    .add(egui::Slider::new(&mut master, GAIN_RANGE).text("Level"))
+                    .changed()
+                {
+                    master_edit = Some(master);
+                }
                 // A shape change: the instrument node itself differs, so the running plan is
                 // stale until rebuilt. The transport says PLAN STALE rather than pretending the
                 // change is audible, which is the rule R4-4 established for structure edits
                 if let Some((id, instrument)) = instrument_edit {
                     if let Err(error) = self.model.set_track_instrument(id, instrument) {
                         self.feedback_status = format!("{error}");
+                    }
+                }
+                // A blank name is refused by the model, so the field simply does not take
+                if let Some((id, name)) = rename_edit {
+                    if let Err(error) = self.model.rename_track(id, &name) {
+                        self.feedback_status = error.to_string();
+                    }
+                }
+                if let Some(level) = master_edit {
+                    self.model.set_master_level(level);
+                    // The master gain has its own parameter target, so it publishes rather than
+                    // rebuilding: a fader move must not restart the stream
+                    if let Some(engine) = self.engine.as_mut() {
+                        let _ = spectre_app::engine::publish_master_gain(
+                            engine,
+                            self.model.track_list(),
+                        );
                     }
                 }
                 ui.separator();

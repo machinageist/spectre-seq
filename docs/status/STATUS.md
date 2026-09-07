@@ -140,6 +140,13 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **The dirty marker is derived, not maintained.** It compares the bytes a save would write right now against the bytes last written, rather than being set by hand at each mutation site — a flag maintained at call sites is a flag someone forgets at the next one, and a marker reading "Saved" over unsaved work is exactly the defect the project-safety pillar names. The two shell decisions that are not drawing — that comparison and the one-press-never-discards rule — live in `spectre_app::project` rather than in `main.rs`, because `main.rs` is a binary target no test can reach; that is the lesson R4-1's review already paid for.
 
+**The track list became manageable on 2026-09-07: delete, rename, reorder, and a master fader.**
+All four existed on `AppModel`, reversible, with **no caller in any `src/`** — a track added by
+mistake could never be removed, a track kept whatever name it was created with, and the output
+level could not be changed at all. Deleting the selected track moves selection to one that
+exists, and an undone delete restores the track whole, clips included. The master fader publishes
+on the parameter lane rather than rebuilding, so a fader move does not restart the stream.
+
 **A track's instrument can be changed as of 2026-09-07.** `TrackList::set_instrument` existed
 with **zero callers in any `src/`**, so every track created in the product was a Pulse saw for the
 life of the project and `Filament` — the alpha's own synth, and the one this session made
