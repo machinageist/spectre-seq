@@ -140,6 +140,19 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **The dirty marker is derived, not maintained.** It compares the bytes a save would write right now against the bytes last written, rather than being set by hand at each mutation site — a flag maintained at call sites is a flag someone forgets at the next one, and a marker reading "Saved" over unsaved work is exactly the defect the project-safety pillar names. The two shell decisions that are not drawing — that comparison and the one-press-never-discards rule — live in `spectre_app::project` rather than in `main.rs`, because `main.rs` is a binary target no test can reach; that is the lesson R4-1's review already paid for.
 
+**MIDI material can be authored through the model as of 2026-09-06, reversibly.** Nothing in the
+product could write a single note before this: `AppModel::create_clip` had no caller outside
+tests and `MidiClip::insert_note` none outside the offline fixture builder. `AppModel` now carries
+`add_note`, `remove_note`, `replace_note`, `delete_clip`, `move_clip`, and `clip_notes`, and the
+undo vocabulary carries the clip and placement commands underneath them. **R4-5's recorded reason
+that clip undo was impossible — "`EditHistory` mutates `ProjectDoc` and `ProjectDoc` has no clip
+field until slice 7" — no longer holds:** slice 7 landed, clips travel inside `TrackList`, and
+`EditScope` carries it. Editing one note is a remove and an insert grouped in one `Transaction`
+rather than a command of its own, because notes are kept sorted by `(start, note)` and any edit
+that moves a note moves its index; creating a clip is likewise one transaction over material and
+placement, so it undoes as one step. **Not drawn:** no GUI surface calls any of it, and `Arrange`
+remains read-only.
+
 **`Filament` is polyphonic as of 2026-09-06, and a chord sounds like a chord.** DEV-010 required
 exactly one voice and named its own re-open trigger — "MIDI clips producing overlapping notes a
 user expects to hear together" — which a piano roll fires on day one. The pool is a fixed array of

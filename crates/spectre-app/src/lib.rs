@@ -18,7 +18,8 @@ use spectre_dsp::{
 };
 use spectre_project::command::{CommandError, EditHistory, ProjectCommand, Transaction};
 use spectre_project::{
-    ClipError, ClipPlacement, MidiClip, Track, TrackError, TrackInsert, TrackInstrument, TrackList,
+    ClipError, ClipNote, ClipPlacement, MidiClip, Track, TrackError, TrackInsert, TrackInstrument,
+    TrackList,
 };
 
 // How many edits the model can reverse. Bounded because an unbounded history is a memory leak
@@ -435,16 +436,121 @@ impl AppModel {
         let placement_id = self.ids.next_id();
         let placement = ClipPlacement::new(placement_id, clip_id, start)?;
 
-        // Placement first: it is the edit that can be refused by an overlap, and a refused
-        // placement must not leave orphaned clip material behind
-        self.tracks
-            .get_mut(track)
-            .expect("presence checked above")
-            .clips_mut()
-            .insert(placement, length)?;
-        self.tracks.add_clip(clip).expect("the id was just minted");
+        // One transaction, so creating a clip is a single undo step rather than two. The clip
+        // must exist before the placement, because insert_placement reads the clip's length from
+        // the table -- and if the placement is refused by an overlap the transaction rolls the
+        // clip back, so no orphaned material is left behind either way
+        let group = Transaction::new(vec![
+            ProjectCommand::add_clip(clip),
+            ProjectCommand::insert_placement(track, placement),
+        ])
+        .expect("two commands is not empty");
+        self.history
+            .apply(&mut self.tracks, group)
+            .map_err(unwrap_clip_error)?;
         self.selected_clip = Some(placement_id);
         Ok(placement_id)
+    }
+
+    // Delete a placement and, when nothing else places it, its clip material too. One
+    // transaction, so an undo restores both
+    pub fn delete_clip(&mut self, placement: ObjectId) -> Result<(), ClipError> {
+        let track = self
+            .clip_track(placement)
+            .ok_or(ClipError::UnknownPlacement(placement))?;
+        let clip_id = self
+            .tracks
+            .get(track)
+            .and_then(|entry| entry.clips().get(placement))
+            .map(|entry| entry.clip())
+            .ok_or(ClipError::UnknownPlacement(placement))?;
+        // Only this placement uses the material, so removing it leaves nothing dangling
+        let sole_user = self
+            .tracks
+            .tracks()
+            .iter()
+            .flat_map(|entry| entry.clips().placements())
+            .filter(|entry| entry.clip() == clip_id)
+            .count()
+            == 1;
+
+        let mut commands = vec![ProjectCommand::remove_placement(track, placement)];
+        if sole_user {
+            commands.push(ProjectCommand::remove_clip(clip_id));
+        }
+        self.history
+            .apply(
+                &mut self.tracks,
+                Transaction::new(commands).expect("at least one command"),
+            )
+            .map_err(unwrap_clip_error)?;
+        if self.selected_clip == Some(placement) {
+            self.selected_clip = None;
+        }
+        Ok(())
+    }
+
+    // Move a placement along its track's timeline. Refused by an overlap, which leaves it exactly
+    // where it was
+    pub fn move_clip(&mut self, placement: ObjectId, start: BeatTicks) -> Result<(), ClipError> {
+        let track = self
+            .clip_track(placement)
+            .ok_or(ClipError::UnknownPlacement(placement))?;
+        self.history
+            .apply(
+                &mut self.tracks,
+                Transaction::single(ProjectCommand::move_placement(track, placement, start)),
+            )
+            .map_err(unwrap_clip_error)
+    }
+
+    // Note authoring: what a piano roll calls.
+    //
+    // Both take a built ClipNote rather than its fields. ClipNote::new is the one place a note is
+    // validated, so passing one through keeps that single point and keeps these signatures from
+    // growing a parameter every time the note model does
+    pub fn add_note(&mut self, clip: ObjectId, note: ClipNote) -> Result<(), ClipError> {
+        self.history
+            .apply(
+                &mut self.tracks,
+                Transaction::single(ProjectCommand::insert_note(clip, note)),
+            )
+            .map_err(unwrap_clip_error)
+    }
+
+    pub fn remove_note(&mut self, clip: ObjectId, index: usize) -> Result<(), ClipError> {
+        self.history
+            .apply(
+                &mut self.tracks,
+                Transaction::single(ProjectCommand::remove_note(clip, index)),
+            )
+            .map_err(unwrap_clip_error)
+    }
+
+    // Change one note: a drag, a resize, or a velocity edit. Notes are kept sorted by
+    // (start, note), so any such edit moves the note's index -- which is why this is a remove and
+    // an insert grouped atomically rather than a mutation in place. A refused replacement leaves
+    // the original note exactly where it was
+    pub fn replace_note(
+        &mut self,
+        clip: ObjectId,
+        index: usize,
+        replacement: ClipNote,
+    ) -> Result<(), ClipError> {
+        let group = Transaction::new(vec![
+            ProjectCommand::remove_note(clip, index),
+            ProjectCommand::insert_note(clip, replacement),
+        ])
+        .expect("two commands is not empty");
+        self.history
+            .apply(&mut self.tracks, group)
+            .map_err(unwrap_clip_error)
+    }
+
+    // The notes of one clip, in the order the model keeps them, which is the order an editor
+    // addresses them by index
+    pub fn clip_notes(&self, clip: ObjectId) -> Option<&[ClipNote]> {
+        self.tracks.clip(clip).map(|entry| entry.notes())
     }
 
     // Select an existing placement. Unlike open_device_in_shape this changes no lens, because a
@@ -905,5 +1011,15 @@ fn unwrap_track_error(error: CommandError) -> TrackError {
     match error {
         CommandError::Track(error) => error,
         other => unreachable!("a track command produced {other:?}"),
+    }
+}
+
+// Clip authoring reaches the history through commands, and the only failure a clip command can
+// produce is a ClipError the model itself raised. The structural variants are unreachable here
+// for the same reasons unwrap_track_error states
+fn unwrap_clip_error(error: CommandError) -> ClipError {
+    match error {
+        CommandError::Clip(error) => error,
+        other => unreachable!("a clip command produced {other:?}"),
     }
 }

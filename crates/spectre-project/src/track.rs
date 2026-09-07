@@ -4,9 +4,9 @@
 // Notes: App-thread only, never callback-reachable. Levels are carried by the accepted device
 //   descriptors rather than a new fader law, so no numeric range is invented here.
 
-use crate::clip::{ClipError, MidiClip, TrackClips};
+use crate::clip::{ClipError, ClipNote, ClipPlacement, MidiClip, TrackClips};
 use serde::{Deserialize, Serialize};
-use spectre_core::ObjectId;
+use spectre_core::{BeatTicks, ObjectId};
 use spectre_dsp::{GAIN_PARAMETERS, GLOAM_DEPTH, GLOAM_PARAMETERS, PULSE_PARAMETERS};
 
 // Maximum tracks a v1 project may sum into the master bus
@@ -490,6 +490,95 @@ impl TrackList {
             self.structure_revision += 1;
         }
         Ok(())
+    }
+
+    // Clip and note authoring, on the list because the clip TABLE and the per-track placements
+    // both live here and an edit usually touches both. R4-5 recorded that clip undo was
+    // impossible "because EditHistory mutates ProjectDoc and ProjectDoc has no clip field until
+    // slice 7" -- slice 7 landed, clips travel inside this list, and EditScope carries it, so
+    // that blocker is gone rather than merely old
+    pub fn remove_clip(&mut self, id: ObjectId) -> Result<MidiClip, ClipError> {
+        // Refused while any track still places it: removing the clip a placement names would
+        // leave a placement pointing at nothing, which no later edit could repair
+        if self
+            .tracks
+            .iter()
+            .any(|track| track.clips().placements().iter().any(|p| p.clip() == id))
+        {
+            return Err(ClipError::UnknownClip(id));
+        }
+        let index = self
+            .clips
+            .iter()
+            .position(|clip| clip.id() == id)
+            .ok_or(ClipError::UnknownClip(id))?;
+        Ok(self.clips.remove(index))
+    }
+
+    // Place a clip on a track. The length comes from the clip table rather than the caller, so a
+    // placement cannot claim a span its clip does not have
+    pub fn insert_placement(
+        &mut self,
+        track: ObjectId,
+        placement: ClipPlacement,
+    ) -> Result<(), ClipError> {
+        let length = self
+            .clip(placement.clip())
+            .ok_or(ClipError::UnknownClip(placement.clip()))?
+            .length();
+        let track = self
+            .get_mut(track)
+            .ok_or(ClipError::UnknownPlacement(placement.id()))?;
+        track.clips_mut().insert(placement, length)?;
+        Ok(())
+    }
+
+    pub fn remove_placement(
+        &mut self,
+        track: ObjectId,
+        id: ObjectId,
+    ) -> Result<ClipPlacement, ClipError> {
+        self.get_mut(track)
+            .ok_or(ClipError::UnknownPlacement(id))?
+            .clips_mut()
+            .remove(id)
+    }
+
+    // Move a placement along its track's timeline. Remove-then-insert rather than an in-place
+    // start edit, because the non-overlap invariant must be rechecked against the new span and
+    // TrackClips::insert is the one place that check lives. A refused move restores the original
+    pub fn move_placement(
+        &mut self,
+        track: ObjectId,
+        id: ObjectId,
+        start: BeatTicks,
+    ) -> Result<BeatTicks, ClipError> {
+        let existing = self.remove_placement(track, id)?;
+        let previous = existing.start();
+        let mut moved = existing;
+        moved.set_start(start)?;
+        match self.insert_placement(track, moved) {
+            Ok(()) => Ok(previous),
+            Err(error) => {
+                // Put it back exactly where it was; a refused move must change nothing
+                self.insert_placement(track, existing)
+                    .expect("the original placement fitted a moment ago");
+                Err(error)
+            }
+        }
+    }
+
+    // Note authoring. Returns the index the note landed at, which is what an undo addresses
+    pub fn insert_note(&mut self, clip: ObjectId, note: ClipNote) -> Result<usize, ClipError> {
+        self.clip_mut(clip)
+            .ok_or(ClipError::UnknownClip(clip))?
+            .insert_note(note)
+    }
+
+    pub fn remove_note(&mut self, clip: ObjectId, index: usize) -> Result<ClipNote, ClipError> {
+        self.clip_mut(clip)
+            .ok_or(ClipError::UnknownClip(clip))?
+            .remove_note(index)
     }
 
     // Chain edits, on the list rather than on Track, because adding or removing a node changes

@@ -316,6 +316,22 @@ impl ClipPlacement {
         self.active
     }
 
+    // Move this placement's start. Validated the same way the constructor validates one, so a
+    // move cannot produce a placement the constructor would have refused. Overlap is NOT checked
+    // here -- that is TrackClips::insert's job and the one place it lives
+    pub fn set_start(&mut self, start: BeatTicks) -> Result<(), ClipError> {
+        if start.0 < 0 {
+            // The same refusal ClipPlacement::new gives a negative start, so a move cannot
+            // produce a placement the constructor would have refused
+            return Err(ClipError::NoteOutsideClip {
+                start: start.0,
+                length: 0,
+            });
+        }
+        self.start = start;
+        Ok(())
+    }
+
     pub fn set_active(&mut self, active: bool) {
         self.active = active;
     }

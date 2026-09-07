@@ -3,12 +3,17 @@
 // Description: Atomic project commands, grouped transactions, and bounded undo/redo history
 // Notes: App-thread project mutation seam; never callback-reachable
 
+use crate::clip::{ClipError, ClipNote, ClipPlacement, MidiClip};
 use crate::{ProjectDoc, Track, TrackError, TrackInsert, TrackList};
+use spectre_core::BeatTicks;
 use spectre_core::ObjectId;
 use std::collections::VecDeque;
 
 // Command and history failures
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+//
+// Not Eq: ClipError carries a velocity, and a type claiming Eq over an f32 would be claiming an
+// equality the value does not have. Same reason CommandKind dropped it when levels arrived
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CommandError {
     EmptyTransaction,
     InvalidProjectName,
@@ -19,6 +24,9 @@ pub enum CommandError {
     // TrackList already refuses an absent id and an out-of-range index before it mutates
     // anything, so the failure vocabulary is wrapped rather than reinvented
     Track(TrackError),
+    // Clip authoring refuses through ClipError for the same reason track edits refuse through
+    // TrackError: the model already has a failure vocabulary and a second one would drift
+    Clip(ClipError),
 }
 
 impl std::fmt::Display for CommandError {
@@ -29,6 +37,7 @@ impl std::fmt::Display for CommandError {
             Self::ZeroHistoryCapacity => "history capacity must be greater than zero",
             Self::NameNotEditable => "this edit target has no project name to change",
             Self::Track(error) => return write!(f, "{error}"),
+            Self::Clip(error) => return write!(f, "{error}"),
         };
         f.write_str(message)
     }
@@ -141,6 +150,40 @@ enum CommandKind {
         position: usize,
         depth: f32,
     },
+    // Clip authoring. AddClip/RemoveClip are mutual inverses because remove_clip returns the
+    // clip whole -- with every note in it -- so an undone delete restores the material rather
+    // than an empty clip of the same name
+    AddClip {
+        clip: Box<MidiClip>,
+    },
+    RemoveClip {
+        id: ObjectId,
+    },
+    InsertPlacement {
+        track: ObjectId,
+        placement: ClipPlacement,
+    },
+    RemovePlacement {
+        track: ObjectId,
+        id: ObjectId,
+    },
+    MovePlacement {
+        track: ObjectId,
+        id: ObjectId,
+        start: BeatTicks,
+    },
+    // Note authoring. Editing one note -- a piano roll's drag, resize, or velocity change -- is
+    // a REMOVE and an INSERT grouped in one Transaction rather than a command of its own:
+    // notes are kept sorted by (start, note), so any edit that moves a note moves its index,
+    // and Transaction already applies and reverses a group atomically
+    InsertNote {
+        clip: ObjectId,
+        note: ClipNote,
+    },
+    RemoveNote {
+        clip: ObjectId,
+        index: usize,
+    },
 }
 
 // One reversible project-model mutation
@@ -250,6 +293,50 @@ impl ProjectCommand {
                 position,
                 depth,
             },
+        }
+    }
+
+    pub fn add_clip(clip: MidiClip) -> Self {
+        Self {
+            kind: CommandKind::AddClip {
+                clip: Box::new(clip),
+            },
+        }
+    }
+
+    pub fn remove_clip(id: ObjectId) -> Self {
+        Self {
+            kind: CommandKind::RemoveClip { id },
+        }
+    }
+
+    pub fn insert_placement(track: ObjectId, placement: ClipPlacement) -> Self {
+        Self {
+            kind: CommandKind::InsertPlacement { track, placement },
+        }
+    }
+
+    pub fn remove_placement(track: ObjectId, id: ObjectId) -> Self {
+        Self {
+            kind: CommandKind::RemovePlacement { track, id },
+        }
+    }
+
+    pub fn move_placement(track: ObjectId, id: ObjectId, start: BeatTicks) -> Self {
+        Self {
+            kind: CommandKind::MovePlacement { track, id, start },
+        }
+    }
+
+    pub fn insert_note(clip: ObjectId, note: ClipNote) -> Self {
+        Self {
+            kind: CommandKind::InsertNote { clip, note },
+        }
+    }
+
+    pub fn remove_note(clip: ObjectId, index: usize) -> Self {
+        Self {
+            kind: CommandKind::RemoveNote { clip, index },
         }
     }
 
@@ -452,6 +539,86 @@ impl ProjectCommand {
                         track: *track,
                         position: *position,
                         depth: previous,
+                    },
+                })
+            }
+            CommandKind::AddClip { clip } => {
+                let id = clip.id();
+                scope
+                    .tracks
+                    .add_clip((**clip).clone())
+                    .map_err(CommandError::Clip)?;
+                Ok(Self {
+                    kind: CommandKind::RemoveClip { id },
+                })
+            }
+            CommandKind::RemoveClip { id } => {
+                let removed = scope.tracks.remove_clip(*id).map_err(CommandError::Clip)?;
+                Ok(Self {
+                    kind: CommandKind::AddClip {
+                        clip: Box::new(removed),
+                    },
+                })
+            }
+            CommandKind::InsertPlacement { track, placement } => {
+                scope
+                    .tracks
+                    .insert_placement(*track, *placement)
+                    .map_err(CommandError::Clip)?;
+                Ok(Self {
+                    kind: CommandKind::RemovePlacement {
+                        track: *track,
+                        id: placement.id(),
+                    },
+                })
+            }
+            CommandKind::RemovePlacement { track, id } => {
+                let removed = scope
+                    .tracks
+                    .remove_placement(*track, *id)
+                    .map_err(CommandError::Clip)?;
+                Ok(Self {
+                    kind: CommandKind::InsertPlacement {
+                        track: *track,
+                        placement: removed,
+                    },
+                })
+            }
+            // The inverse carries the start the placement CAME FROM, which move_placement
+            // returns, rather than a start recomputed from a delta
+            CommandKind::MovePlacement { track, id, start } => {
+                let previous = scope
+                    .tracks
+                    .move_placement(*track, *id, *start)
+                    .map_err(CommandError::Clip)?;
+                Ok(Self {
+                    kind: CommandKind::MovePlacement {
+                        track: *track,
+                        id: *id,
+                        start: previous,
+                    },
+                })
+            }
+            // The inverse addresses the index the note actually landed at, which insert_note
+            // returns. Notes are kept sorted, so that is not the index the caller expected
+            CommandKind::InsertNote { clip, note } => {
+                let index = scope
+                    .tracks
+                    .insert_note(*clip, *note)
+                    .map_err(CommandError::Clip)?;
+                Ok(Self {
+                    kind: CommandKind::RemoveNote { clip: *clip, index },
+                })
+            }
+            CommandKind::RemoveNote { clip, index } => {
+                let removed = scope
+                    .tracks
+                    .remove_note(*clip, *index)
+                    .map_err(CommandError::Clip)?;
+                Ok(Self {
+                    kind: CommandKind::InsertNote {
+                        clip: *clip,
+                        note: removed,
                     },
                 })
             }
