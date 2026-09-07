@@ -157,6 +157,21 @@ the single definition of a device's descriptor set, `targets_before` sums real p
 spans instead of a fixed stride, and `selected_track_target_index` resolves by **key** rather than
 by an assumed position. `FILAMENT_LEVEL` is named as 3 rather than assumed to be 0.
 
+**Clips and notes became writable on 2026-09-07, which closes the authoring half of the MVP
+list.** The clip and note API was complete, reversible and tested, and had **no surface**: a
+project created in the app started at zero clips and stayed there, and the clip inspector's note
+list was read-only, so nothing in the product could write a single note. The inspector now creates
+and deletes clips, and the note list gained a delete per row and a field-based "+ Note".
+
+**This is the accepted surface, not a shortcut.** R4-5 §3.1 chose a note *list* over a piano-roll
+canvas for decision 17's accessibility reasons and recorded that "the piano roll is additive later
+over the same model." Making that list editable is the sanctioned path; the canvas remains R7's.
+Every note edit republishes, because a note the musician wrote that the render thread has not been
+told about is a note they do not hear.
+
+**A new clip is appended after the track's last one**, not at tick zero: placements may not
+overlap, so a second clip starting at zero would be refused as soon as a track had one.
+
 **The device chain became reachable on 2026-09-07, which completes "effects chained in any
 permutation" below the piano roll.** The chain model — ordered, unbounded, reversible — had **no
 surface at all**: `Track::new` starts with an empty chain, and the only `TrackInsert::new` in any

@@ -48,11 +48,28 @@ const TEMPO_RANGE: std::ops::RangeInclusive<f64> =
 // Highest bar the loop spinners offer. Not a model bound -- BeatTicks reaches far past this --
 // but a drag control needs an end, and 999 bars is well past any loop a musician sets by hand
 const LOOP_MAX_BAR: u32 = 999;
+// Velocity for a note written from the list. The descriptor range is 0..=1 and this is a plain
+// mezzo-forte; a velocity field is a control the piano roll will own rather than this list
+const DEFAULT_NOTE_VELOCITY: f32 = 0.8;
 
 // A structure edit requested from the track list, applied after the panel closes because each
 // one mutates the model the panel is borrowing
 // A device-chain edit requested from the inspector, applied after the panel closes because each
 // one mutates the model the panel is borrowing
+// A clip edit requested from the inspector, applied after the panel closes
+#[derive(Debug, Clone, Copy)]
+enum ClipAction {
+    Create(ObjectId),
+    Delete(ObjectId),
+}
+
+// A note edit requested from the clip inspector, applied after the panel closes
+#[derive(Debug, Clone, Copy)]
+enum NoteAction {
+    Add,
+    Remove(usize),
+}
+
 #[derive(Debug, Clone, Copy)]
 enum ChainAction {
     Add(ObjectId),
@@ -128,6 +145,9 @@ struct SpectrePrototype {
     // The bar range the loop control shows, one-based the way a musician counts. Shell state:
     // the model holds the loop in ticks, and this is only what the two spinners display
     loop_bars: (u32, u32),
+    // The note the "+ Note" button writes: start tick, length, pitch. Shell state, because it is
+    // what the fields show rather than anything the project holds
+    new_note: (i64, i64, u8),
     // The bytes the sidecar holds, tracked the same derived way saved_snapshot is, so the
     // autosave trigger compares content rather than consulting a clock
     autosaved_snapshot: Option<Vec<u8>>,
@@ -158,6 +178,7 @@ impl Default for SpectrePrototype {
             saved_snapshot: None,
             discard_armed: false,
             loop_bars: (1, 5),
+            new_note: (0, 480, 60),
             autosaved_snapshot: None,
             autosave_status: String::new(),
             recovery_offer: None,
@@ -1057,6 +1078,7 @@ impl SpectrePrototype {
                 let mut instrument_edit: Option<(ObjectId, TrackInstrument)> = None;
                 let mut rename_edit: Option<(ObjectId, String)> = None;
                 let mut master_edit: Option<f32> = None;
+                let mut clip_action: Option<ClipAction> = None;
                 let mut chain_action: Option<ChainAction> = None;
                 if let Some(track) = self.model.selected_track() {
                     let id = track.id();
@@ -1167,6 +1189,31 @@ impl SpectrePrototype {
                     {
                         chain_action = Some(ChainAction::Add(id));
                     }
+
+                    // Clip creation. Without it a musician has nowhere to write a note: the clip
+                    // API was complete and reversible with no surface, and a project created in
+                    // the app started at zero clips and stayed there
+                    ui.separator();
+                    ui.label(RichText::new("CLIPS").small().strong().color(MUTED));
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button("+ Clip")
+                            .on_hover_text("Add a one-bar clip after this track's last one.")
+                            .clicked()
+                        {
+                            clip_action = Some(ClipAction::Create(id));
+                        }
+                        let selected = self.model.selected_clip();
+                        if ui
+                            .add_enabled(selected.is_some(), egui::Button::new("Delete clip"))
+                            .on_disabled_hover_text("Select a clip in Arrange first.")
+                            .clicked()
+                        {
+                            if let Some(placement) = selected {
+                                clip_action = Some(ClipAction::Delete(placement));
+                            }
+                        }
+                    });
                 }
                 if let Some(edit) = mix_edit {
                     self.apply_mix_edit(edit);
@@ -1224,6 +1271,50 @@ impl SpectrePrototype {
                     };
                     if let Err(error) = outcome {
                         self.feedback_status = error.to_string();
+                    }
+                }
+                // Both change what should be playing, so both republish
+                if let Some(action) = clip_action {
+                    let outcome = match action {
+                        ClipAction::Create(track) => {
+                            // Appended after the track's last clip, because placements may not
+                            // overlap and starting every new clip at zero would be refused as
+                            // soon as a track had one
+                            let start = self
+                                .model
+                                .track_list()
+                                .get(track)
+                                .map(|entry| {
+                                    entry
+                                        .clips()
+                                        .placements()
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(index, placement)| {
+                                            placement.start().0
+                                                + entry
+                                                    .clips()
+                                                    .length_at(index)
+                                                    .map_or(0, |length| length.0)
+                                        })
+                                        .max()
+                                        .unwrap_or(0)
+                                })
+                                .unwrap_or(0);
+                            self.model
+                                .create_clip(
+                                    track,
+                                    "Clip",
+                                    BeatTicks(spectre_core::TICKS_PER_BEAT * 4),
+                                    BeatTicks(start),
+                                )
+                                .map(|_| ())
+                        }
+                        ClipAction::Delete(placement) => self.model.delete_clip(placement),
+                    };
+                    match outcome {
+                        Ok(()) => self.republish_schedules(),
+                        Err(error) => self.feedback_status = error.to_string(),
                     }
                 }
                 if let Some(level) = master_edit {
@@ -1420,6 +1511,7 @@ impl SpectrePrototype {
     // one would clip the note list at WINDOW_MIN_SIZE
     fn clip_inspector(&mut self, ui: &mut egui::Ui) {
         let mut republish = false;
+        let mut note_action: Option<NoteAction> = None;
         let Some(placement) = self.model.selected_clip() else {
             ui.add_space(10.0);
             ui.label(
@@ -1466,37 +1558,104 @@ impl SpectrePrototype {
                     .color(MUTED),
                 );
                 ui.separator();
-                if notes.is_empty() {
-                    ui.label(RichText::new("no notes in this clip").small().color(MUTED));
-                    return;
-                }
                 // A list, not a piano roll: R4-5 §3.1 makes this a deliberate accessibility
-                // choice under decision 17, not an aesthetic one
+                // choice under decision 17, not an aesthetic one, and it states the piano roll is
+                // additive later over this same model. Editable here because a read-only list
+                // meant nothing in the product could write a note at all
                 egui::ScrollArea::vertical()
                     .max_height(150.0)
                     .show(ui, |ui| {
                         egui::Grid::new("clip-note-list")
-                            .num_columns(5)
+                            .num_columns(6)
                             .striped(true)
                             .show(ui, |ui| {
-                                for header in ["start", "length", "pitch", "vel", "ch"] {
+                                for header in ["start", "length", "pitch", "vel", "ch", ""] {
                                     ui.label(RichText::new(header).small().color(MUTED));
                                 }
                                 ui.end_row();
-                                for note in &notes {
+                                for (index, note) in notes.iter().enumerate() {
                                     ui.label(note.0.to_string());
                                     ui.label(note.1.to_string());
                                     ui.label(note.2.to_string());
                                     ui.label(format!("{:.2}", note.3));
                                     ui.label(note.4.to_string());
+                                    if ui.small_button("✕").on_hover_text("Delete note").clicked()
+                                    {
+                                        note_action = Some(NoteAction::Remove(index));
+                                    }
                                     ui.end_row();
                                 }
                             });
                     });
+                if notes.is_empty() {
+                    ui.label(RichText::new("no notes in this clip").small().color(MUTED));
+                }
+                ui.add_space(6.0);
+                // Writing a note. Fields rather than a canvas, matching the list above; the
+                // model refuses anything outside the clip or outside MIDI's range
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut self.new_note.0)
+                            .speed(60.0)
+                            .prefix("at "),
+                    );
+                    ui.add(
+                        egui::DragValue::new(&mut self.new_note.1)
+                            .speed(60.0)
+                            .range(1..=i64::MAX)
+                            .prefix("len "),
+                    );
+                    ui.add(
+                        egui::DragValue::new(&mut self.new_note.2)
+                            .range(0..=127)
+                            .prefix("note "),
+                    );
+                    if ui.button("+ Note").clicked() {
+                        note_action = Some(NoteAction::Add);
+                    }
+                });
             });
+        // Applied after the panel closes, and every one republishes: a note the musician wrote
+        // that the render thread has not been told about is a note they do not hear
+        if let Some(action) = note_action {
+            if let Some(clip) = self.selected_clip_id() {
+                let outcome = match action {
+                    NoteAction::Remove(index) => self.model.remove_note(clip, index),
+                    NoteAction::Add => {
+                        let (start, length, pitch) = self.new_note;
+                        spectre_project::ClipNote::new(
+                            BeatTicks(start),
+                            BeatTicks(length),
+                            0,
+                            pitch,
+                            DEFAULT_NOTE_VELOCITY,
+                        )
+                        .and_then(|note| self.model.add_note(clip, note))
+                    }
+                };
+                match outcome {
+                    Ok(()) => republish = true,
+                    Err(error) => self.feedback_status = error.to_string(),
+                }
+            }
+        }
         if republish {
             self.republish_schedules();
         }
+    }
+
+    // The clip the selected placement refers to, which is what note edits address
+    fn selected_clip_id(&self) -> Option<ObjectId> {
+        let placement = self.model.selected_clip()?;
+        let track = self.model.clip_track(placement)?;
+        Some(
+            self.model
+                .track_list()
+                .get(track)?
+                .clips()
+                .get(placement)?
+                .clip(),
+        )
     }
 
     fn build_devices(&mut self, ui: &mut egui::Ui) {
