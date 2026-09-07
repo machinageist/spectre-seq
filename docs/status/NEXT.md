@@ -142,6 +142,28 @@ path; they are not part of this reachability gap.
 6. ~~Transfer device parameter snapshots from the app model to the offline plan before live audio work~~ — completed 2026-08-06: the renderer-neutral DTO lives in `spectre-dsp` with private fields, getters, and canonical clamping; the app emits exactly the four canonical fixture identities; offline rendering accepts a complete order-independent set and rejects incomplete, duplicate, unknown, mismatched, or non-canonical input before plan construction.
 7. ~~Choose the next narrow, testable interaction slice without implying live audio, broad R3, or automation capability~~ — completed 2026-08-06 via an explicit blind code-level fallback because no copied `./spectre` user-feedback artifact was available. Device Focus Drill-In adds stable app-thread device selection, atomic Build → Shape focus, selected-only descriptor-backed Shape controls, selection-aware feedback/smoke output, and no live or persisted control path.
 
+## Proposed next milestones — engine side is nearly exhausted
+
+The 2026-09-06 interview's plan sequences a renderer milestone, then routing, note routing, and
+instruments. Of those, everything reachable without a UI decision has now landed:
+
+- Unbounded summing through a tree; `MAX_TRACKS` 16 → 32, derived from the bridge's note array.
+- A track holds an ordered effect chain at schema 3, editable and reversible from the model.
+- Both instruments are polyphonic; a track added the way the product adds one plays a chord.
+
+**Two decisions now gate the rest, and neither is the implementation's to make.**
+
+1. **Decision 8 (UI stack).** Accepted only "for the R4 shell", with reversibility rated Low once
+   beta ships. Every remaining surface — piano roll, session grid, mixer, device chain, the
+   recovery and undo affordances already built and undrawn — waits on it.
+2. **Decision 24 (note routing), proposed 2026-09-06.** `docs/03-architecture/note-routing.md`
+   carries the design. It amends two accepted contracts and has four open sub-decisions that need
+   answering before anything is built.
+
+**What is built and not drawn**, which is the honest shape of the current gap: autosave and
+recovery, undo/redo, the effect chain, and polyphony all work and are all invisible in
+`./spectre`. The Build lens is still the flat five-device list belonging to no track.
+
 ## Parallel research
 
 - Obtain visible-session Bitwig Studio evidence.
