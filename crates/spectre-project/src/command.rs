@@ -5,8 +5,8 @@
 
 use crate::clip::{ClipError, ClipNote, ClipPlacement, MidiClip};
 use crate::{ProjectDoc, Track, TrackError, TrackInsert, TrackList};
-use spectre_core::BeatTicks;
 use spectre_core::ObjectId;
+use spectre_core::{BeatTicks, TempoMap};
 use std::collections::VecDeque;
 
 // Command and history failures
@@ -21,6 +21,8 @@ pub enum CommandError {
     // The app derives its project name from the file path and holds none to edit, so a rename
     // aimed at a target that has no name is refused rather than silently dropped
     NameNotEditable,
+    // The target carries no tempo. Refused rather than ignored, for the same reason a rename is
+    TempoNotEditable,
     // TrackList already refuses an absent id and an out-of-range index before it mutates
     // anything, so the failure vocabulary is wrapped rather than reinvented
     Track(TrackError),
@@ -36,6 +38,7 @@ impl std::fmt::Display for CommandError {
             Self::InvalidProjectName => "project name must contain a non-whitespace character",
             Self::ZeroHistoryCapacity => "history capacity must be greater than zero",
             Self::NameNotEditable => "this edit target has no project name to change",
+            Self::TempoNotEditable => "this edit target has no tempo to change",
             Self::Track(error) => return write!(f, "{error}"),
             Self::Clip(error) => return write!(f, "{error}"),
         };
@@ -57,6 +60,26 @@ pub struct EditScope<'a> {
     // string so a rename is refused instead of appearing to succeed against nothing
     name: Option<&'a mut String>,
     tracks: &'a mut TrackList,
+    // None where the target carries no tempo, for the same reason. A bare TrackList has none,
+    // so a tempo edit against one is refused rather than silently doing nothing
+    tempo: Option<&'a mut TempoMap>,
+}
+
+impl<'a> EditScope<'a> {
+    // Build a scope from borrowed pieces. Public so a crate outside this one can supply a target
+    // assembled from its own fields; the fields stay private so the set a command may touch is
+    // still declared here rather than by whoever constructs one
+    pub fn new(
+        name: Option<&'a mut String>,
+        tracks: &'a mut TrackList,
+        tempo: Option<&'a mut TempoMap>,
+    ) -> Self {
+        Self {
+            name,
+            tracks,
+            tempo,
+        }
+    }
 }
 
 // Anything a transaction can be applied to
@@ -69,6 +92,7 @@ impl Editable for ProjectDoc {
         EditScope {
             name: Some(&mut self.name),
             tracks: &mut self.tracks,
+            tempo: Some(&mut self.tempo_map),
         }
     }
 }
@@ -79,6 +103,7 @@ impl Editable for TrackList {
         EditScope {
             name: None,
             tracks: self,
+            tempo: None,
         }
     }
 }
@@ -127,6 +152,12 @@ enum CommandKind {
     },
     SetMasterLevel {
         level: f32,
+    },
+    // The WHOLE map, not a bpm. A tempo map may hold segments, so an inverse carrying only a
+    // number could not restore one that did -- it would silently flatten a tempo curve into a
+    // constant and call that an undo
+    SetTempoMap {
+        map: TempoMap,
     },
     // InsertEffect and RemoveEffect are exact mutual inverses for the same reason the track pair
     // is: TrackList::remove_effect returns the effect whole, so an undone delete restores the
@@ -337,6 +368,14 @@ impl ProjectCommand {
     pub fn remove_note(clip: ObjectId, index: usize) -> Self {
         Self {
             kind: CommandKind::RemoveNote { clip, index },
+        }
+    }
+
+    // Replace the project's tempo map. Takes the whole map so a caller can set a constant or a
+    // curve through one command, and so the inverse can restore either exactly
+    pub fn set_tempo_map(map: TempoMap) -> Self {
+        Self {
+            kind: CommandKind::SetTempoMap { map },
         }
     }
 
@@ -620,6 +659,15 @@ impl ProjectCommand {
                         clip: *clip,
                         note: removed,
                     },
+                })
+            }
+            CommandKind::SetTempoMap { map } => {
+                let Some(target) = scope.tempo.as_deref_mut() else {
+                    return Err(CommandError::TempoNotEditable);
+                };
+                let previous = std::mem::replace(target, map.clone());
+                Ok(Self {
+                    kind: CommandKind::SetTempoMap { map: previous },
                 })
             }
             CommandKind::SetMasterLevel { level } => {

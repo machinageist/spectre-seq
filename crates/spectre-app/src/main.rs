@@ -40,6 +40,10 @@ const WINDOW_MIN_SIZE: [f32; 2] = [1060.0, 680.0];
 const LANE_LABEL_WIDTH: f32 = 120.0;
 const LANE_HEIGHT: f32 = 46.0;
 const GAIN_RANGE: std::ops::RangeInclusive<f32> = 0.0..=GAIN_MAX;
+// The accepted tempo bounds, not a second pair invented for the widget. TempoMap refuses outside
+// them anyway; matching here means the control cannot offer a value the model would reject
+const TEMPO_RANGE: std::ops::RangeInclusive<f64> =
+    spectre_core::tempo::MIN_BPM..=spectre_core::tempo::MAX_BPM;
 
 // One mixer edit, deferred out of the panel closure that borrows the model
 #[derive(Debug, Clone, Copy)]
@@ -248,6 +252,9 @@ impl SpectrePrototype {
     }
 
     fn transport(&mut self, ctx: &egui::Context) {
+        // Collected during the draw and applied after it, for the same reason save and open are:
+        // mutating the model mid-draw would leave the rest of this frame rendering stale state
+        let mut tempo_edit: Option<f64> = None;
         // Both actions mutate self, so they are deferred out of the panel closure that borrows it
         let mut toggle = false;
         let mut retry = false;
@@ -297,8 +304,21 @@ impl SpectrePrototype {
                     // Tempo and meter are the model's defaults; the position comes from the
                     // render thread's own published playhead, or reads as unknown when no block
                     // has rendered -- never as a frozen 1.1.1
-                    ui.label(RichText::new("120.00 BPM").monospace().color(TEXT))
-                        .on_hover_text("Fixed project default; tempo editing arrives with the arrangement.");
+                    // The project's own tempo, editable. It was a string literal until
+                    // 2026-09-06, so nothing could be written at any other tempo
+                    let mut bpm = self.model.tempo_map().segments()[0].bpm;
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut bpm)
+                                .speed(0.5)
+                                .range(TEMPO_RANGE)
+                                .suffix(" BPM"),
+                        )
+                        .on_hover_text("Project tempo. Undoable, and republished to the engine.")
+                        .changed()
+                    {
+                        tempo_edit = Some(bpm);
+                    }
                     ui.label(RichText::new("4 / 4").monospace().color(MUTED))
                         .on_hover_text("Fixed project default; meter editing arrives with the arrangement.");
                     let position = self
@@ -418,6 +438,14 @@ impl SpectrePrototype {
         }
         if open_bounce {
             self.bounce_open = !self.bounce_open;
+        }
+        // Tempo converts ticks to samples, so a change must reach the render thread's baked
+        // material as well as the model, or the readout and the audio disagree
+        if let Some(bpm) = tempo_edit {
+            match self.model.set_tempo(bpm) {
+                Ok(()) => self.republish_schedules(),
+                Err(error) => self.project_status = format!("tempo refused: {error:?}"),
+            }
         }
     }
 
@@ -578,8 +606,6 @@ impl SpectrePrototype {
                         .on_disabled_hover_text("Catalog wiring arrives in later milestones.");
                 }
             });
-        // Applied after the panel closes, the same way save and open are: mutating the model
-        // mid-draw would leave the rest of this frame rendering a list that no longer exists
         if undo || redo {
             let outcome = if undo {
                 self.model.undo()
@@ -754,6 +780,21 @@ impl SpectrePrototype {
                     self.autosave_status = format!("Unsaved work could not be discarded: {error}");
                 }
             }
+        }
+    }
+
+    // Rebake and republish every track's material to the running stream. Called after any edit
+    // that changes what the render thread should be playing -- a note, a clip, or the tempo that
+    // converts their ticks to samples. A refused publication is reported rather than swallowed,
+    // because a musician whose edit did not reach the engine must be told
+    fn republish_schedules(&mut self) {
+        let Some(engine) = self.engine.as_mut() else {
+            return;
+        };
+        if let Err(error) =
+            engine.publish_schedules(self.model.track_list(), self.model.tempo_map())
+        {
+            self.project_status = format!("Edit did not reach the engine: {error}");
         }
     }
 
@@ -1074,6 +1115,7 @@ impl SpectrePrototype {
     // trailing side panel, because the lens body is already inside a panel and nesting a second
     // one would clip the note list at WINDOW_MIN_SIZE
     fn clip_inspector(&mut self, ui: &mut egui::Ui) {
+        let mut republish = false;
         let Some(placement) = self.model.selected_clip() else {
             ui.add_space(10.0);
             ui.label(
@@ -1103,6 +1145,9 @@ impl SpectrePrototype {
                         let mut is_active = active;
                         if ui.checkbox(&mut is_active, "active").changed() {
                             let _ = self.model.set_clip_active(placement, is_active);
+                            // Deactivating a clip changes what should be playing, so the render
+                            // thread needs the rebaked material or it keeps playing the old
+                            republish = true;
                         }
                     });
                 });
@@ -1145,6 +1190,9 @@ impl SpectrePrototype {
                             });
                     });
             });
+        if republish {
+            self.republish_schedules();
+        }
     }
 
     fn build_devices(&mut self, ui: &mut egui::Ui) {

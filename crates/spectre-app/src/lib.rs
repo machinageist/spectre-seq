@@ -9,14 +9,16 @@ pub mod engine;
 pub mod project;
 
 use spectre_core::{
-    BeatTicks, IdGen, MeterMap, ObjectId, TempoMap, TimeSignature, Transport, TransportCommand,
-    TransportState,
+    BeatTicks, IdGen, MeterMap, ObjectId, TempoMap, TempoMapError, TimeSignature, Transport,
+    TransportCommand, TransportState,
 };
 use spectre_dsp::{
     DeviceParameterSnapshot, DspParameter, FILAMENT_PARAMETERS, GAIN_PARAMETERS, GLOAM_PARAMETERS,
     PULSE_PARAMETERS, SATURATOR_PARAMETERS,
 };
-use spectre_project::command::{CommandError, EditHistory, ProjectCommand, Transaction};
+use spectre_project::command::{
+    CommandError, EditHistory, EditScope, Editable, ProjectCommand, Transaction,
+};
 use spectre_project::{
     ClipError, ClipNote, ClipPlacement, MidiClip, Track, TrackError, TrackInsert, TrackInstrument,
     TrackList,
@@ -445,9 +447,7 @@ impl AppModel {
             ProjectCommand::insert_placement(track, placement),
         ])
         .expect("two commands is not empty");
-        self.history
-            .apply(&mut self.tracks, group)
-            .map_err(unwrap_clip_error)?;
+        self.apply(group).map_err(unwrap_clip_error)?;
         self.selected_clip = Some(placement_id);
         Ok(placement_id)
     }
@@ -478,11 +478,7 @@ impl AppModel {
         if sole_user {
             commands.push(ProjectCommand::remove_clip(clip_id));
         }
-        self.history
-            .apply(
-                &mut self.tracks,
-                Transaction::new(commands).expect("at least one command"),
-            )
+        self.apply(Transaction::new(commands).expect("at least one command"))
             .map_err(unwrap_clip_error)?;
         if self.selected_clip == Some(placement) {
             self.selected_clip = None;
@@ -496,12 +492,10 @@ impl AppModel {
         let track = self
             .clip_track(placement)
             .ok_or(ClipError::UnknownPlacement(placement))?;
-        self.history
-            .apply(
-                &mut self.tracks,
-                Transaction::single(ProjectCommand::move_placement(track, placement, start)),
-            )
-            .map_err(unwrap_clip_error)
+        self.apply(Transaction::single(ProjectCommand::move_placement(
+            track, placement, start,
+        )))
+        .map_err(unwrap_clip_error)
     }
 
     // Note authoring: what a piano roll calls.
@@ -510,21 +504,15 @@ impl AppModel {
     // validated, so passing one through keeps that single point and keeps these signatures from
     // growing a parameter every time the note model does
     pub fn add_note(&mut self, clip: ObjectId, note: ClipNote) -> Result<(), ClipError> {
-        self.history
-            .apply(
-                &mut self.tracks,
-                Transaction::single(ProjectCommand::insert_note(clip, note)),
-            )
+        self.apply(Transaction::single(ProjectCommand::insert_note(clip, note)))
             .map_err(unwrap_clip_error)
     }
 
     pub fn remove_note(&mut self, clip: ObjectId, index: usize) -> Result<(), ClipError> {
-        self.history
-            .apply(
-                &mut self.tracks,
-                Transaction::single(ProjectCommand::remove_note(clip, index)),
-            )
-            .map_err(unwrap_clip_error)
+        self.apply(Transaction::single(ProjectCommand::remove_note(
+            clip, index,
+        )))
+        .map_err(unwrap_clip_error)
     }
 
     // Change one note: a drag, a resize, or a velocity edit. Notes are kept sorted by
@@ -542,9 +530,7 @@ impl AppModel {
             ProjectCommand::insert_note(clip, replacement),
         ])
         .expect("two commands is not empty");
-        self.history
-            .apply(&mut self.tracks, group)
-            .map_err(unwrap_clip_error)
+        self.apply(group).map_err(unwrap_clip_error)
     }
 
     // The notes of one clip, in the order the model keeps them, which is the order an editor
@@ -643,24 +629,60 @@ impl AppModel {
         ))
     }
 
-    // Apply one edit through the history, so no product mutation can reach the track list
-    // without becoming reversible. Every mutator below goes through here rather than touching
-    // self.tracks, which is what stops the next one from quietly forgetting
+    // Apply one edit through the history, so no product mutation can reach the model without
+    // becoming reversible. Every mutator below goes through here rather than touching its field
+    // directly, which is what stops the next one from quietly forgetting
     fn edit(&mut self, command: ProjectCommand) -> Result<(), CommandError> {
-        self.history
-            .apply(&mut self.tracks, Transaction::single(command))
+        self.apply(Transaction::single(command))
+    }
+
+    // Borrow the editable pieces as one target. Disjoint field borrows, so the history and the
+    // state it mutates can be held at once.
+    //
+    // AppModel cannot implement Editable itself: the history lives on the same struct, so
+    // `self.history.apply(&mut self, ..)` would borrow it twice
+    fn apply(&mut self, transaction: Transaction) -> Result<(), CommandError> {
+        let mut target = AppEditTarget {
+            tracks: &mut self.tracks,
+            tempo: &mut self.tempo_map,
+        };
+        self.history.apply(&mut target, transaction)
+    }
+
+    // Replace the project tempo. Reversible, and the inverse carries the whole previous map, so
+    // undoing a tempo change on a project that had a curve restores the curve rather than a
+    // constant taken from its first segment
+    pub fn set_tempo(&mut self, bpm: f64) -> Result<(), TempoMapError> {
+        self.set_tempo_map(TempoMap::constant(bpm)?)
+    }
+
+    // Replace the whole map, so a tempo curve can be set as one reversible edit rather than as a
+    // sequence of constants that undo one segment at a time
+    pub fn set_tempo_map(&mut self, map: TempoMap) -> Result<(), TempoMapError> {
+        self.apply(Transaction::single(ProjectCommand::set_tempo_map(map)))
+            // A tempo command cannot be refused by the history: the app target always carries a
+            // tempo, so the only refusal is the one TempoMap::constant already made above
+            .map_err(|_| TempoMapError::BpmOutOfRange)
     }
 
     // Reverse the latest edit; false means there was none. Selection is repaired afterwards
     // because an undone delete restores a track the selection may have moved off
     pub fn undo(&mut self) -> Result<bool, CommandError> {
-        let moved = self.history.undo(&mut self.tracks)?;
+        let mut target = AppEditTarget {
+            tracks: &mut self.tracks,
+            tempo: &mut self.tempo_map,
+        };
+        let moved = self.history.undo(&mut target)?;
         self.repair_selection();
         Ok(moved)
     }
 
     pub fn redo(&mut self) -> Result<bool, CommandError> {
-        let moved = self.history.redo(&mut self.tracks)?;
+        let mut target = AppEditTarget {
+            tracks: &mut self.tracks,
+            tempo: &mut self.tempo_map,
+        };
+        let moved = self.history.redo(&mut target)?;
         self.repair_selection();
         Ok(moved)
     }
@@ -1021,5 +1043,19 @@ fn unwrap_clip_error(error: CommandError) -> ClipError {
     match error {
         CommandError::Clip(error) => error,
         other => unreachable!("a clip command produced {other:?}"),
+    }
+}
+
+// The editable pieces of AppModel, borrowed as one target so commands can reach tempo as well as
+// tracks. A struct rather than an impl on AppModel because the history lives on AppModel too,
+// and borrowing the whole model would borrow the history twice
+struct AppEditTarget<'a> {
+    tracks: &'a mut TrackList,
+    tempo: &'a mut TempoMap,
+}
+
+impl Editable for AppEditTarget<'_> {
+    fn edit_scope(&mut self) -> EditScope<'_> {
+        EditScope::new(None, self.tracks, Some(self.tempo))
     }
 }

@@ -140,6 +140,23 @@ Slice 6 arrived on a branch that predated slices 1, 2, and 4, and its integratio
 
 **The dirty marker is derived, not maintained.** It compares the bytes a save would write right now against the bytes last written, rather than being set by hand at each mutation site — a flag maintained at call sites is a flag someone forgets at the next one, and a marker reading "Saved" over unsaved work is exactly the defect the project-safety pillar names. The two shell decisions that are not drawing — that comparison and the one-press-never-discards rule — live in `spectre_app::project` rather than in `main.rs`, because `main.rs` is a binary target no test can reach; that is the lesson R4-1's review already paid for.
 
+**Tempo is editable as of 2026-09-06, and it is the first product edit drawn in the shell since
+this session began.** The transport rendered `"120.00 BPM"` as a string literal, so nothing could
+be written at any other tempo. It is now a `DragValue` over `MIN_BPM..=MAX_BPM` — the accepted
+bounds, not a second pair invented for the widget — and a change is reversible, republished to the
+running engine, and persisted. `EditScope` gained an optional tempo, and `AppModel` supplies it
+through an `AppEditTarget` that borrows tracks and tempo as disjoint fields; the model cannot
+implement `Editable` itself because the history lives on the same struct and would be borrowed
+twice. **The command carries the whole `TempoMap`, not a bpm:** an inverse holding only a number
+could not restore a map that had segments, so it would flatten a tempo curve and call that an undo.
+
+**Latent defect found and NOT fixed, recorded here rather than quietly:** `project_envelope` never
+writes `model.meter_map`. Meter is read from the project's unknown map (`ProjectDoc::meter_map`)
+and written back only if it happened to arrive there, so a meter set in the app is not persisted.
+Invisible today because the prototype default is 4/4 and every path agrees on it; the moment meter
+becomes editable it is silent data loss. Fixing it properly means a typed field and a schema 4
+migration, which is not worth bundling into a tempo slice.
+
 **The edit-listen loop closes as of 2026-09-06: an edit is heard without restarting the stream.**
 The RT machinery for swapping a clip schedule had existed since R4-5 — `ClipPlayer::install`, a
 bounded lane, off-thread reclamation, telemetry — with **no product caller**, and the lane carried

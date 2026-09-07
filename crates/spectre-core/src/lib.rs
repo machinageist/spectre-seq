@@ -15,6 +15,6 @@ pub use event::{sort_events, Event, EventKind, TimedEvent};
 pub use id::{IdGen, ObjectId};
 pub use meter::{MeterChange, MeterError, MeterMap, TimeSignature};
 pub use param::{ParamDescriptor, ParamError, ParamSpec, ParamUnit, ParamValue};
-pub use tempo::{TempoMap, TempoSegment};
+pub use tempo::{TempoMap, TempoMapError, TempoSegment};
 pub use time::{BeatTicks, SampleDuration, SampleRate, SampleTime, Seconds, TICKS_PER_BEAT};
 pub use transport::{LoopRegion, Transport, TransportCommand, TransportState};
