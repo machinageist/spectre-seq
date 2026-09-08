@@ -7,6 +7,15 @@ Notes: The roadmap owns ordering and the concurrent-milestone rule
 
 # Current Milestones — R5 Project Safety; R4 Exit-Pending
 
+## Reconciliation notice — 2026-09-07
+
+See `product-convergence.md` and `../status/architecture-audit-2026-09-07.md`. The phase map is
+proposed, R4 remains operator-exit-pending, and the R5 media carry below is not authorized by the
+literal concurrent-milestone rule. A scope split or dependency reorder requires Jeff's decision.
+The records below include stale summaries; newer integration records do not close the newly
+identified device-state, publication, export and lifecycle gaps.
+
+
 - **Status:** accepted
 - **Last verified:** 2026-09-06
 - **Scope:** active R5 project-safety engineering plus R4's retained operator-evidence obligation

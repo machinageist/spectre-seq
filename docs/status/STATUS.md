@@ -7,6 +7,16 @@ Notes: Claims here link to live evidence; optimistic language is prohibited
 
 # Status
 
+## Current review qualification — 2026-09-07
+
+`architecture-audit-2026-09-07.md` records source-checked gaps in broad authoring/export claims
+below: fixture-oriented shell bounce, competing global/track device state and stale-plan target
+indices. The full automated gate passed in the review; no new operator/hardware pass was added.
+Historical slice records below remain evidence for their stated tests, not proof of complete
+production-path correctness. Accepted expanded product scope is in
+`../00-product/product-contract.md`; replacement sequencing remains proposed.
+
+
 - **Status:** accepted
 - **Last verified:** 2026-09-06
 - **Scope:** current implementation, documentation, and research state

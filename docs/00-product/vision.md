@@ -18,6 +18,13 @@ Notes: Accepted by Jeff through delegated decision authority on 2026-07-12
 - **Open decisions:** scoring/video remains outside current scope
 - **Known gaps:** workflow research remains below saturation
 
+## Scope amendment — 2026-09-07
+
+`product-contract.md` records Jeff's accepted full-product specification and custom-surface
+direction. Its explicit amendments take precedence over this document's earlier scope restrictions.
+The release bars below remain the prior baseline pending an explicit release-allocation decision;
+no new release promise or qualified platform is implied.
+
 ## Who Spectre is for
 
 Spectre serves electronic musicians who compose, sound-design, and perform their own material — first concretely: hypnotic techno, forest psytrance, deep dubstep, and modern synthesis-driven arrangement (Jeff's stated priority genres), spanning studio production and live performance with an audio interface, MIDI controllers, and hardware synths. Recording-band and scoring workflows are respected later-stage citizens, not the first target.

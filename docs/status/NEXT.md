@@ -7,6 +7,16 @@ Notes: Only active-milestone slices belong here
 
 # Next
 
+## Current planning intake — 2026-09-07
+
+Read `../00-product/product-contract.md`, `architecture-audit-2026-09-07.md` and
+`../06-plans/product-convergence.md` first. The dated queue below is retained history and contains
+stale reachability statements; it is not evidence that all production authoring/export paths
+are correct. New feature sequencing awaits release-scope and roadmap reconciliation. Earliest
+proposed repairs address stale target publication, authoritative device state, lifecycle/recovery
+and actual project bounce. R4 operator evidence remains pending.
+
+
 - **Status:** accepted
 - **Last verified:** 2026-09-06
 - **Scope:** active R5 engineering queue plus R4's retained operator-evidence obligation

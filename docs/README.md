@@ -22,7 +22,7 @@ Notes: Defines precedence, ownership, and status vocabulary
 
 When active documents disagree, use this order:
 
-1. Accepted product vision in `00-product/`.
+1. Accepted product vision in `00-product/`. The 2026-09-07 `00-product/product-contract.md` amends final-product scope and UI direction; `vision.md` remains the audience/workflow baseline. `00-product/final-product-source.md` preserves the complete supplied capability source under that contract. Optional examples and technical prescriptions are not independently ratified.
 2. Accepted requirements and decisions in `01-requirements/`.
 3. Accepted architecture contracts in `03-architecture/` when present.
 4. Accepted detailed specifications in `04-specs/` when present.

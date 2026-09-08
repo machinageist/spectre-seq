@@ -20,6 +20,18 @@ Notes: Milestones close on demonstrable capability, not compilation alone
 
 The repository root is the sole implementation workspace.
 
+## Reconciliation gate — 2026-09-07
+
+Jeff accepted expanded final-product scope in `../00-product/product-contract.md`. The existing
+R0–R12 order below has not yet been revised to cover it. Read `product-convergence.md` and
+`../status/architecture-audit-2026-09-07.md` before choosing new engineering work: production
+parameter ownership, stale-plan publication and project export require corrective slices before
+downstream features can rely on them. The proposed phase map is not ratified execution authority.
+The R5 missing-media carry needs an explicit scope split/reorder decision; it is not authorized
+by the current concurrent-milestone rule merely because its dependency arrives later.
+
+## Existing milestone baseline
+
 | Milestone | Outcome | Key requirements | Exit gate |
 |---|---|---|---|
 | R0 — foundation | Pinned stable toolchain, workspace rules, checks, tests, deterministic offline harness | RT-001 policy, CORE seeds | locked tests, strict Clippy, formatting, docs |

@@ -7,6 +7,25 @@ Notes: Written because the session ended on a usage limit rather than at a natur
 
 # Handoff — 2026-09-07
 
+## Later same-day reconciliation
+
+This file preserves the prior session record below. Resume from
+`../00-product/product-contract.md`, `architecture-audit-2026-09-07.md` and
+`../06-plans/product-convergence.md` for the subsequent interview and review. Jeff clarified
+custom musician-facing surfaces using existing platform/rendering infrastructure and accepted
+the supplied full DAW/synth/modular specification as phased final-product scope. Exact stack,
+first-release allocation and replacement milestone order remain open except that Jeff has now
+required flagship synthesis and modularity together as early, inseparable vertical slices (I-03).
+
+The review found that shell Bounce still exports fixture material, Shape state is global rather
+than independently track-owned, and model-relative publications can target an old plan. Prior
+broad “hear/save/undo all of it” claims are not assurance of those paths. The full automated
+gate passed again, but no manual/audio qualification was added and no runtime repairs were made.
+Do not treat the old statement that engine work is exhausted as current engineering guidance.
+The unrelated calendar request below remains outside this Spectre task.
+
+## Prior session handoff
+
 - **Status:** accepted
 - **Last verified:** 2026-09-07
 - **Scope:** state at the end of the 2026-09-06/07 session, and how to resume
