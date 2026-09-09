@@ -127,9 +127,6 @@ struct SpectrePrototype {
     engine_unavailable: EngineUnavailable,
     // The start attempt happens on the first frame, not in Default, so a failure is reportable
     engine_attempted: bool,
-    // The track-list revision the running engine was built from. While this differs from the
-    // model's, the app states that the edit is not audible rather than pretending it is
-    engine_revision: u64,
     // Offline bounce state. Owned by the shell, not by AppModel, for the same reason the engine
     // is: the model gains no render dependency and no thread-affine field
     bounce: BouncePanel,
@@ -175,7 +172,6 @@ impl Default for SpectrePrototype {
             engine: None,
             engine_unavailable: EngineUnavailable::NotAttempted,
             engine_attempted: false,
-            engine_revision: 0,
             bounce: BouncePanel::default(),
             bounce_open: false,
             project_path: String::new(),
@@ -199,13 +195,7 @@ fn open_engine(model: &AppModel) -> Result<LiveEngine, EngineUnavailable> {
     let backend = spectre_audio::cpal_backend::CpalBackend::new();
     // The selected track's instrument is the primary note node — the one the lane's live
     // ingress reaches. Every other track with clip material gets its own clip voice
-    spectre_app::engine::open_track_engine(
-        &backend,
-        model.track_list(),
-        model.tempo_map(),
-        APP_GRAPH_SEED,
-        model.selected_track_id(),
-    )
+    spectre_app::engine::open_track_engine(&backend, model, APP_GRAPH_SEED)
 }
 
 // Without a real backend the app declines to fake one; NullBackend would produce a running
@@ -232,7 +222,6 @@ impl SpectrePrototype {
                 }
                 self.engine = Some(engine);
                 self.engine_unavailable = EngineUnavailable::NotAttempted;
-                self.engine_revision = self.model.track_list().structure_revision();
             }
             Err(error) => {
                 self.feedback_status = format!("Audio engine did not start: {error}");
@@ -267,11 +256,9 @@ impl SpectrePrototype {
         match result {
             Ok(invalidated) => {
                 if let Some(engine) = self.engine.as_ref() {
-                    if let Err(error) = spectre_app::engine::publish_track_gains(
-                        engine,
-                        self.model.track_list(),
-                        &invalidated,
-                    ) {
+                    if let Err(error) =
+                        spectre_app::engine::publish_track_gains(engine, &self.model, &invalidated)
+                    {
                         self.feedback_status =
                             format!("The mix changed but did not reach live audio: {error}");
                     }
@@ -283,8 +270,9 @@ impl SpectrePrototype {
 
     // True while the model's track structure differs from the plan the engine is executing
     fn engine_is_stale(&self) -> bool {
-        self.engine.is_some()
-            && self.model.track_list().structure_revision() != self.engine_revision
+        self.engine
+            .as_ref()
+            .is_some_and(|engine| engine.check_binding(&self.model).is_err())
     }
 
     // Stop the stream, rebuild the plan from the current list, and start again. R4-4 does this
@@ -786,8 +774,6 @@ impl SpectrePrototype {
             };
             match outcome {
                 Ok(true) => {
-                    // A reversed edit can change the graph shape, so the running plan is stale
-                    self.engine_revision = self.engine_revision.wrapping_sub(1);
                     self.project_status = if undo {
                         "Undid one edit."
                     } else {
@@ -933,7 +919,6 @@ impl SpectrePrototype {
                     self.saved_snapshot = saved_bytes;
                     // The sidecar still holds this work and stays until a manual Save retires it
                     self.autosaved_snapshot = self.current_project_bytes();
-                    self.engine_revision = self.engine_revision.wrapping_sub(1);
                     self.project_status =
                         "Recovered unsaved work. It is not saved yet — press Save to keep it."
                             .into();
@@ -963,9 +948,7 @@ impl SpectrePrototype {
         let Some(engine) = self.engine.as_mut() else {
             return;
         };
-        if let Err(error) =
-            engine.publish_schedules(self.model.track_list(), self.model.tempo_map())
-        {
+        if let Err(error) = engine.publish_schedules(&self.model) {
             self.project_status = format!("Edit did not reach the engine: {error}");
         }
     }
@@ -976,7 +959,7 @@ impl SpectrePrototype {
         let Some(engine) = self.engine.as_mut() else {
             return;
         };
-        if let Err(error) = engine.publish_loop(region, self.model.tempo_map()) {
+        if let Err(error) = engine.publish_loop(&self.model, region) {
             self.project_status = format!("Loop did not reach the engine: {error}");
         }
     }
@@ -1038,8 +1021,6 @@ impl SpectrePrototype {
                     self.saved_snapshot = self.current_project_bytes();
                     self.discard_armed = false;
                     self.project_status = format!("Opened {}", path.display());
-                    // The loaded list is a different graph shape, so the running engine is stale
-                    self.engine_revision = self.engine_revision.wrapping_sub(1);
                     // Inspect AFTER the saved project is live, so the musician is looking at
                     // what they saved while deciding whether to take the unsaved work instead
                     self.autosaved_snapshot = None;
@@ -1261,14 +1242,16 @@ impl SpectrePrototype {
                             let stored = self.model.set_effect_depth(id, position, depth);
                             if stored.is_ok() {
                                 if let Some(engine) = self.engine.as_ref() {
-                                    let _ = spectre_app::engine::publish_effect_parameter(
+                                    if let Err(error) = spectre_app::engine::publish_effect_parameter(
                                         engine,
-                                        self.model.track_list(),
+                                        &self.model,
                                         id,
                                         position,
                                         spectre_dsp::GLOAM_DEPTH,
                                         depth,
-                                    );
+                                    ) {
+                                        self.feedback_status = format!("Effect edit was stored but did not reach live audio: {error}");
+                                    }
                                 }
                             }
                             stored
@@ -1327,10 +1310,12 @@ impl SpectrePrototype {
                     // The master gain has its own parameter target, so it publishes rather than
                     // rebuilding: a fader move must not restart the stream
                     if let Some(engine) = self.engine.as_mut() {
-                        let _ = spectre_app::engine::publish_master_gain(
+                        if let Err(error) = spectre_app::engine::publish_master_gain(
                             engine,
-                            self.model.track_list(),
-                        );
+                            &self.model,
+                        ) {
+                            self.feedback_status = format!("Master edit was stored but did not reach live audio: {error}");
+                        }
                     }
                 }
                 ui.separator();

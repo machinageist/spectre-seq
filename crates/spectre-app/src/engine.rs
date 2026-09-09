@@ -155,7 +155,44 @@ pub struct EngineHealth {
 }
 
 // Render-side halves built together, before any device is touched
+// App-thread proof of the model generation used to compile a track plan.
+// Only the model builder creates it; low-level/fixture parts remain unbound.
+#[derive(Debug)]
+pub struct PlanBinding {
+    session: Arc<()>,
+    project: spectre_core::ObjectId,
+    structure_revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PublicationError {
+    StalePlan,
+    UnavailableTarget,
+    Control(ControlError),
+}
+
+impl std::fmt::Display for PublicationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::StalePlan => {
+                f.write_str("plan is stale or unbound; rebuild audio to publish stored edits")
+            }
+            Self::UnavailableTarget => f.write_str("no matching target in the running plan"),
+            Self::Control(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for PublicationError {}
+
+impl From<ControlError> for PublicationError {
+    fn from(error: ControlError) -> Self {
+        Self::Control(error)
+    }
+}
+
 pub struct EngineParts {
+    pub binding: Option<PlanBinding>,
     pub bridge: RenderBridge,
     pub sender: ControlSender,
     pub telemetry: Arc<BridgeTelemetry>,
@@ -346,6 +383,7 @@ pub fn build_engine_parts(
     let telemetry = bridge.telemetry();
 
     Ok(EngineParts {
+        binding: None,
         bridge,
         sender,
         telemetry,
@@ -368,6 +406,7 @@ pub fn open_with_parts(
     parts: EngineParts,
 ) -> Result<LiveEngine, EngineUnavailable> {
     let EngineParts {
+        binding,
         mut bridge,
         sender,
         telemetry,
@@ -395,6 +434,7 @@ pub fn open_with_parts(
         backend.name(),
         device_name,
         config,
+        binding,
     );
     engine.set_targets(targets);
     // Without this the product's own open path leaves the primary at 0, so every published
@@ -411,6 +451,7 @@ pub fn open_with_parts(
 // LiveEngine<NullStream> and still reach NullStream::pump, which is inherent to NullStream and
 // absent from the AudioStream trait
 pub struct LiveEngine<S: ?Sized = dyn AudioStream> {
+    binding: Option<PlanBinding>,
     sender: ControlSender,
     telemetry: Arc<BridgeTelemetry>,
     backend_name: &'static str,
@@ -441,8 +482,10 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
         backend_name: &'static str,
         device_name: String,
         config: StreamConfig,
+        binding: Option<PlanBinding>,
     ) -> Self {
         Self {
+            binding,
             sender,
             telemetry,
             backend_name,
@@ -453,6 +496,19 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
             has_clips: false,
             primary_index: 0,
             stream,
+        }
+    }
+
+    // Refuse before resolving indices, baking schedules, or writing any control lane.
+    pub fn check_binding(&self, model: &AppModel) -> Result<(), PublicationError> {
+        if self.binding.as_ref().is_some_and(|binding| {
+            Arc::ptr_eq(&binding.session, &model.publication_session)
+                && binding.project == model.project_id
+                && binding.structure_revision == model.track_list().structure_revision()
+        }) {
+            Ok(())
+        } else {
+            Err(PublicationError::StalePlan)
         }
     }
 
@@ -558,11 +614,10 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
     // Destinations follow the order build_track_engine_parts attached them: 0 is the primary
     // note node, and 1..=n are the other instrument tracks in list order. Returns how many were
     // published, so a caller can report a lane that refused rather than assume it took them
-    pub fn publish_schedules(
-        &mut self,
-        tracks: &spectre_project::TrackList,
-        tempo: &spectre_core::TempoMap,
-    ) -> Result<usize, ControlError> {
+    pub fn publish_schedules(&mut self, model: &AppModel) -> Result<usize, PublicationError> {
+        self.check_binding(model)?;
+        let tracks = model.track_list();
+        let tempo = model.tempo_map();
         let Some(rate) = spectre_core::SampleRate::new(self.config.sample_rate) else {
             return Ok(0);
         };
@@ -573,7 +628,7 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
             let schedule = bake_track_schedule(tracks, index, tempo, rate)
                 .unwrap_or_else(spectre_audio::clip::ClipSchedule::empty);
             if let Err((error, _)) = self.sender.send_schedule(destination, Box::new(schedule)) {
-                return Err(error);
+                return Err(error.into());
             }
             published += 1;
         }
@@ -590,9 +645,11 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
     // one command both arms and disarms
     pub fn publish_loop(
         &mut self,
+        model: &AppModel,
         region: Option<(spectre_core::BeatTicks, spectre_core::BeatTicks)>,
-        tempo: &spectre_core::TempoMap,
-    ) -> Result<(), ControlError> {
+    ) -> Result<(), PublicationError> {
+        self.check_binding(model)?;
+        let tempo = model.tempo_map();
         let Some(rate) = spectre_core::SampleRate::new(self.config.sample_rate) else {
             return Ok(());
         };
@@ -603,6 +660,7 @@ impl<S: AudioStream + ?Sized> LiveEngine<S> {
             )
         });
         self.send_transport(spectre_core::TransportCommand::SetLoop(converted))
+            .map_err(PublicationError::Control)
     }
 
     // Queue a transport command; Err leaves the caller's UI state unchanged
@@ -747,7 +805,8 @@ fn selected_track_target_index(
 pub fn publish_stored_parameters<S: AudioStream + ?Sized>(
     model: &AppModel,
     engine: &LiveEngine<S>,
-) -> Result<usize, ControlError> {
+) -> Result<usize, PublicationError> {
+    engine.check_binding(model)?;
     let mut published = 0;
     for device in model.devices() {
         for parameter in &device.parameters {
@@ -778,12 +837,14 @@ pub fn publish_stored_parameters<S: AudioStream + ?Sized>(
 // edits address by position instead
 pub fn publish_effect_parameter<S: AudioStream + ?Sized>(
     engine: &LiveEngine<S>,
-    tracks: &spectre_project::TrackList,
+    model: &AppModel,
     track: spectre_core::ObjectId,
     position: usize,
     parameter: usize,
     value: f32,
-) -> Result<(), ControlError> {
+) -> Result<(), PublicationError> {
+    engine.check_binding(model)?;
+    let tracks = model.track_list();
     let Some(index) = tracks.index_of(track) else {
         return Ok(());
     };
@@ -793,7 +854,9 @@ pub fn publish_effect_parameter<S: AudioStream + ?Sized>(
     else {
         return Ok(());
     };
-    engine.send_parameter(target, value)
+    engine
+        .send_parameter(target, value)
+        .map_err(PublicationError::Control)
 }
 
 pub fn apply_parameter_edit<S: AudioStream + ?Sized>(
@@ -817,21 +880,20 @@ pub fn apply_parameter_edit<S: AudioStream + ?Sized>(
     let Some(engine) = engine else {
         return;
     };
-    // Resolve the live destination by role on the selected track when one is registered there,
-    // falling back to the model's own identity for the fixture engine, whose targets ARE the
-    // model's IDs. Without the first branch nothing a user drags reaches the render thread
-    let target = selected_track_target_index(
-        model.track_list(),
-        model.selected_track_id(),
-        device_key,
-        parameter_key,
-    )
-    .and_then(|index| engine.targets().get(index).copied())
-    .unwrap_or(ParameterTarget {
-        device: edit.device_instance_id,
-        parameter: edit.parameter_instance_id,
+    let publication = engine.check_binding(model).and_then(|()| {
+        let target = selected_track_target_index(
+            model.track_list(),
+            model.selected_track_id(),
+            device_key,
+            parameter_key,
+        )
+        .and_then(|index| engine.targets().get(index).copied())
+        .ok_or(PublicationError::UnavailableTarget)?;
+        engine
+            .send_parameter(target, edit.value)
+            .map_err(PublicationError::Control)
     });
-    if let Err(error) = engine.send_parameter(target, edit.value) {
+    if let Err(error) = publication {
         // The model keeps the edit: it is the value of record, and offline rendering will use it.
         // Only the live copy failed to publish, and the message says exactly that
         *feedback_status = format!(
@@ -1010,6 +1072,7 @@ pub fn build_track_engine_parts(
     let telemetry = bridge.telemetry();
 
     Ok(EngineParts {
+        binding: None,
         bridge,
         sender,
         telemetry,
@@ -1020,6 +1083,27 @@ pub fn build_track_engine_parts(
         has_clips,
         primary_index,
     })
+}
+
+// Compile and bind in one app-thread operation; no API can rebind a running engine.
+pub fn build_model_engine_parts(
+    model: &AppModel,
+    seed: u64,
+    config: StreamConfig,
+) -> Result<EngineParts, EngineUnavailable> {
+    let mut parts = build_track_engine_parts(
+        model.track_list(),
+        model.tempo_map(),
+        seed,
+        model.selected_track_id(),
+        config,
+    )?;
+    parts.binding = Some(PlanBinding {
+        session: Arc::clone(&model.publication_session),
+        project: model.project_id,
+        structure_revision: model.track_list().structure_revision(),
+    });
+    Ok(parts)
 }
 
 // Bake one track's active clip placements into absolute sample positions, or None when the
@@ -1130,10 +1214,8 @@ pub const APP_GRAPH_SEED: u64 = 0x0053_5045_4354_5245;
 // The seed fixes node identity, so the same list rebuilds to the same graph
 pub fn open_track_engine(
     backend: &dyn AudioBackend,
-    tracks: &spectre_project::TrackList,
-    tempo: &spectre_core::TempoMap,
+    model: &AppModel,
     seed: u64,
-    note_track: Option<spectre_core::ObjectId>,
 ) -> Result<LiveEngine, EngineUnavailable> {
     let device = backend
         .default_output_device()
@@ -1143,7 +1225,7 @@ pub fn open_track_engine(
         .map_err(EngineUnavailable::Backend)?;
     let config = StreamConfig::stereo(sample_rate, ENGINE_BUFFER_FRAMES)
         .map_err(EngineUnavailable::Backend)?;
-    let parts = build_track_engine_parts(tracks, tempo, seed, note_track, config)?;
+    let parts = build_model_engine_parts(model, seed, config)?;
     open_with_parts(backend, &device.id, device.name, parts)
 }
 
@@ -1156,9 +1238,11 @@ pub fn open_track_engine(
 // doubt, republish.
 pub fn publish_track_gains<S: AudioStream + ?Sized>(
     engine: &LiveEngine<S>,
-    tracks: &spectre_project::TrackList,
+    model: &AppModel,
     invalidated: &[spectre_core::ObjectId],
-) -> Result<(), ControlError> {
+) -> Result<(), PublicationError> {
+    engine.check_binding(model)?;
+    let tracks = model.track_list();
     for id in invalidated {
         let Some(index) = tracks.index_of(*id) else {
             continue;
@@ -1177,10 +1261,14 @@ pub fn publish_track_gains<S: AudioStream + ?Sized>(
 // Publish the master fader position
 pub fn publish_master_gain<S: AudioStream + ?Sized>(
     engine: &LiveEngine<S>,
-    tracks: &spectre_project::TrackList,
-) -> Result<(), ControlError> {
+    model: &AppModel,
+) -> Result<(), PublicationError> {
+    engine.check_binding(model)?;
+    let tracks = model.track_list();
     let Some(target) = engine.targets().get(tracks.master_target_index()) else {
         return Ok(());
     };
-    engine.send_parameter(*target, tracks.master_level())
+    engine
+        .send_parameter(*target, tracks.master_level())
+        .map_err(PublicationError::Control)
 }

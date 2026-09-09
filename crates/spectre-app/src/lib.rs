@@ -248,6 +248,8 @@ pub struct AppModel {
     // reset the tempo to the prototype's. A project ID that changes on every save makes
     // CORE-001's project-level identity meaningless, which is worse than one field
     project_id: ObjectId,
+    // Session-only adoption identity; retained by a plan so an old identity cannot be reused.
+    publication_session: std::sync::Arc<()>,
     // Unknown envelope and project fields survive the product path without becoming app state.
     // Known behavior still comes only from typed fields below
     envelope_unknown: serde_json::Map<String, serde_json::Value>,
@@ -336,6 +338,7 @@ impl AppModel {
         let selected_device = devices.first().map(|device| device.instance_id);
         Self {
             project_id: ids.next_id(),
+            publication_session: std::sync::Arc::new(()),
             envelope_unknown: serde_json::Map::new(),
             project_unknown: serde_json::Map::new(),
             tempo_map: TempoMap::constant(PROTOTYPE_BPM).expect("a constant tempo is valid"),
@@ -715,6 +718,10 @@ impl AppModel {
         };
         let moved = self.history.undo(&mut target)?;
         self.repair_selection();
+        // History replay requires an explicit rebuild until live state reconciliation exists.
+        if moved {
+            self.publication_session = std::sync::Arc::new(());
+        }
         Ok(moved)
     }
 
@@ -725,6 +732,10 @@ impl AppModel {
         };
         let moved = self.history.redo(&mut target)?;
         self.repair_selection();
+        // History replay requires an explicit rebuild until live state reconciliation exists.
+        if moved {
+            self.publication_session = std::sync::Arc::new(());
+        }
         Ok(moved)
     }
 

@@ -1,1 +1,2 @@
+hermes -c "Resume work on ~/spectre-seq"
 hermes -c "Review ~/spectre-seq/ architecture, handoff, build plans"

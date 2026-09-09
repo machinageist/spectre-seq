@@ -85,6 +85,15 @@ I-03 still binds: instrument and modular integration are developed together in e
 Its public audio/note/control/modulation ports, per-voice expression boundary, nesting and
 parameter exposure remain to be specified. This choice does not decide those interfaces silently.
 
+### I-05 — Project-wide and nested modular patching
+
+Jeff selected: “Both: project-wide routing plus reusable nested instrument/effect patches”.
+
+The modular workspace must support project-wide track/device/bus connections and reusable
+nested instrument/effect patches. The flagship remains a complete patchable device in either
+context; this does not expose its internal topology. Patch instance ownership, copy/link behavior,
+port contracts and nesting/resource limits remain open architectural decisions.
+
 ### Explicit scope amendments
 
 - CLAP and AU are now final-product scope alongside VST3, subject to platform relevance and

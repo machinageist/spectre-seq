@@ -234,6 +234,7 @@ pub fn adopt(model: &mut AppModel, envelope: ProjectEnvelope) -> Result<(), Adop
     // Opening a file never starts playback, and post R4-1 never starts audio
     transport.apply(TransportCommand::Stop);
 
+    model.publication_session = std::sync::Arc::new(());
     model.transport = transport;
     // A different project's tracks are now live, so every reversible edit in the history
     // addresses identities this document may not contain. Undoing across an open would

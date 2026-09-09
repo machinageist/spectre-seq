@@ -18,6 +18,14 @@ Notes: Requires phase/release ratification; not permission to bypass existing ga
 - **Open decisions:** release scope, order below, R5 media scope split and domain interview axes
 - **Known gaps:** phases are intake boundaries, not fully estimated or build-ready task lists
 
+## Execution authorization — 2026-09-07
+
+Jeff instructed: “continue building according to the blue print, blind checking for AAA quality
+as you go”. R-A is the active bounded implementation slice under
+`r-a-stale-publications.md`. Continue dependency-ordered delivery with behavior tests, independent
+blind review, remediation and parent-run gates. This authorizes execution of grounded slices,
+not silent answers to the remaining architectural interview questions or automatic milestone PASS.
+
 ## Immediate corrective prerequisites
 
 The earliest work is not a new canvas or a MIDI effect. The audit found existing production

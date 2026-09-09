@@ -118,7 +118,7 @@ fn a_track_occupies_as_many_targets_as_its_devices_have_controls() {
 
 #[test]
 fn stored_device_values_are_published_when_the_engine_opens() {
-    use spectre_app::engine::{build_track_engine_parts, publish_stored_parameters};
+    use spectre_app::engine::publish_stored_parameters;
     use spectre_audio::null::{NullBackend, NULL_DEVICE_KEY, NULL_SAMPLE_RATE};
     use spectre_audio::{AudioStream, DeviceId, RenderBlock, StreamConfig};
 
@@ -133,11 +133,9 @@ fn stored_device_values_are_published_when_the_engine_opens() {
         .expect("lean is an editable control");
 
     let config = StreamConfig::stereo(NULL_SAMPLE_RATE, 256).expect("a valid config");
-    let parts = build_track_engine_parts(
-        model.track_list(),
-        model.tempo_map(),
+    let parts = spectre_app::engine::build_model_engine_parts(
+        &model,
         spectre_app::engine::APP_GRAPH_SEED,
-        model.selected_track_id(),
         config,
     )
     .expect("the parts build");
@@ -160,6 +158,7 @@ fn stored_device_values_are_published_when_the_engine_opens() {
         spectre_audio::NULL_BACKEND_NAME,
         "Null Output".to_string(),
         config,
+        parts.binding,
     );
     engine.set_targets(parts.targets);
     engine.set_primary_index(parts.primary_index);

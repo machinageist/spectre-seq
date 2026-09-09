@@ -9,9 +9,9 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use spectre_app::engine::{
-    apply_parameter_edit, build_engine_parts, build_track_engine_parts, engine_status_field,
-    toggle_transport, AuditionError, EngineParts, EngineState, EngineUnavailable, LiveEngine,
-    ENGINE_BUFFER_FRAMES, ENGINE_PLAN_FRAME_MARGIN,
+    apply_parameter_edit, build_engine_parts, engine_status_field, toggle_transport, AuditionError,
+    EngineParts, EngineState, EngineUnavailable, LiveEngine, ENGINE_BUFFER_FRAMES,
+    ENGINE_PLAN_FRAME_MARGIN,
 };
 use spectre_app::AppModel;
 use spectre_audio::bridge::BridgeTelemetry;
@@ -94,6 +94,7 @@ fn open_null(
         plan_max_frames: _,
         targets,
         nodes: _,
+        binding: _,
         has_clips,
         primary_index,
     } = parts;
@@ -110,8 +111,9 @@ fn open_null(
 }
 
 // Wrap an opened null stream in the engine without erasing its concrete type
-fn engine_over_null(parts: EngineParts) -> LiveEngine<NullStream> {
+fn engine_over_null(mut parts: EngineParts) -> LiveEngine<NullStream> {
     let config = parts.config;
+    let binding = parts.binding.take();
     let (stream, sender, telemetry, targets, has_clips, primary_index) = open_null(parts);
     let mut engine = LiveEngine::from_open_stream(
         Box::new(stream),
@@ -120,6 +122,7 @@ fn engine_over_null(parts: EngineParts) -> LiveEngine<NullStream> {
         spectre_audio::NULL_BACKEND_NAME,
         "Null Output".to_string(),
         config,
+        binding,
     );
     engine.set_targets(targets);
     // Set here for the same reason open_with_parts sets it: a LiveEngine that forgot the flag
@@ -386,10 +389,8 @@ fn engine_open_failure_reports_the_backend_error_and_leaves_the_model_intact() {
     let model_for_open = AppModel::prototype();
     let result = spectre_app::engine::open_track_engine(
         &FailingBackend,
-        model_for_open.track_list(),
-        model_for_open.tempo_map(),
+        &model_for_open,
         spectre_app::engine::APP_GRAPH_SEED,
-        model_for_open.selected_track_id(),
     );
     assert_eq!(
         result.err(),
@@ -490,9 +491,10 @@ fn play_then_stop_inside_one_block_is_refused_into_counted_silence() {
     assert_eq!(engine.health().plan_errors, 1);
 }
 
-// 16 — the acceptance criterion for R4-2, stated in the terms §1.3 names
+// 16 — fixture identities remain addressable through the explicit low-level parameter lane.
+// Model-relative Shape publication is covered against the bound track plan below.
 #[test]
-fn a_shape_edit_changes_live_audio_and_nothing_stays_pending() {
+fn a_fixture_gain_changes_live_audio_and_nothing_stays_pending() {
     let mut model = AppModel::prototype();
     let parts = build_engine_parts(&model.device_parameter_snapshot().unwrap(), config()).unwrap();
     let mut engine = engine_over_null(parts);
@@ -501,12 +503,16 @@ fn a_shape_edit_changes_live_audio_and_nothing_stays_pending() {
     engine.stream_mut().pump().unwrap();
     let before = hash_interleaved(engine.stream_mut().last_block(), CHANNELS, FRAMES);
 
-    let mut status = String::new();
-    apply_parameter_edit(&mut model, Some(&engine), "gain", "gain", 0.1, &mut status);
-    assert!(
-        status.is_empty(),
-        "a routed edit must report no failure: {status}"
-    );
+    let edit = model.edit_device_parameter("gain", "gain", 0.1).unwrap();
+    engine
+        .send_parameter(
+            spectre_audio::control::ParameterTarget {
+                device: edit.device_instance_id,
+                parameter: edit.parameter_instance_id,
+            },
+            edit.value,
+        )
+        .unwrap();
 
     engine.stream_mut().pump().unwrap();
     let after = hash_interleaved(engine.stream_mut().last_block(), CHANNELS, FRAMES);
@@ -759,11 +765,9 @@ fn play_then_stop_in_one_block_stays_silent_with_clips_attached() {
 #[test]
 fn a_shape_edit_changes_live_audio_through_the_engine_the_app_opens() {
     let mut model = AppModel::prototype();
-    let parts = build_track_engine_parts(
-        model.track_list(),
-        model.tempo_map(),
+    let parts = spectre_app::engine::build_model_engine_parts(
+        &model,
         spectre_app::engine::APP_GRAPH_SEED,
-        model.selected_track_id(),
         config(),
     )
     .unwrap();
@@ -800,11 +804,9 @@ fn a_shape_edit_changes_live_audio_through_the_engine_the_app_opens() {
 #[test]
 fn an_edit_for_a_device_no_track_hosts_stays_model_only() {
     let mut model = AppModel::prototype();
-    let parts = build_track_engine_parts(
-        model.track_list(),
-        model.tempo_map(),
+    let parts = spectre_app::engine::build_model_engine_parts(
+        &model,
         spectre_app::engine::APP_GRAPH_SEED,
-        model.selected_track_id(),
         config(),
     )
     .unwrap();
@@ -855,14 +857,8 @@ fn the_engine_main_actually_opens_reaches_a_real_device_and_renders() {
 
     let model = AppModel::prototype();
     let backend = spectre_audio::cpal_backend::CpalBackend::new();
-    let mut engine = open_track_engine(
-        &backend,
-        model.track_list(),
-        model.tempo_map(),
-        APP_GRAPH_SEED,
-        model.selected_track_id(),
-    )
-    .expect("a real output device is required for this drill");
+    let mut engine = open_track_engine(&backend, &model, APP_GRAPH_SEED)
+        .expect("a real output device is required for this drill");
 
     assert!(matches!(engine.state(), EngineState::Opened { .. }));
     // Play, so the drill measures a render that carries signal rather than a clean silence. The
@@ -956,12 +952,315 @@ fn authored_session() -> (AppModel, spectre_core::ObjectId) {
     (model, clip)
 }
 
-fn authored_engine(model: &AppModel) -> LiveEngine<NullStream> {
-    let parts = build_track_engine_parts(
+// R-A: the model's new first track must never address the old first track's gain.
+#[test]
+fn stale_reorder_refuses_shape_before_the_old_neighbor_is_modified() {
+    let mut model = AppModel::prototype();
+    let second = model.add_track("Neighbor").unwrap();
+    model.select_track(second);
+    let mut engine = authored_engine(&model);
+    model.reorder_track(second, 0).unwrap();
+    let mut status = String::new();
+    apply_parameter_edit(&mut model, Some(&engine), "gain", "gain", 0.1, &mut status);
+    engine.stream_mut().pump().unwrap();
+    assert_eq!(
+        engine.health().parameters_applied,
+        0,
+        "stale positional edit reached the old neighboring processor"
+    );
+    assert!(status.contains("did not reach live audio"), "{status}");
+    assert_eq!(
+        model
+            .devices()
+            .iter()
+            .find(|d| d.key == "gain")
+            .unwrap()
+            .parameters[0]
+            .value,
+        0.1
+    );
+}
+
+#[test]
+fn stale_reorder_refuses_schedules_before_the_old_voice_is_replaced() {
+    let (mut model, clip) = authored_session();
+    model.add_note(clip, note_at(0, 60)).unwrap();
+    let mut engine = authored_engine(&model);
+    let second = model.tracks()[1].id();
+    model.reorder_track(second, 0).unwrap();
+    let result = engine.publish_schedules(&model);
+    for _ in 0..4 {
+        engine.stream_mut().pump().unwrap();
+    }
+    assert_eq!(
+        engine.health().schedules_installed,
+        0,
+        "stale schedules were installed on positional old voices"
+    );
+    assert!(result.is_err());
+}
+
+// Exercise every model-relative publisher before pumping; none may enqueue a stale prefix.
+fn assert_stale_publications(model: &mut AppModel, engine: &mut LiveEngine<NullStream>) {
+    use spectre_app::engine::{
+        publish_effect_parameter, publish_master_gain, publish_stored_parameters,
+        publish_track_gains, PublicationError,
+    };
+    let before = engine.health();
+    let track = model.tracks()[0].id();
+    model.select_track(track);
+    let mut invalidated = model.set_track_level(track, 0.2).unwrap();
+    invalidated.extend(model.set_track_soloed(track, true).unwrap());
+    invalidated.extend(model.set_track_muted(track, true).unwrap());
+    model.set_master_level(0.3);
+    assert_eq!(
+        publish_track_gains(engine, model, &invalidated),
+        Err(PublicationError::StalePlan)
+    );
+    assert_eq!(
+        publish_master_gain(engine, model),
+        Err(PublicationError::StalePlan)
+    );
+    assert_eq!(
+        publish_effect_parameter(engine, model, track, 0, spectre_dsp::GLOAM_DEPTH, 0.4),
+        Err(PublicationError::StalePlan)
+    );
+    assert_eq!(
+        publish_stored_parameters(model, engine),
+        Err(PublicationError::StalePlan)
+    );
+    assert_eq!(
+        engine.publish_schedules(model),
+        Err(PublicationError::StalePlan)
+    );
+    assert_eq!(
+        engine.publish_loop(
+            model,
+            Some((spectre_core::BeatTicks(0), spectre_core::BeatTicks(1)))
+        ),
+        Err(PublicationError::StalePlan)
+    );
+    assert_eq!(
+        engine.publish_loop(model, None),
+        Err(PublicationError::StalePlan)
+    );
+    let mut status = String::new();
+    apply_parameter_edit(model, Some(engine), "gain", "gain", 0.1, &mut status);
+    assert!(
+        status.contains("stored but did not reach live audio") && status.contains("rebuild"),
+        "{status}"
+    );
+    for _ in 0..4 {
+        engine.stream_mut().pump().unwrap();
+    }
+    assert_eq!(
+        engine.health().parameters_applied,
+        before.parameters_applied
+    );
+    assert_eq!(
+        engine.health().parameters_pending,
+        before.parameters_pending
+    );
+    assert_eq!(
+        engine.health().schedules_installed,
+        before.schedules_installed
+    );
+    assert_eq!(
+        engine.health().schedules_misaddressed,
+        before.schedules_misaddressed
+    );
+
+    // Refusal is a live-copy failure, not a rollback or a reason to discard saved work.
+    let envelope = spectre_app::project::project_envelope(model, "Stored edits");
+    let bytes = spectre_project::to_bytes(&envelope).unwrap();
+    let envelope = spectre_project::from_bytes(&bytes).unwrap();
+    assert_eq!(envelope.project.tracks.master_level(), 0.3);
+    assert_eq!(envelope.project.tracks.get(track).unwrap().level(), 0.2);
+    assert_eq!(
+        envelope
+            .project
+            .devices
+            .iter()
+            .find(|d| d.key == "gain")
+            .unwrap()
+            .parameters[0]
+            .value,
+        0.1
+    );
+}
+
+#[test]
+fn stale_layout_changes_refuse_every_publisher_and_fresh_rebuild_restores_them() {
+    use spectre_app::engine::{
+        publish_effect_parameter, publish_master_gain, publish_stored_parameters,
+        publish_track_gains,
+    };
+    use spectre_project::{TrackEffect, TrackInsert, TrackInstrument};
+    for change in [
+        "reorder",
+        "remove",
+        "instrument",
+        "append insert",
+        "remove insert",
+        "move repeated inserts",
+    ] {
+        let (mut model, _) = authored_session();
+        let ids: Vec<_> = model.tracks().iter().map(|track| track.id()).collect();
+        for id in &ids {
+            model
+                .append_effect(*id, TrackInsert::new(TrackEffect::Gloam, 0.2))
+                .unwrap();
+            model
+                .append_effect(*id, TrackInsert::new(TrackEffect::Gloam, 0.8))
+                .unwrap();
+        }
+        let mut engine = authored_engine(&model);
+        match change {
+            "reorder" => {
+                model.reorder_track(ids[1], 0).unwrap();
+            }
+            "remove" => {
+                model.remove_track(ids[0]).unwrap();
+            }
+            "instrument" => model
+                .set_track_instrument(ids[0], TrackInstrument::Filament)
+                .unwrap(),
+            "append insert" => model
+                .append_effect(ids[0], TrackInsert::new(TrackEffect::Gloam, 0.5))
+                .unwrap(),
+            "remove insert" => model.remove_effect(ids[0], 0).unwrap(),
+            "move repeated inserts" => model.move_effect(ids[0], 0, 1).unwrap(),
+            _ => unreachable!(),
+        }
+        assert_stale_publications(&mut model, &mut engine);
+        let mut fresh = authored_engine(&model);
+        assert!(fresh.check_binding(&model).is_ok(), "{change}");
+        let track = model.tracks()[0].id();
+        let invalidated = model.set_track_muted(track, false).unwrap();
+        publish_track_gains(&fresh, &model, &invalidated).unwrap();
+        publish_master_gain(&fresh, &model).unwrap();
+        publish_effect_parameter(&fresh, &model, track, 0, spectre_dsp::GLOAM_DEPTH, 0.4).unwrap();
+        assert!(publish_stored_parameters(&model, &fresh).unwrap() > 0);
+        assert!(fresh.publish_schedules(&model).unwrap() > 0);
+        fresh.publish_loop(&model, None).unwrap();
+        for _ in 0..4 {
+            fresh.stream_mut().pump().unwrap();
+        }
+        assert!(fresh.health().parameters_applied > 0, "{change}");
+        assert!(fresh.health().schedules_installed > 0, "{change}");
+        assert_eq!(fresh.health().parameters_pending, 0, "{change}");
+        assert_eq!(fresh.health().schedules_misaddressed, 0, "{change}");
+    }
+}
+
+#[test]
+fn stale_independent_project_with_identical_ids_and_revision_is_not_authenticated() {
+    let (original, _) = authored_session();
+    let (mut independent, _) = authored_session();
+    assert_eq!(
+        spectre_app::project::project_envelope(&original, "Same"),
+        spectre_app::project::project_envelope(&independent, "Same")
+    );
+    assert_eq!(
+        original.track_list().structure_revision(),
+        independent.track_list().structure_revision()
+    );
+    let mut engine = authored_engine(&original);
+    assert_stale_publications(&mut independent, &mut engine);
+}
+
+#[test]
+fn stale_reopening_the_same_document_invalidates_the_old_engine_even_with_equal_revision() {
+    use spectre_app::project::{adopt, project_envelope};
+    let (mut model, _) = authored_session();
+    let envelope = project_envelope(&model, "Reopen");
+    adopt(&mut model, envelope.clone()).unwrap();
+    let revision = model.track_list().structure_revision();
+    let mut engine = authored_engine(&model);
+    adopt(&mut model, envelope).unwrap();
+    assert_eq!(model.track_list().structure_revision(), revision);
+    assert_stale_publications(&mut model, &mut engine);
+    let fresh = authored_engine(&model);
+    assert!(fresh.check_binding(&model).is_ok());
+}
+
+#[test]
+fn stale_history_replay_requires_rebuild_even_when_layout_is_restored() {
+    let (mut model, _) = authored_session();
+    let mut engine = authored_engine(&model);
+    let track = model.tracks()[0].id();
+    model.set_track_level(track, 0.2).unwrap();
+    assert!(model.undo().unwrap());
+    assert_stale_publications(&mut model, &mut engine);
+    // A fresh engine is valid, then replay invalidates it even without a structural edit.
+    let fresh = authored_engine(&model);
+    assert!(model.undo().unwrap());
+    assert!(fresh.check_binding(&model).is_err());
+    let fresh = authored_engine(&model);
+    assert!(model.redo().unwrap());
+    assert!(fresh.check_binding(&model).is_err());
+}
+
+#[test]
+fn stale_stop_and_close_remain_available_after_adoption() {
+    let (mut model, _) = authored_session();
+    let mut engine = authored_engine(&model);
+    engine.start_audition().unwrap();
+    engine.stream_mut().pump().unwrap();
+    assert!(engine.health().transport_rolling);
+    let envelope = spectre_app::project::project_envelope(&model, "Reopen");
+    spectre_app::project::adopt(&mut model, envelope).unwrap();
+    assert!(engine.check_binding(&model).is_err());
+    engine.stop_audition().unwrap();
+    engine.stream_mut().pump().unwrap();
+    assert!(!engine.health().transport_rolling);
+    assert!(engine
+        .stream_mut()
+        .last_block()
+        .iter()
+        .all(|sample| *sample == 0.0));
+    engine.close().unwrap();
+}
+
+#[test]
+fn unbound_manual_engine_refuses_model_publications_instead_of_guessing_a_layout() {
+    let (mut model, _) = authored_session();
+    let parts = spectre_app::engine::build_track_engine_parts(
         model.track_list(),
         model.tempo_map(),
         spectre_app::engine::APP_GRAPH_SEED,
         model.selected_track_id(),
+        config(),
+    )
+    .unwrap();
+    let mut engine = engine_over_null(parts);
+    assert_stale_publications(&mut model, &mut engine);
+}
+
+#[test]
+fn failed_adoption_and_ordinary_musical_edits_preserve_the_binding() {
+    let (mut model, clip) = authored_session();
+    let mut engine = authored_engine(&model);
+    let mut envelope = spectre_app::project::project_envelope(&model, "Invalid");
+    envelope.project.devices[0].key = "not a device".into();
+    assert!(spectre_app::project::adopt(&mut model, envelope).is_err());
+    assert!(engine.check_binding(&model).is_ok());
+    model.add_note(clip, note_at(0, 64)).unwrap();
+    model.set_tempo(100.0).unwrap();
+    model.select_track(model.tracks()[1].id());
+    engine.publish_schedules(&model).unwrap();
+    engine.publish_loop(&model, None).unwrap();
+    for _ in 0..4 {
+        engine.stream_mut().pump().unwrap();
+    }
+    assert!(engine.health().schedules_installed > 0);
+    assert_eq!(engine.health().schedules_misaddressed, 0);
+}
+
+fn authored_engine(model: &AppModel) -> LiveEngine<NullStream> {
+    let parts = spectre_app::engine::build_model_engine_parts(
+        model,
+        spectre_app::engine::APP_GRAPH_SEED,
         StreamConfig::stereo(NULL_SAMPLE_RATE, 256).unwrap(),
     )
     .expect("the track parts build");
@@ -978,7 +1277,7 @@ fn an_edit_reaches_the_running_engine_without_a_restart() {
         .add_note(clip, note_at(0, 60))
         .expect("the note is accepted");
     let published = engine
-        .publish_schedules(model.track_list(), model.tempo_map())
+        .publish_schedules(&model)
         .expect("the lane accepts the schedules");
     assert!(published > 0, "nothing was published");
 
@@ -1026,7 +1325,7 @@ fn a_track_that_was_empty_at_open_can_still_be_reached() {
         .expect("the note is accepted");
 
     let published = engine
-        .publish_schedules(model.track_list(), model.tempo_map())
+        .publish_schedules(&model)
         .expect("the lane accepts the schedules");
     assert_eq!(
         published,
@@ -1070,10 +1369,7 @@ fn overflowing_the_schedule_lane_is_a_counted_refusal() {
     let mut engine = authored_engine(&model);
     let mut refused = false;
     for _ in 0..32 {
-        if engine
-            .publish_schedules(model.track_list(), model.tempo_map())
-            .is_err()
-        {
+        if engine.publish_schedules(&model).is_err() {
             refused = true;
             break;
         }
@@ -1086,7 +1382,7 @@ fn overflowing_the_schedule_lane_is_a_counted_refusal() {
         engine.stream_mut().pump().unwrap();
     }
     engine
-        .publish_schedules(model.track_list(), model.tempo_map())
+        .publish_schedules(&model)
         .expect("the lane recovers once the render thread has drained it");
 }
 
@@ -1140,7 +1436,7 @@ fn a_published_schedule_lands_on_the_track_it_was_addressed_to() {
         .add_note(clips[1], note_at(0, 60))
         .expect("the note is accepted");
     let published = engine
-        .publish_schedules(model.track_list(), model.tempo_map())
+        .publish_schedules(&model)
         .expect("the lane accepts the schedules");
     for _ in 0..published + 2 {
         engine.stream_mut().pump().unwrap();
@@ -1174,10 +1470,7 @@ fn a_published_loop_wraps_the_playhead() {
     // Two bars at the project tempo
     let two_bars = spectre_core::BeatTicks(AUTHORING_BAR * 2);
     engine
-        .publish_loop(
-            Some((spectre_core::BeatTicks(0), two_bars)),
-            model.tempo_map(),
-        )
+        .publish_loop(&model, Some((spectre_core::BeatTicks(0), two_bars)))
         .expect("the transport lane accepts the loop");
     engine
         .send_transport(TransportCommand::Play)
@@ -1240,10 +1533,7 @@ fn clearing_the_loop_lets_the_playhead_run_on() {
     let loop_len = model.tempo_map().ticks_to_samples(two_bars, rate).0;
 
     engine
-        .publish_loop(
-            Some((spectre_core::BeatTicks(0), two_bars)),
-            model.tempo_map(),
-        )
+        .publish_loop(&model, Some((spectre_core::BeatTicks(0), two_bars)))
         .expect("the loop is accepted");
     engine
         .send_transport(TransportCommand::Play)
@@ -1252,7 +1542,7 @@ fn clearing_the_loop_lets_the_playhead_run_on() {
         engine.stream_mut().pump().unwrap();
     }
     engine
-        .publish_loop(None, model.tempo_map())
+        .publish_loop(&model, None)
         .expect("clearing the loop is accepted");
     for _ in 0..(loop_len / 256) as usize + 8 {
         engine.stream_mut().pump().unwrap();
